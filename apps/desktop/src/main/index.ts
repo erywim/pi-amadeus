@@ -1,0 +1,63 @@
+import { join } from 'node:path'
+import { app, BrowserWindow, session, shell } from 'electron'
+import { registerIpcHandlers } from './ipc'
+
+// 开发期开 CDP 调试端口，供自动化 E2E 验证驱动
+if (!app.isPackaged) {
+  app.commandLine.appendSwitch('remote-debugging-port', '9222')
+}
+
+// 主进程构建为 CJS（apps/desktop 无 type:module，electron-vite 自动按
+// CJS 产出）——Electron 43 的 ESM 入口对 electron 内置模块的具名/默认
+// 导出解析不可靠，require('electron') 是稳定路径。__dirname 在 CJS 原生可用。
+function createWindow(): void {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 960,
+    minHeight: 640,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#050a0f',
+    title: 'Amadeus',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  })
+
+  // 桌面端媒体权限直接放行（麦克风/摄像头：语音通话与视觉输入必需）
+  const ses = session.defaultSession
+  ses.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === 'media' || permission === 'display-capture')
+  })
+
+  win.on('ready-to-show', () => win.show())
+
+  // 外部链接一律走系统浏览器，不在应用内开新窗
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  } else {
+    void win.loadFile(join(__dirname, '../renderer/index.html'))
+  }
+}
+
+app.whenReady().then(() => {
+  registerIpcHandlers()
+  createWindow()
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+  })
+})
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})

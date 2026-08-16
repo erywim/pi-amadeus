@@ -1,0 +1,134 @@
+{
+  "app": {
+    "title": "Amadeus",
+    "tagline": "EL PSY KONGROO"
+  },
+  "nav": {
+    "sessions": "セッション",
+    "history": "履歴",
+    "settings": "設定",
+    "live2d": "Live2D"
+  },
+  "dayGroups": {
+    "today": "今日",
+    "yesterday": "昨日",
+    "thisWeek": "今週",
+    "earlier": "以前"
+  },
+  "channels": {
+    "desktop": "デスクトップ",
+    "feishu": "飛書"
+  },
+  "common": {
+    "cancel": "キャンセル",
+    "confirm": "確認",
+    "delete": "削除",
+    "deleted": "削除しました",
+    "notAvailable": "M1 では利用不可"
+  },
+  "chat": {
+    "newSession": "新しいセッション",
+    "inputPlaceholder": "メッセージを入力、Enter で送信…",
+    "send": "送信",
+    "stop": "停止",
+    "typing": "入力中",
+    "online": "オンライン",
+    "deleteTitle": "セッションを削除",
+    "deleteDesc": "このセッションを削除しますか？この操作は取り消せません。",
+    "empty": "セッションがありません。「新しいセッション」から始めましょう",
+    "welcomeHint": "世界線変動率計をクリックして再校正、または新しいセッションを開始"
+  },
+  "history": {
+    "title": "セッション履歴",
+    "statsSessions": "セッション数",
+    "statsMessages": "メッセージ数",
+    "statsChannels": "アクティブチャネル",
+    "statsDays": "アクティブ日数",
+    "searchPlaceholder": "セッションを検索…",
+    "filterAll": "すべて",
+    "empty": "一致するセッションがありません"
+  },
+  "settings": {
+    "title": "設定",
+    "nav": {
+      "ai": "AI 設定",
+      "feishu": "飛書",
+      "language": "言語"
+    },
+    "ai": {
+      "title": "AI 設定",
+      "desc": "LLM 接続パラメータを設定（pi-ai マルチプロバイダー）。脳サービスに保存され、飛書と共有",
+      "baseUrl": "API アドレス",
+      "baseUrlPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API キー",
+      "apiKeyPlaceholder": "sk-…",
+      "model": "モデル",
+      "modelPlaceholder": "モデル ID",
+      "proxy": "プロキシ",
+      "proxyPlaceholder": "http://127.0.0.1:7890（空欄は直結）",
+      "systemPrompt": "システムプロンプト",
+      "systemPromptPlaceholder": "空欄はデフォルトの紅莉栖人格を使用",
+      "outputLanguage": "出力言語",
+      "save": "保存",
+      "savedHint": "脳サービスに保存しました",
+      "keyDefault": "サーバー既定キーが有効",
+      "keySaved": "キー保存済み（空欄のまま変更しない）",
+      "loginRequired": "先に Live2D ページでログインしてください"
+    },
+    "feishu": {
+      "title": "飛書",
+      "desc": "飛書アカウントを連携すると、飛書で Amadeus と会話できます（デスクトップとセッション共有）",
+      "status": "連携状態",
+      "unbound": "未連携",
+      "bound": "連携済み",
+      "bindCode": "連携コード",
+      "hint": "飛書でボットに DM を送り、このコードを送信して連携"
+    },
+    "language": {
+      "title": "言語",
+      "desc": "インターフェース言語",
+      "zh": "简体中文",
+      "en": "English",
+      "ja": "日本語"
+    }
+  },
+  "live2d": {
+    "login": {
+      "title": "本人認証",
+      "subtitle": "ユーザー名を入力して認証",
+      "username": "ユーザー名",
+      "usernamePlaceholder": "名前を入力",
+      "enter": "入る"
+    },
+    "toolbar": {
+      "mic": "マイク",
+      "micStop": "マイクを停止",
+      "video": "カメラ",
+      "videoStop": "カメラを停止",
+      "history": "チャット履歴",
+      "settings": "設定",
+      "chat": "チャット",
+      "logout": "ログアウト"
+    },
+    "config": {
+      "title": "設定",
+      "avatar": "アバター",
+      "ai": "AI",
+      "scale": "拡大率",
+      "positionX": "横位置",
+      "positionY": "縦位置"
+    },
+    "debug": {
+      "title": "開発者デバッグ",
+      "placeholder": "中国語テキストを入力し、音声パイプライン全体を実行（バイリンガル → TTS）",
+      "send": "送信",
+      "hint": "音声パイプライン統合後に有効"
+    },
+    "chatHistory": {
+      "title": "チャット履歴"
+    },
+    "dialogPlaceholder": "（会話内容はここに表示されます）",
+    "loading": "モデル読み込み中…",
+    "loadError": "モデルの読み込みに失敗"
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "app": {
+    "title": "Amadeus",
+    "tagline": "EL PSY KONGROO"
+  },
+  "nav": {
+    "sessions": "会话",
+    "history": "历史",
+    "settings": "设置",
+    "live2d": "Live2D"
+  },
+  "dayGroups": {
+    "today": "今天",
+    "yesterday": "昨天",
+    "thisWeek": "本周",
+    "earlier": "更早"
+  },
+  "channels": {
+    "desktop": "桌面",
+    "feishu": "飞书"
+  },
+  "common": {
+    "cancel": "取消",
+    "confirm": "确定",
+    "delete": "删除",
+    "deleted": "已删除",
+    "notAvailable": "M1 暂不可用"
+  },
+  "chat": {
+    "newSession": "新会话",
+    "inputPlaceholder": "输入消息，Enter 发送…",
+    "send": "发送",
+    "stop": "停止",
+    "typing": "正在输入",
+    "online": "在线",
+    "deleteTitle": "删除会话",
+    "deleteDesc": "确定删除该会话吗？此操作无法撤销。",
+    "empty": "暂无会话，点击上方“新会话”开始",
+    "welcomeHint": "点击世界线变动率计重新校准，或新建会话开始对话"
+  },
+  "history": {
+    "title": "会话历史",
+    "statsSessions": "会话数",
+    "statsMessages": "消息数",
+    "statsChannels": "活跃渠道",
+    "statsDays": "活跃天数",
+    "searchPlaceholder": "搜索会话…",
+    "filterAll": "全部",
+    "empty": "没有匹配的会话"
+  },
+  "settings": {
+    "title": "设置",
+    "nav": {
+      "ai": "AI 配置",
+      "feishu": "飞书",
+      "language": "语言"
+    },
+    "ai": {
+      "title": "AI 配置",
+      "desc": "配置大模型接入参数（pi-ai 多供应商接入），保存到大脑服务，桌面端与飞书共享",
+      "baseUrl": "API 地址",
+      "baseUrlPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API 密钥",
+      "apiKeyPlaceholder": "sk-…",
+      "model": "模型",
+      "modelPlaceholder": "模型 ID",
+      "proxy": "代理地址",
+      "proxyPlaceholder": "http://127.0.0.1:7890（留空直连）",
+      "systemPrompt": "系统提示词",
+      "systemPromptPlaceholder": "留空使用默认红莉栖人格",
+      "outputLanguage": "输出语言",
+      "save": "保存",
+      "savedHint": "已保存到大脑服务",
+      "keyDefault": "服务端默认密钥已生效",
+      "keySaved": "已保存密钥（留空不修改）",
+      "loginRequired": "请先在 Live2D 页面登录后配置"
+    },
+    "feishu": {
+      "title": "飞书",
+      "desc": "绑定飞书账号后，可在飞书中与 Amadeus 对话（与桌面共享会话）",
+      "status": "绑定状态",
+      "unbound": "未绑定",
+      "bound": "已绑定",
+      "bindCode": "绑定码",
+      "hint": "在飞书中私聊机器人，发送该绑定码即可完成绑定"
+    },
+    "language": {
+      "title": "语言",
+      "desc": "界面显示语言",
+      "zh": "简体中文",
+      "en": "English",
+      "ja": "日本語"
+    }
+  },
+  "live2d": {
+    "login": {
+      "title": "身份认证",
+      "subtitle": "请输入用户名以验证身份",
+      "username": "用户名",
+      "usernamePlaceholder": "输入你的名字",
+      "enter": "进入"
+    },
+    "toolbar": {
+      "mic": "麦克风",
+      "micStop": "关闭麦克风",
+      "video": "摄像头",
+      "videoStop": "关闭摄像头",
+      "history": "聊天记录",
+      "settings": "设置",
+      "chat": "聊天",
+      "logout": "退出"
+    },
+    "config": {
+      "title": "配置",
+      "avatar": "形象",
+      "ai": "AI",
+      "scale": "缩放",
+      "positionX": "水平位置",
+      "positionY": "垂直位置"
+    },
+    "debug": {
+      "title": "开发者调试",
+      "placeholder": "输入中文文本，走完整语音链路（双语言 → TTS）",
+      "send": "发送",
+      "hint": "语音链路接入后启用"
+    },
+    "chatHistory": {
+      "title": "聊天记录"
+    },
+    "dialogPlaceholder": "（对话内容将显示在这里）",
+    "loading": "模型加载中…",
+    "loadError": "模型加载失败"
+  }
+}

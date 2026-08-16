@@ -141,3 +141,18 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# electron-builder output
+release/
+
+# Claude Code
+.claude/
+
+# 临时/调试产物（E2E 测试音频、视觉调试 payload 等）
+*.tmp-*
+
+# OS / 编辑器杂项
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/

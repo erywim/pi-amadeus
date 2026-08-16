@@ -1,0 +1,43 @@
+{
+  "name": "pi-amadeus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @pi-amadeus/desktop",
+    "dev:brain": "npm run dev --workspace @pi-amadeus/brain",
+    "build": "npm run build --workspace @pi-amadeus/desktop",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "clean": "npm run clean --workspaces --if-present"
+  },
+  "overrides": {
+    "@pixi/constants": "6.5.10",
+    "@pixi/core": "6.5.10",
+    "@pixi/display": "6.5.10",
+    "@pixi/extensions": "6.5.10",
+    "@pixi/loaders": "6.5.10",
+    "@pixi/math": "6.5.10",
+    "@pixi/runner": "6.5.10",
+    "@pixi/settings": "6.5.10",
+    "@pixi/sprite": "6.5.10",
+    "@pixi/ticker": "6.5.10",
+    "@pixi/utils": "6.5.10",
+    "pixi.js": "6.5.10"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^24.13.3",
+    "eslint": "^9.39.5",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.67.0"
+  }
+}

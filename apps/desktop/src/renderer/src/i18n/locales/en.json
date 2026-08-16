@@ -1,0 +1,134 @@
+{
+  "app": {
+    "title": "Amadeus",
+    "tagline": "EL PSY KONGROO"
+  },
+  "nav": {
+    "sessions": "Sessions",
+    "history": "History",
+    "settings": "Settings",
+    "live2d": "Live2D"
+  },
+  "dayGroups": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "thisWeek": "This Week",
+    "earlier": "Earlier"
+  },
+  "channels": {
+    "desktop": "Desktop",
+    "feishu": "Feishu"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "deleted": "Deleted",
+    "notAvailable": "Not available in M1"
+  },
+  "chat": {
+    "newSession": "New Session",
+    "inputPlaceholder": "Type a message, press Enter to send…",
+    "send": "Send",
+    "stop": "Stop",
+    "typing": "Typing",
+    "online": "Online",
+    "deleteTitle": "Delete Session",
+    "deleteDesc": "Are you sure you want to delete this session? This cannot be undone.",
+    "empty": "No sessions yet. Click “New Session” to start.",
+    "welcomeHint": "Click the Divergence Meter to recalibrate, or start a new session"
+  },
+  "history": {
+    "title": "Session History",
+    "statsSessions": "Sessions",
+    "statsMessages": "Messages",
+    "statsChannels": "Active Channels",
+    "statsDays": "Active Days",
+    "searchPlaceholder": "Search sessions…",
+    "filterAll": "All",
+    "empty": "No matching sessions"
+  },
+  "settings": {
+    "title": "Settings",
+    "nav": {
+      "ai": "AI",
+      "feishu": "Feishu",
+      "language": "Language"
+    },
+    "ai": {
+      "title": "AI Configuration",
+      "desc": "Configure LLM access parameters (pi-ai multi-provider); saved to the brain service and shared with Feishu",
+      "baseUrl": "API Base URL",
+      "baseUrlPlaceholder": "https://api.example.com/v1",
+      "apiKey": "API Key",
+      "apiKeyPlaceholder": "sk-…",
+      "model": "Model",
+      "modelPlaceholder": "Model ID",
+      "proxy": "Proxy",
+      "proxyPlaceholder": "http://127.0.0.1:7890 (blank = direct)",
+      "systemPrompt": "System Prompt",
+      "systemPromptPlaceholder": "Blank uses the default Kurisu persona",
+      "outputLanguage": "Output Language",
+      "save": "Save",
+      "savedHint": "Saved to the brain service",
+      "keyDefault": "Server default key active",
+      "keySaved": "Key saved (leave blank to keep)",
+      "loginRequired": "Log in on the Live2D page first"
+    },
+    "feishu": {
+      "title": "Feishu",
+      "desc": "Bind your Feishu account to chat with Amadeus there (shares sessions with the desktop)",
+      "status": "Binding Status",
+      "unbound": "Not bound",
+      "bound": "Bound",
+      "bindCode": "Bind Code",
+      "hint": "DM the bot in Feishu and send this code to bind"
+    },
+    "language": {
+      "title": "Language",
+      "desc": "Interface language",
+      "zh": "简体中文",
+      "en": "English",
+      "ja": "日本語"
+    }
+  },
+  "live2d": {
+    "login": {
+      "title": "Identity Verification",
+      "subtitle": "Enter your username to verify",
+      "username": "Username",
+      "usernamePlaceholder": "Enter your name",
+      "enter": "Enter"
+    },
+    "toolbar": {
+      "mic": "Microphone",
+      "micStop": "Stop Microphone",
+      "video": "Camera",
+      "videoStop": "Stop Camera",
+      "history": "Chat History",
+      "settings": "Settings",
+      "chat": "Chat",
+      "logout": "Log Out"
+    },
+    "config": {
+      "title": "Configuration",
+      "avatar": "Avatar",
+      "ai": "AI",
+      "scale": "Scale",
+      "positionX": "Position X",
+      "positionY": "Position Y"
+    },
+    "debug": {
+      "title": "Developer Debug",
+      "placeholder": "Enter Chinese text to run the full voice pipeline (bilingual → TTS)",
+      "send": "Send",
+      "hint": "Enabled once the voice pipeline is integrated"
+    },
+    "chatHistory": {
+      "title": "Chat History"
+    },
+    "dialogPlaceholder": "(Conversation will appear here)",
+    "loading": "Loading model…",
+    "loadError": "Failed to load model"
+  }
+}

@@ -1,0 +1,193 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* ============================================================
+ * 语义 token（shadcn 风格）——inline 映射到 :root 变量，
+ * 运行时改变量即可整体换肤，深色为默认（无 .dark 类）。
+ * ============================================================ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--card);
+  --color-popover-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--muted);
+  --color-secondary-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--foreground);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --font-mono: var(--font-mono);
+}
+
+/* ============================================================
+ * 静态自定义色（命运石之门签名色）
+ * ============================================================ */
+@theme {
+  --color-terminal-green: #00ff66;
+  --color-terminal-green-dim: #00b84d;
+  --color-cyber-cyan: #00e5ff;
+  --color-cyber-cyan-dim: #00b8d4;
+  --color-glow-green: #a8ffcb;
+  --color-feishu-blue: #3b82f6;
+  --color-amber-sg: #f5a623;
+}
+
+/* ============================================================
+ * 深色命运石之门调色板（暗色为默认）
+ *   --background  近黑蓝（"电话微波炉房"的暗）
+ *   --primary     Amadeus 终端青
+ *   --terminal-green  CRT 荧光绿（世界线计 / 用户气泡 / 在线点）
+ * ============================================================ */
+:root {
+  --background: #050a0f;
+  --foreground: #e6edf3;
+  --card: #0d131b;
+  --card-foreground: #e6edf3;
+  --primary: #00e5ff;
+  --primary-foreground: #04141a;
+  --muted: #121a24;
+  --muted-foreground: #8b98a5;
+  --accent: #0f2027;
+  --accent-foreground: #e6edf3;
+  --destructive: #ff4d6d;
+  --border: #1c2530;
+  --ring: #00e5ff;
+  --sidebar: #0a1018;
+  --radius: 0.5rem;
+  --font-mono: 'Consolas', 'Courier New', monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden; /* 桌面应用：页面级滚动交给各区域内部滚动容器 */
+}
+
+::selection {
+  background: rgba(0, 229, 255, 0.3);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1c2530;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3646;
+}
+
+/* ============================================================
+ * CRT 效果：扫描线覆盖层 / 荧光辉光 / glitch
+ * ============================================================ */
+.crt-scanlines {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.28) 0px,
+    rgba(0, 0, 0, 0.28) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.text-glow-green {
+  text-shadow:
+    0 0 6px rgba(0, 255, 102, 0.75),
+    0 0 20px rgba(0, 255, 102, 0.35);
+}
+
+.text-glow-cyan {
+  text-shadow:
+    0 0 6px rgba(0, 229, 255, 0.75),
+    0 0 20px rgba(0, 229, 255, 0.35);
+}
+
+/* glitch 标题：RGB 分裂 + 切片跳动，非无限循环——数轮后归于平静 */
+@keyframes sg-glitch-text {
+  0% {
+    text-shadow:
+      2px 0 #ff2d55,
+      -2px 0 #00e5ff;
+    transform: translate(0);
+  }
+  10% {
+    text-shadow:
+      -3px 0 #ff2d55,
+      3px 0 #00e5ff;
+    transform: translate(1px, -1px);
+  }
+  20% {
+    text-shadow:
+      2px 0 #ff2d55,
+      -2px 0 #00e5ff;
+    transform: translate(-1px, 1px);
+  }
+  30% {
+    text-shadow:
+      -2px 0 #ff2d55,
+      2px 0 #00e5ff;
+    transform: translate(0);
+  }
+  100% {
+    text-shadow: none;
+    transform: translate(0);
+  }
+}
+
+.glitch-title {
+  animation: sg-glitch-text 1.6s steps(2, end) 0.9s 2;
+}
+
+@keyframes sg-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  93% {
+    opacity: 0.7;
+  }
+  94% {
+    opacity: 1;
+  }
+  97% {
+    opacity: 0.85;
+  }
+  98% {
+    opacity: 1;
+  }
+}
+
+.crt-flicker {
+  animation: sg-flicker 4s linear infinite;
+}

@@ -1,0 +1,177 @@
+import type { Message, Session, SseEvent, UserConfig } from '@pi-amadeus/shared'
+
+/**
+ * 大脑服务 HTTP/SSE 客户端。
+ * 单一后端（services/brain），浏览器直连：开发默认 http://localhost:3002，
+ * 可用 VITE_BRAIN_URL 覆盖。
+ */
+
+export const BRAIN_URL: string =
+  (import.meta.env.VITE_BRAIN_URL as string | undefined) ?? 'http://localhost:3002'
+
+// ---------- 身份 ----------
+
+const USER_ID_KEY = 'amadeus_user_id'
+const USERNAME_KEY = 'amadeus_username'
+
+/** 本机用户身份：localStorage 持久；首次启动按用户名（登录屏输入）建档 */
+export function getLocalUserId(): string | null {
+  return localStorage.getItem(USER_ID_KEY)
+}
+
+export function getLocalUsername(): string {
+  return localStorage.getItem(USERNAME_KEY) ?? 'amadeus-user'
+}
+
+export function setLocalUsername(username: string): void {
+  localStorage.setItem(USERNAME_KEY, username)
+}
+
+/** 解析（或创建）服务端用户：返回稳定 userId 并落 localStorage */
+export async function resolveUserId(username: string): Promise<string> {
+  const cached = localStorage.getItem(USER_ID_KEY)
+  if (cached) return cached
+  const res = await fetch(`${BRAIN_URL}/api/users/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username })
+  })
+  if (!res.ok) throw new Error(`用户建档失败: HTTP ${res.status}`)
+  const json = (await res.json()) as { userId: string }
+  localStorage.setItem(USER_ID_KEY, json.userId)
+  return json.userId
+}
+
+// ---------- 会话 / 消息 REST ----------
+
+export async function fetchSessions(userId: string): Promise<Session[]> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions?userId=${encodeURIComponent(userId)}`)
+  if (!res.ok) throw new Error(`会话列表失败: HTTP ${res.status}`)
+  const json = (await res.json()) as { sessions: Session[] }
+  return json.sessions
+}
+
+export async function fetchMessages(sessionId: string): Promise<Message[]> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}/messages`)
+  if (!res.ok) throw new Error(`消息加载失败: HTTP ${res.status}`)
+  const json = (await res.json()) as { messages: Message[] }
+  return json.messages
+}
+
+export async function deleteSessionApi(sessionId: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error(`会话删除失败: HTTP ${res.status}`)
+}
+
+// ---------- 用户配置（Postgres 单一来源） ----------
+
+export type ApiKeyStatus = 'default' | 'custom' | 'none'
+
+export interface UserConfigResponse {
+  config: UserConfig
+  keyStatus: ApiKeyStatus
+}
+
+/** 读取服务端配置；apiKey 永远是被掩码的（响应不回传完整密钥） */
+export async function fetchUserConfig(userId: string): Promise<UserConfigResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/config/${encodeURIComponent(userId)}`)
+  if (!res.ok) throw new Error(`配置读取失败: HTTP ${res.status}`)
+  return (await res.json()) as UserConfigResponse
+}
+
+/** 保存配置；provider.apiKey 留空 = 保持服务端已有密钥不变 */
+export async function saveUserConfig(userId: string, config: UserConfig): Promise<UserConfigResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/config/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config })
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`配置保存失败: HTTP ${res.status} ${text.slice(0, 120)}`)
+  }
+  return (await res.json()) as UserConfigResponse
+}
+
+// ---------- SSE ----------
+
+interface TurnBody {
+  userId: string
+  sessionId: string
+  content?: string
+  text?: string
+}
+
+/**
+ * 发起一个回合的 SSE 流。onEvent 按事件回调；返回 AbortController 用于中途停止。
+ * 网络错误抛出；done 事件正常结束流。
+ */
+function runTurn(
+  endpoint: '/api/chat' | '/api/voice',
+  body: TurnBody,
+  onEvent: (event: SseEvent) => void
+): AbortController {
+  const controller = new AbortController()
+  void (async () => {
+    const res = await fetch(`${BRAIN_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    })
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`大脑服务 ${res.status}: ${text.slice(0, 120)}`)
+    }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let nl: number
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl).trim()
+        buffer = buffer.slice(nl + 1)
+        if (line.startsWith('data:')) {
+          const payload = line.slice(5).trim()
+          if (payload && payload !== '[DONE]') {
+            // 事件处理器的异常（如音频解码失败）不允许中断整条流，
+            // 否则 done/后续事件会丢失
+            try {
+              onEvent(JSON.parse(payload) as SseEvent)
+            } catch (error) {
+              console.error('[sse] 事件处理异常：', error)
+            }
+          }
+        }
+      }
+    }
+  })().catch((error: unknown) => {
+    if (controller.signal.aborted) return
+    onEvent({
+      type: 'error',
+      message: error instanceof Error ? error.message : String(error)
+    })
+  })
+  return controller
+}
+
+/** 文本回合（仅中文） */
+export function startChatTurn(
+  body: { userId: string; sessionId: string; content: string },
+  onEvent: (event: SseEvent) => void
+): AbortController {
+  return runTurn('/api/chat', body, onEvent)
+}
+
+/** 语音回合（双语言 + TTS 音频） */
+export function startVoiceTurn(
+  body: { userId: string; sessionId: string; text: string },
+  onEvent: (event: SseEvent) => void
+): AbortController {
+  return runTurn('/api/voice', body, onEvent)
+}

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./app-icon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Amadeus</title>
+    <!-- Cubism Core（经典 IIFE 脚本，定义 window.Live2DCubismCore）。
+         必须保持经典 script 且位于 module 入口之前：
+         pixi-live2d-display 在运行时硬性检查该全局（npm 包内不含 Core）。 -->
+    <!-- 相对路径（经典属性不进 Vite 管线）：dev 各路由目录均为 '/'，build base './' 下 file:// 可用 -->
+    <script src="./live2d/live2dcubismcore.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

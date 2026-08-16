@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Node 24 原生 type stripping 直接运行 .ts：无需 emit，
+    // 相对导入带 .ts 后缀（allowImportingTsExtensions 配合 noEmit）。
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "types": ["node"]
+  },
+  "include": ["src"]
+}
