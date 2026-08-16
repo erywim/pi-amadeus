@@ -1,4 +1,5 @@
 import type { Emotion } from './emotion.ts'
+import type { ToolStatus } from './sse.ts'
 
 /** 渠道：桌面客户端 / 飞书机器人，会话按渠道存同一数据库 */
 export type Channel = 'desktop' | 'feishu'
@@ -53,6 +54,25 @@ export function dayGroupOf(ts: number, now: Date = new Date()): DayGroup {
 
 export const DAY_GROUP_ORDER: readonly DayGroup[] = ['today', 'yesterday', 'thisWeek', 'earlier']
 
+/** 本回合单个工具的执行活动（不落库，仅流式期间展示） */
+export interface ToolActivityItem {
+  toolCallId: string
+  toolName: string
+  args: Record<string, unknown>
+  status: ToolStatus
+  /** 部分输出 / 结果摘要（快照式，可空） */
+  summary?: string
+  details?: Record<string, unknown>
+}
+
+/** 待用户确认的 bash 命令（同时最多一个） */
+export interface PendingToolConfirm {
+  toolCallId: string
+  toolName: string
+  args: Record<string, unknown>
+  expiresAt: number
+}
+
 /** 助手消息的临时流式状态（不落库，仅内存/传输态） */
 export interface StreamState {
   streaming: boolean
@@ -62,4 +82,10 @@ export interface StreamState {
     content: string
     emotion?: Emotion
   }
+  /** 本回合 turnId（首个 tool 事件到来时设置） */
+  turnId?: string
+  /** 本回合工具活动列表（回合结束清空） */
+  tools: ToolActivityItem[]
+  /** 待确认的 bash 命令 */
+  pendingConfirm?: PendingToolConfirm
 }

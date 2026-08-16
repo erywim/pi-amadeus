@@ -15,6 +15,9 @@ export interface BrainConfig {
   whisper: { apiKey: string; baseUrl: string; model: string; proxy: string }
   fish: { apiKey: string; voice: string; endpoint: string; model: string; sampleRate: number; proxy: string }
   feishu: { enabled: boolean; appId: string; appSecret: string; domain: 'feishu' | 'lark' }
+  tools: { tavilyKey: string; confirmTimeoutMs: number; bashCwd: string }
+  /** skill 文件目录（SKILL.md 形式，复用 pi loadSkills 加载） */
+  skills: { dir: string }
 }
 
 export function loadConfig(): BrainConfig {
@@ -51,6 +54,15 @@ export function loadConfig(): BrainConfig {
       appId: env('FEISHU_APP_ID'),
       appSecret: env('FEISHU_APP_SECRET'),
       domain: env('FEISHU_DOMAIN', 'feishu') === 'lark' ? 'lark' : 'feishu'
+    },
+    tools: {
+      tavilyKey: env('TAVILY_API_KEY'),
+      confirmTimeoutMs: Number(env('TOOL_CONFIRM_TIMEOUT_MS', '60000')) || 60000,
+      bashCwd: env('BASH_TOOL_CWD', process.cwd())
+    },
+    skills: {
+      // 默认 services/brain/skills/；目录不存在时 loadSkills 静默跳过
+      dir: env('SKILLS_DIR', resolve(import.meta.dirname, '../skills'))
     }
   }
 }

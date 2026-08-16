@@ -8,7 +8,9 @@ import { configRoutes } from './routes/config.ts'
 import { feishuRoutes } from './routes/feishu.ts'
 import { frameRoutes } from './routes/frames.ts'
 import { sessionRoutes } from './routes/sessions.ts'
+import { skillRoutes } from './routes/skills.ts'
 import { sttRoutes } from './routes/stt.ts'
+import { toolConfirmRoutes } from './routes/tool-confirm.ts'
 import { userRoutes } from './routes/users.ts'
 import { voiceRoutes } from './routes/voice.ts'
 
@@ -32,6 +34,8 @@ app.route('/api', userRoutes(db))
 app.route('/api', configRoutes(cfg, db))
 app.route('/api', sttRoutes(cfg))
 app.route('/api', frameRoutes())
+app.route('/api', skillRoutes(cfg))
+app.route('/api', toolConfirmRoutes())
 if (cfg.feishu.enabled) {
   app.route('/api', feishuRoutes(cfg, db))
 }

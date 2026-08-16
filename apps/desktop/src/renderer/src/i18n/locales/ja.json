@@ -36,7 +36,31 @@
     "deleteTitle": "セッションを削除",
     "deleteDesc": "このセッションを削除しますか？この操作は取り消せません。",
     "empty": "セッションがありません。「新しいセッション」から始めましょう",
-    "welcomeHint": "世界線変動率計をクリックして再校正、または新しいセッションを開始"
+    "welcomeHint": "世界線変動率計をクリックして再校正、または新しいセッションを開始",
+    "toolName": {
+      "get_time": "時刻",
+      "calculate": "計算機",
+      "weather": "天気",
+      "search": "ウェブ検索",
+      "bash": "ターミナル",
+      "use_skill": "スキル読込"
+    },
+    "toolStatus": {
+      "running": "実行中",
+      "success": "成功",
+      "error": "失敗",
+      "denied": "拒否されました",
+      "timeout": "タイムアウト",
+      "blocked": "ブロックされました"
+    },
+    "toolExpand": "結果を展開",
+    "toolCollapse": "結果を折りたたむ",
+    "toolConfirmTitle": "ターミナルコマンドの確認",
+    "toolConfirmDesc": "アシスタントが本機で以下のコマンドを実行しようとしています。安全を確認してください：",
+    "toolApprove": "許可する",
+    "toolReject": "拒否する",
+    "toolConfirmExpires": "{{seconds}} 秒後に自動拒否",
+    "toolConfirmExpired": "タイムアウトしました。コマンドは実行されていません"
   },
   "history": {
     "title": "セッション履歴",
@@ -53,6 +77,7 @@
     "nav": {
       "ai": "AI 設定",
       "feishu": "飛書",
+      "skills": "スキル",
       "language": "言語"
     },
     "ai": {
@@ -73,7 +98,9 @@
       "savedHint": "脳サービスに保存しました",
       "keyDefault": "サーバー既定キーが有効",
       "keySaved": "キー保存済み（空欄のまま変更しない）",
-      "loginRequired": "先に Live2D ページでログインしてください"
+      "loginRequired": "先に Live2D ページでログインしてください",
+      "toolsEnable": "ツール呼び出し",
+      "toolsDesc": "アシスタントに時刻・計算機・天気・検索・ターミナルコマンドなどのツール使用を許可（危険なコマンドは安全ポリシーでブロック）"
     },
     "feishu": {
       "title": "飛書",
@@ -83,6 +110,15 @@
       "bound": "連携済み",
       "bindCode": "連携コード",
       "hint": "飛書でボットに DM を送り、このコードを送信して連携"
+    },
+    "skills": {
+      "title": "スキル管理",
+      "desc": "スキルはファイル形式で管理します（スキルごとにディレクトリ、中に SKILL.md）。タスクが一致するとアシスタントが対応スキルを読み込みます。切替は即時反映、ファイル編集に再起動は不要です",
+      "openDir": "ディレクトリを開く",
+      "openFailed": "ディレクトリを開けませんでした",
+      "empty": "スキルがありません。下のディレクトリに <スキル名>/SKILL.md（YAML ヘッダに name と description を記載）を作成してから更新してください",
+      "refresh": "更新",
+      "manualOnly": "手動"
     },
     "language": {
       "title": "言語",

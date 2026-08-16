@@ -175,3 +175,51 @@ export function startVoiceTurn(
 ): AbortController {
   return runTurn('/api/voice', body, onEvent)
 }
+
+// ---------- 工具确认回执 ----------
+
+/** bash 工具确认卡的应答（tool_confirm 事件的回执） */
+export async function confirmTool(input: {
+  turnId: string
+  toolCallId: string
+  approved: boolean
+}): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/tool-confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(`确认提交失败: HTTP ${res.status}`)
+}
+
+// ---------- skill 管理 ----------
+
+export interface SkillInfo {
+  name: string
+  description: string
+  filePath: string
+  enabled: boolean
+  disableModelInvocation?: boolean
+}
+
+export interface SkillListResponse {
+  dir: string
+  skills: SkillInfo[]
+}
+
+/** skill 列表（文件形式，目录在服务端） */
+export async function fetchSkills(): Promise<SkillListResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/skills`)
+  if (!res.ok) throw new Error(`skill 列表失败: HTTP ${res.status}`)
+  return (await res.json()) as SkillListResponse
+}
+
+/** 启停单个 skill（状态持久化在服务端 skill 目录内） */
+export async function setSkillEnabledApi(name: string, enabled: boolean): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/skills/${encodeURIComponent(name)}/enabled`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
+  })
+  if (!res.ok) throw new Error(`skill 启停失败: HTTP ${res.status}`)
+}

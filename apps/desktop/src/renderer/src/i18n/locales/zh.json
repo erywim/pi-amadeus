@@ -36,7 +36,31 @@
     "deleteTitle": "删除会话",
     "deleteDesc": "确定删除该会话吗？此操作无法撤销。",
     "empty": "暂无会话，点击上方“新会话”开始",
-    "welcomeHint": "点击世界线变动率计重新校准，或新建会话开始对话"
+    "welcomeHint": "点击世界线变动率计重新校准，或新建会话开始对话",
+    "toolName": {
+      "get_time": "查询时间",
+      "calculate": "计算器",
+      "weather": "天气查询",
+      "search": "联网搜索",
+      "bash": "终端命令",
+      "use_skill": "读取技能"
+    },
+    "toolStatus": {
+      "running": "执行中",
+      "success": "成功",
+      "error": "失败",
+      "denied": "已拒绝",
+      "timeout": "超时",
+      "blocked": "已拦截"
+    },
+    "toolExpand": "展开结果",
+    "toolCollapse": "收起结果",
+    "toolConfirmTitle": "终端命令确认",
+    "toolConfirmDesc": "助手请求在本机执行以下命令，请确认无害后放行：",
+    "toolApprove": "允许执行",
+    "toolReject": "拒绝",
+    "toolConfirmExpires": "{{seconds}} 秒后自动拒绝",
+    "toolConfirmExpired": "已超时，命令未执行"
   },
   "history": {
     "title": "会话历史",
@@ -53,6 +77,7 @@
     "nav": {
       "ai": "AI 配置",
       "feishu": "飞书",
+      "skills": "技能",
       "language": "语言"
     },
     "ai": {
@@ -73,7 +98,9 @@
       "savedHint": "已保存到大脑服务",
       "keyDefault": "服务端默认密钥已生效",
       "keySaved": "已保存密钥（留空不修改）",
-      "loginRequired": "请先在 Live2D 页面登录后配置"
+      "loginRequired": "请先在 Live2D 页面登录后配置",
+      "toolsEnable": "工具调用",
+      "toolsDesc": "允许助手使用时间/计算器/天气/搜索/终端命令等工具（危险命令会被安全策略拦截）"
     },
     "feishu": {
       "title": "飞书",
@@ -83,6 +110,15 @@
       "bound": "已绑定",
       "bindCode": "绑定码",
       "hint": "在飞书中私聊机器人，发送该绑定码即可完成绑定"
+    },
+    "skills": {
+      "title": "技能管理",
+      "desc": "技能以文件形式存在（每个技能一个目录，内含 SKILL.md）。助手会在任务匹配时读取对应技能；停用后立即生效，编辑文件无需重启",
+      "openDir": "打开目录",
+      "openFailed": "打开目录失败",
+      "empty": "暂无技能。在下方目录中创建 <技能名>/SKILL.md（含 name 与 description 的 YAML 头）后刷新即可",
+      "refresh": "刷新",
+      "manualOnly": "手动"
     },
     "language": {
       "title": "语言",

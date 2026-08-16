@@ -1,14 +1,15 @@
 import * as React from 'react'
 import { useState } from 'react'
-import { Bot, Languages, Send } from 'lucide-react'
+import { Bot, Languages, Send, Sparkles } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import { AiPanel } from './AiPanel'
 import { FeishuPanel } from './FeishuPanel'
 import { LanguagePanel } from './LanguagePanel'
+import { SkillsPanel } from './SkillsPanel'
 
-type Section = 'ai' | 'feishu' | 'language'
+type Section = 'ai' | 'feishu' | 'skills' | 'language'
 
 /** 设置页：220px 分类导航 + 右侧面板 */
 export default function SettingsPage(): React.JSX.Element {
@@ -18,6 +19,7 @@ export default function SettingsPage(): React.JSX.Element {
   const items: Array<{ key: Section; icon: LucideIcon; label: string }> = [
     { key: 'ai', icon: Bot, label: t('settings.nav.ai') },
     { key: 'feishu', icon: Send, label: t('settings.nav.feishu') },
+    { key: 'skills', icon: Sparkles, label: t('settings.nav.skills') },
     { key: 'language', icon: Languages, label: t('settings.nav.language') }
   ]
 
@@ -44,6 +46,7 @@ export default function SettingsPage(): React.JSX.Element {
       <div className="min-w-0 flex-1 overflow-y-auto p-6">
         {section === 'ai' && <AiPanel />}
         {section === 'feishu' && <FeishuPanel />}
+        {section === 'skills' && <SkillsPanel />}
         {section === 'language' && <LanguagePanel />}
       </div>
     </div>

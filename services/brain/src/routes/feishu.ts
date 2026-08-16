@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
+import { runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
 import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
-import { finishTurn, prepareTurn } from '../conversation.ts'
-import { streamText } from '../llm.ts'
+import { finishTurn } from '../conversation.ts'
 
 /**
  * 飞书渠道：与桌面共享同一对话服务与数据库（channel='feishu'）。
@@ -80,21 +80,34 @@ export function feishuRoutes(cfg: BrainConfig, db: Db): Hono {
     }
     const sessionId = `feishu-${chatId}`
 
-    const { target, systemPrompt, messages } = await prepareTurn({
+    // 工具版回合（渠道 feishu：注册表不含 bash，无确认通道；工具事件仅日志）
+    const run = runAgentTurn({
       cfg,
       db,
       userId: user.id,
       sessionId,
       channel: 'feishu',
       mode: 'text',
-      content: text
+      content: text,
+      signal: AbortSignal.timeout(300_000),
+      temperature: 0.7
     })
 
     let full = ''
-    for await (const delta of streamText(target, { systemPrompt, messages }, { temperature: 0.7 })) {
-      full += delta
+    let target: AgentTurnResult['target'] | null = null
+    let next = await run.next()
+    while (!next.done) {
+      const ev = next.value
+      if (ev.type.startsWith('tool')) {
+        console.log(`[feishu][tool] ${ev.type} ${'toolName' in ev ? ev.toolName : ''}`)
+      } else if (ev.type === 'delta') {
+        full += ev.delta
+      }
+      next = await run.next()
     }
-    if (!full) return '……（大脑空空如也，哼）'
+    full = next.value.full || full
+    target = next.value.target
+    if (!full || !target) return '……（大脑空空如也，哼）'
 
     await finishTurn(db, {
       sessionId,

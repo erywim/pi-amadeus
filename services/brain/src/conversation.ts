@@ -41,7 +41,8 @@ export function defaultUserConfig(cfg: BrainConfig): UserConfig {
     provider: { baseUrl: cfg.llm.baseUrl, apiKey: '', model: cfg.llm.model },
     outputLanguage: 'zh',
     systemPrompt: '',
-    temperature: 0.8
+    temperature: 0.8,
+    tools: { enabled: true }
   }
 }
 
@@ -62,6 +63,8 @@ export interface PreparedTurn {
   systemPrompt: string
   /** 含本次用户消息的完整 LLM 上下文消息 */
   messages: ReturnType<typeof toContextMessages>
+  /** prepareTurn 已读取的用户配置（工具开关等，避免调用方二次 DB 读） */
+  userConfig: UserConfig | null
 }
 
 /** 会话上下文准备：懒建会话行、保存用户消息、组装 LLM 上下文 */
@@ -109,7 +112,7 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     : { role: 'user' as const, content, timestamp: Date.now() }
   messages.push(userMessage)
 
-  return { target, systemPrompt, messages }
+  return { target, systemPrompt, messages, userConfig: storedConfig }
 }
 
 /** 保存助手消息 + 首轮触发异步标题生成 */

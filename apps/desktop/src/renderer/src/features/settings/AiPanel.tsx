@@ -7,6 +7,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/components/ui/select'
+import { Switch } from '@renderer/components/ui/switch'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
@@ -128,6 +129,16 @@ export function AiPanel(): React.JSX.Element {
               <SelectItem value="ja">{t('settings.language.ja')}</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label>{t('settings.ai.toolsEnable')}</Label>
+            <p className="text-xs text-muted-foreground">{t('settings.ai.toolsDesc')}</p>
+          </div>
+          <Switch
+            checked={form.tools?.enabled ?? true}
+            onCheckedChange={(checked) => setForm({ ...form, tools: { enabled: checked } })}
+          />
         </div>
         <Button onClick={save} disabled={!userId || !configLoaded || saving}>
           {t('settings.ai.save')}

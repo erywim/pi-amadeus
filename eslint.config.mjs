@@ -52,7 +52,10 @@ export default tseslint.config(
         Buffer: 'readonly',
         TextDecoder: 'readonly',
         WebSocket: 'readonly',
-        fetch: 'readonly'
+        fetch: 'readonly',
+        AbortController: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly'
       }
     }
   }

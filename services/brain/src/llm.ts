@@ -2,6 +2,7 @@ import { createModels, createProvider } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
 import type { Context, Model, MutableModels } from '@earendil-works/pi-ai'
+import type { StreamFn } from '@earendil-works/pi-agent-core'
 
 /**
  * pi-ai 接入层：把用户配置（baseUrl/apiKey/model）映射为一个
@@ -89,7 +90,7 @@ export function getLlm(target: LlmTarget): LlmEntry {
 }
 
 /** proxy 配置下的 fetch（undici ProxyAgent；Node 内置 fetch 与 npm undici 不配对） */
-function proxyFetch(proxy: string): typeof globalThis.fetch {
+export function proxyFetch(proxy: string): typeof globalThis.fetch {
   const agent = new ProxyAgent(proxy)
   const f = (input: Parameters<typeof undiciFetch>[0], init?: Parameters<typeof undiciFetch>[1]) =>
     undiciFetch(input, { ...(init ?? {}), dispatcher: agent })
@@ -124,6 +125,23 @@ export async function completeText(
   let out = ''
   for await (const delta of streamText(target, context, options)) out += delta
   return out
+}
+
+/**
+ * 为 pi-agent-core Agent 构造 streamFn：绑定目标模型，逐请求注入
+ * apiKey / temperature / maxTokens / 代理 fetch。Agent 循环每次 LLM 调用
+ * 都会携带 context.tools 与 options.signal（回合 abort），这里透传即可。
+ */
+export function createAgentStreamFn(target: LlmTarget, opts?: StreamOptions): StreamFn {
+  const { models } = getLlm(target)
+  return (model, context, options) =>
+    models.stream(model, context, {
+      ...options,
+      apiKey: target.apiKey,
+      temperature: opts?.temperature ?? options?.temperature,
+      maxTokens: opts?.maxTokens ?? options?.maxTokens,
+      ...(target.proxy ? { fetch: proxyFetch(target.proxy) } : {})
+    })
 }
 
 /** 把中文消息历史转成 pi-ai Context 消息（v1：内容只拼中文，不进日文 tts_text） */

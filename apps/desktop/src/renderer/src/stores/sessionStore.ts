@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import type { Message, Session, StreamState } from '@pi-amadeus/shared'
+import type { Message, Session, StreamState, ToolStatus } from '@pi-amadeus/shared'
 import {
+  confirmTool,
   deleteSessionApi,
   fetchMessages,
   fetchSessions,
@@ -35,6 +36,8 @@ interface SessionState {
   deleteSession: (id: string) => void
   sendMessage: (text: string) => void
   stopStreaming: () => void
+  /** bash 确认卡应答（允许/拒绝） */
+  respondToolConfirm: (approved: boolean) => void
 }
 
 export const useSessionStore = create<SessionState>()((set, get) => {
@@ -44,14 +47,14 @@ export const useSessionStore = create<SessionState>()((set, get) => {
   function endStream(): void {
     abortTurn?.abort()
     abortTurn = null
-    set({ stream: { streaming: false } })
+    set({ stream: { streaming: false, tools: [] } })
   }
 
   return {
     sessions: [],
     messages: {},
     activeSessionId: null,
-    stream: { streaming: false },
+    stream: { streaming: false, tools: [] },
     userId: null,
     initialized: false,
 
@@ -164,7 +167,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           [sessionId]: [...(s.messages[sessionId] ?? []), userMessage]
         },
         sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
-        stream: { streaming: true, draft: { messageId: draftId, content: '' } }
+        stream: { streaming: true, draft: { messageId: draftId, content: '' }, tools: [] }
       }))
 
       abortTurn = startChatTurn({ userId, sessionId, content: trimmed }, (event) => {
@@ -173,12 +176,72 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         switch (event.type) {
           case 'delta':
             if (!draft) return
-            set({
+            set((s) => ({
               stream: {
+                ...s.stream,
                 streaming: true,
                 draft: { ...draft, content: draft.content + event.delta }
               }
-            })
+            }))
+            return
+          case 'tool_start':
+            set((s) => ({
+              stream: {
+                ...s.stream,
+                turnId: event.turnId,
+                tools: [
+                  ...s.stream.tools.filter((t) => t.toolCallId !== event.toolCallId),
+                  {
+                    toolCallId: event.toolCallId,
+                    toolName: event.toolName,
+                    args: event.args,
+                    status: 'running'
+                  }
+                ]
+              }
+            }))
+            return
+          case 'tool_update':
+            set((s) => ({
+              stream: {
+                ...s.stream,
+                tools: s.stream.tools.map((t) =>
+                  t.toolCallId === event.toolCallId ? { ...t, summary: event.partial } : t
+                )
+              }
+            }))
+            return
+          case 'tool_end': {
+            const denied = (event.details as { deniedReason?: string } | undefined)?.deniedReason
+            let status: ToolStatus = event.isError ? 'error' : 'success'
+            if (denied === 'blocked') status = 'blocked'
+            else if (denied === 'user_denied') status = 'denied'
+            else if (denied === 'timeout') status = 'timeout'
+            set((s) => ({
+              stream: {
+                ...s.stream,
+                tools: s.stream.tools.map((t) =>
+                  t.toolCallId === event.toolCallId
+                    ? { ...t, status, summary: event.result || undefined, details: event.details }
+                    : t
+                )
+              }
+            }))
+            return
+          }
+          case 'tool_confirm':
+            set((s) => ({
+              stream: {
+                ...s.stream,
+                turnId: event.turnId,
+                pendingConfirm: {
+                  toolCallId: event.toolCallId,
+                  toolName: event.toolName,
+                  args: event.args,
+                  expiresAt: event.expiresAt
+                }
+              }
+            }))
             return
           case 'emotion':
             useLive2dStore.getState().setEmotion(event.emotion)
@@ -200,7 +263,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
                 ...s.messages,
                 [sessionId]: [...(s.messages[sessionId] ?? []), assistantMessage]
               },
-              stream: { streaming: false }
+              stream: { streaming: false, tools: [] }
             }))
             abortTurn = null
             // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
@@ -220,6 +283,24 @@ export const useSessionStore = create<SessionState>()((set, get) => {
 
     stopStreaming: () => {
       endStream()
+    },
+
+    respondToolConfirm: (approved) => {
+      const { stream } = get()
+      const confirm = stream.pendingConfirm
+      if (!confirm) return
+      // 乐观清除卡片；服务端回执失败且回合仍在流时恢复
+      set((s) => ({ stream: { ...s.stream, pendingConfirm: undefined } }))
+      void confirmTool({
+        turnId: stream.turnId ?? '',
+        toolCallId: confirm.toolCallId,
+        approved
+      }).catch((error) => {
+        console.warn('[session] 工具确认回执失败：', error)
+        if (get().stream.streaming && !get().stream.pendingConfirm) {
+          set((s) => ({ stream: { ...s.stream, pendingConfirm: confirm } }))
+        }
+      })
     }
   }
 })
