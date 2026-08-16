@@ -13,6 +13,7 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace @pi-amadeus/desktop",
+    "dev:all": "node scripts/dev.mjs",
     "dev:brain": "npm run dev --workspace @pi-amadeus/brain",
     "build": "npm run build --workspace @pi-amadeus/desktop",
     "typecheck": "npm run typecheck --workspaces --if-present",

@@ -11,6 +11,7 @@ import {
   startChatTurn
 } from '@renderer/lib/api'
 import { useLive2dStore } from './live2dStore'
+import { useLive2dSpeechStore } from './live2dSpeechStore'
 
 /**
  * 会话状态（真实后端）：sessions 列表 + 按会话懒加载的 messages 缓存 +
@@ -176,6 +177,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         switch (event.type) {
           case 'delta':
             if (!draft) return
+            // 说话打点：驱动引擎 speaking 状态（手势/点头），时间戳单调合并
+            useLive2dSpeechStore.getState().markSpeaking()
             set((s) => ({
               stream: {
                 ...s.stream,

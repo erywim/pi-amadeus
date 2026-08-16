@@ -24,7 +24,10 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      // 窗口最小化/遮挡时 Chromium 会暂停 RAF 与定时器，Live2D 渲染循环
+      // 随之冻结（语音通话中口型/表情也会停）。关闭节流保持动画常跑。
+      backgroundThrottling: false
     }
   })
 

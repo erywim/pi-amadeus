@@ -3,6 +3,7 @@ import { BRAIN_URL, startVoiceTurn } from './api'
 import { VadProcessor, type SpeechSegment } from './vad'
 import { enqueuePcm, stopTtsPlayback } from './ttsPlayer'
 import { useLive2dStore } from '@renderer/stores/live2dStore'
+import { useLive2dSpeechStore } from '@renderer/stores/live2dSpeechStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
@@ -40,15 +41,19 @@ export function startAssistantVoiceTurn(text: string): boolean {
         useLive2dStore.getState().setEmotion(event.emotion)
         return
       case 'audio':
+        // 说话打点：驱动引擎 speaking 状态（手势/点头），时间戳单调合并
+        useLive2dSpeechStore.getState().markSpeaking()
         enqueuePcm(event.data, event.sampleRate)
         return
       case 'done': {
         voiceAbort = null
+        useLive2dSpeechStore.getState().setVoiceActive(false)
         void useSessionStore.getState().refreshSession(sessionId)
         return
       }
       case 'error':
         voiceAbort = null
+        useLive2dSpeechStore.getState().setVoiceActive(false)
         console.warn('[voice] 回合出错：', event.message)
         toast.error('呜……大脑好像短路了，等会儿再试吧')
         return
@@ -56,6 +61,7 @@ export function startAssistantVoiceTurn(text: string): boolean {
         return
     }
   })
+  useLive2dSpeechStore.getState().setVoiceActive(true)
   return true
 }
 
@@ -64,6 +70,7 @@ export function stopAssistantVoiceTurn(): void {
   voiceAbort?.abort()
   voiceAbort = null
   stopTtsPlayback()
+  useLive2dSpeechStore.getState().setVoiceActive(false)
 }
 
 // ---------- 麦克风：VAD 切段 → STT ----------

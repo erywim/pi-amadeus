@@ -8,8 +8,7 @@ import type { Emotion } from '@pi-amadeus/shared'
  */
 interface Live2dState {
   emotion: Emotion
-  motion: { group: string; index: number } | null
-  /** 口型开合值 0..1。M1 由静音正弦 LFO 假驱动，M4 换真实 TTS 幅度 */
+  /** 口型开合值 0..1：ttsPlayer 用 AnalyserNode 实时 RMS 驱动 */
   lipSyncValue: number
   avatar: {
     scale: number
@@ -18,7 +17,6 @@ interface Live2dState {
   }
 
   setEmotion: (emotion: Emotion) => void
-  setMotion: (motion: { group: string; index: number } | null) => void
   setLipSyncValue: (value: number) => void
   setAvatar: (patch: Partial<Live2dState['avatar']>) => void
 }
@@ -33,12 +31,10 @@ export const useLive2dStore = create<Live2dState>()(
   persist(
     (set) => ({
       emotion: 'neutral',
-      motion: null,
       lipSyncValue: 0,
       avatar: DEFAULT_AVATAR,
 
       setEmotion: (emotion) => set({ emotion }),
-      setMotion: (motion) => set({ motion }),
       setLipSyncValue: (lipSyncValue) => set({ lipSyncValue }),
       setAvatar: (patch) => set((s) => ({ avatar: { ...s.avatar, ...patch } }))
     }),
