@@ -152,7 +152,11 @@
       "ai": "AI",
       "scale": "Scale",
       "positionX": "Position X",
-      "positionY": "Position Y"
+      "positionY": "Position Y",
+      "expressions": "Expressions",
+      "emotions": "Emotions",
+      "gestures": "Gestures",
+      "previewHint": "Click to preview. During voice chat the AI switches expressions and gestures automatically."
     },
     "debug": {
       "title": "Developer Debug",
@@ -165,6 +169,48 @@
     },
     "dialogPlaceholder": "(Conversation will appear here)",
     "loading": "Loading model…",
-    "loadError": "Failed to load model"
+    "loadError": "Failed to load model",
+    "emotion": {
+      "neutral": "Neutral",
+      "smile": "Smile",
+      "happy": "Happy",
+      "laugh": "Laugh",
+      "smug": "Smug",
+      "teasing": "Teasing",
+      "excited": "Excited",
+      "curious": "Curious",
+      "thinking": "Thinking",
+      "confused": "Confused",
+      "surprised": "Surprised",
+      "shocked": "Shocked",
+      "shy": "Shy",
+      "flustered": "Flustered",
+      "tsundere": "Tsundere",
+      "annoyed": "Annoyed",
+      "angry": "Angry",
+      "disdain": "Disdain",
+      "sad": "Sad",
+      "crying": "Crying",
+      "gloomy": "Gloomy",
+      "worried": "Worried",
+      "nervous": "Nervous",
+      "speechless": "Speechless",
+      "sleepy": "Sleepy"
+    },
+    "gesture": {
+      "nod": "Nod",
+      "shake": "Shake head",
+      "tilt": "Tilt head",
+      "lookaway": "Look away",
+      "hmph": "Hmph",
+      "sigh": "Sigh",
+      "lean": "Lean in",
+      "startle": "Startle",
+      "wink": "Wink",
+      "eyeroll": "Eye roll",
+      "giggle": "Giggle",
+      "crossarms": "Cross arms",
+      "uncross": "Uncross arms"
+    }
   }
 }

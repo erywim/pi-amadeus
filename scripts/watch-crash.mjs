@@ -97,7 +97,7 @@ async function main() {
   console.log('基线(2s):', probe.value)
 
   // 复现序列：切表情 + 播动作
-  await evalJs(cdp, `window.__live2d.setExpression('joy')`)
+  await evalJs(cdp, `window.__live2d.emote('joy')`)
   await sleep(800)
   await evalJs(cdp, `window.__live2d.motionLayer.play('joy', 0, 3, 1)`)
   await sleep(2000)
@@ -109,7 +109,7 @@ async function main() {
   console.log('动作后(4s):', probe.value)
 
   // 切表情到 sadness 再观察
-  await evalJs(cdp, `window.__live2d.setExpression('sadness')`)
+  await evalJs(cdp, `window.__live2d.emote('sadness')`)
   await sleep(2000)
   probe = await evalJs(cdp, `JSON.stringify(window.__probe)`)
   console.log('sadness后(2s):', probe.value)

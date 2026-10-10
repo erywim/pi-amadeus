@@ -189,7 +189,7 @@ async function testVoice(cdp) {
     cdp,
     `(() => {
       // ttsPlayer 的 AudioContext 未暴露；以 lipSync 非零历史 + 无报错判断
-      return window.__amadeus.live2dStore.getState().lipSyncValue
+      return window.__amadeus.live2dSpeechStore.getState().lipSyncValue
     })()`
   )
   report('TTS 播放（口型驱动值观察）', typeof audioState === 'number')

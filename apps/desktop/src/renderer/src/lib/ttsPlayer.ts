@@ -1,4 +1,4 @@
-import { useLive2dStore } from '@renderer/stores/live2dStore'
+import { useLive2dSpeechStore } from '@renderer/stores/live2dSpeechStore'
 
 /**
  * TTS PCM 播放器：把 /api/voice SSE 的 base64 PCM16 单声道块转成
@@ -40,11 +40,11 @@ function startLipSyncLoop(): void {
     const rms = Math.sqrt(sum / samplesBuf.length)
     // 播放结束（调度时间耗尽且缓冲区基本静音）→ 口型归零
     if (ctx.currentTime > scheduledUntil + 0.1 && rms < 0.004) {
-      useLive2dStore.getState().setLipSyncValue(0)
+      useLive2dSpeechStore.getState().setLipSyncValue(0)
       rafId = null
       return
     }
-    useLive2dStore.getState().setLipSyncValue(Math.min(1, rms * LIP_SYNC_GAIN))
+    useLive2dSpeechStore.getState().setLipSyncValue(Math.min(1, rms * LIP_SYNC_GAIN))
     rafId = requestAnimationFrame(tick)
   }
   rafId = requestAnimationFrame(tick)
@@ -103,5 +103,5 @@ export function stopTtsPlayback(): void {
     cancelAnimationFrame(rafId)
     rafId = null
   }
-  useLive2dStore.getState().setLipSyncValue(0)
+  useLive2dSpeechStore.getState().setLipSyncValue(0)
 }

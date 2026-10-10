@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 
+/** 左侧配置面板的标签页 */
+export type ConfigPanelTab = 'avatar' | 'expressions' | 'ai'
+
 /** Live2D 场景页的 UI 层状态：覆盖层 / 对话框 / 调试输入框 */
 interface UiState {
   /** 登录覆盖层（数字雨）是否可见 */
@@ -7,7 +10,7 @@ interface UiState {
   username: string | null
   /** 左侧配置面板 */
   configPanelOpen: boolean
-  configPanelTab: 'avatar' | 'ai'
+  configPanelTab: ConfigPanelTab
   /** 聊天记录弹窗 */
   chatHistoryOpen: boolean
   /** 底部对话框的转写文字 */
@@ -22,7 +25,7 @@ interface UiState {
   openLogin: () => void
   closeLogin: () => void
   setUsername: (username: string | null) => void
-  setConfigPanelOpen: (open: boolean, tab?: 'avatar' | 'ai') => void
+  setConfigPanelOpen: (open: boolean, tab?: ConfigPanelTab) => void
   setChatHistoryOpen: (open: boolean) => void
   setDialogText: (text: string) => void
   setDebugText: (text: string) => void

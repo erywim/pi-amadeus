@@ -1,8 +1,8 @@
-import type { Emotion } from './emotion.ts'
+import type { Emotion, Gesture } from './emotion.ts'
 
 /**
  * SSE 事件词汇（沿用原版跨端契约）：delta / done / error。
- * `delta` 内容永远只有中文；语音模式另有 transcript / emotion 扩展事件；
+ * `delta` 内容永远只有中文；语音模式另有 transcript / emotion / gesture 扩展事件；
  * 工具调用（文本/飞书回合）另有 tool_* 扩展事件。
  */
 export type SseEventType =
@@ -11,6 +11,7 @@ export type SseEventType =
   | 'error'
   | 'transcript'
   | 'emotion'
+  | 'gesture'
   | 'audio'
   | 'tool_start'
   | 'tool_update'
@@ -55,6 +56,12 @@ export interface SseTranscriptEvent extends SseEventBase {
 export interface SseEmotionEvent extends SseEventBase {
   type: 'emotion'
   emotion: Emotion
+}
+
+/** 语音模式：LLM 流内联动作（Live2D 一次性动作：点头、歪头……） */
+export interface SseGestureEvent extends SseEventBase {
+  type: 'gesture'
+  gesture: Gesture
 }
 
 /** 语音模式：TTS 音频块（base64，16bit 单声道 PCM，s16le） */
@@ -116,6 +123,7 @@ export type SseEvent =
   | SseErrorEvent
   | SseTranscriptEvent
   | SseEmotionEvent
+  | SseGestureEvent
   | SseAudioEvent
   | SseToolStartEvent
   | SseToolUpdateEvent

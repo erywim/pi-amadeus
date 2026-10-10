@@ -28,7 +28,7 @@ export function startAssistantVoiceTurn(text: string): boolean {
   // 新回合打断当前 TTS 队列（用户重新说话即打断，5.3 要求）
   stopTtsPlayback()
   useUiStore.getState().setDialogText('')
-  useLive2dStore.getState().setLipSyncValue(0)
+  useLive2dSpeechStore.getState().setLipSyncValue(0)
 
   voiceAbort = startVoiceTurn({ userId, sessionId, text }, (event) => {
     switch (event.type) {
@@ -39,6 +39,9 @@ export function startAssistantVoiceTurn(text: string): boolean {
         return
       case 'emotion':
         useLive2dStore.getState().setEmotion(event.emotion)
+        return
+      case 'gesture':
+        useLive2dStore.getState().playGesture(event.gesture)
         return
       case 'audio':
         // 说话打点：驱动引擎 speaking 状态（手势/点头），时间戳单调合并

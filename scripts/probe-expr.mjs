@@ -76,12 +76,12 @@ async function main() {
     return 'hooked'
   })()`)
 
-  await evalJs(cdp, `window.__live2d.setExpression('joy')`)
+  await evalJs(cdp, `window.__live2d.emote('joy')`)
   await sleep(3000)
   console.log('T+3s after joy:', JSON.stringify(await evalJs(cdp, DUMP), null, 2))
   console.log('now samples (last 5):', await evalJs(cdp, `window.__exprNowSamples.slice(-5).map(n => n.toFixed(3))`))
 
-  await evalJs(cdp, `window.__live2d.setExpression('sadness')`)
+  await evalJs(cdp, `window.__live2d.emote('sadness')`)
   await sleep(3000)
   console.log('T+3s after sadness:', JSON.stringify(await evalJs(cdp, DUMP), null, 2))
   console.log('now samples (last 5):', await evalJs(cdp, `window.__exprNowSamples.slice(-5).map(n => n.toFixed(3))`))

@@ -105,7 +105,7 @@ try {
   await sleep(300)
   const lipSamples = []
   for (let i = 0; i < 3; i++) {
-    lipSamples.push(await evalJs(`window.__amadeus.live2dStore.getState().lipSyncValue`))
+    lipSamples.push(await evalJs(`window.__amadeus.live2dSpeechStore.getState().lipSyncValue`))
     await sleep(200)
   }
   const allZero = lipSamples.every((v) => v === 0)

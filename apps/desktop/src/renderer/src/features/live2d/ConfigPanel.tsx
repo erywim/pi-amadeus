@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
+import { EMOTIONS, GESTURES } from '@pi-amadeus/shared'
 import { Label } from '@renderer/components/ui/label'
 import { Separator } from '@renderer/components/ui/separator'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@renderer/components/ui/sheet'
@@ -7,9 +8,9 @@ import { Slider } from '@renderer/components/ui/slider'
 import { cn } from '@renderer/lib/utils'
 import { useLive2dStore } from '@renderer/stores/live2dStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
-import { useUiStore } from '@renderer/stores/uiStore'
+import { useUiStore, type ConfigPanelTab } from '@renderer/stores/uiStore'
 
-/** 左侧配置面板 Sheet：形象（缩放/位移滑块，实时生效并持久）+ AI（只读摘要） */
+/** 左侧配置面板 Sheet：形象（缩放/位移滑块，实时生效并持久）+ 表情预览 + AI（只读摘要） */
 export function ConfigPanel(): React.JSX.Element {
   const { t } = useTranslation()
   const open = useUiStore((s) => s.configPanelOpen)
@@ -20,14 +21,15 @@ export function ConfigPanel(): React.JSX.Element {
   const aiConfig = useSettingsStore((s) => s.aiConfig)
   const keyStatus = useSettingsStore((s) => s.keyStatus)
 
-  const tabs: Array<{ key: 'avatar' | 'ai'; label: string }> = [
+  const tabs: Array<{ key: ConfigPanelTab; label: string }> = [
     { key: 'avatar', label: t('live2d.config.avatar') },
+    { key: 'expressions', label: t('live2d.config.expressions') },
     { key: 'ai', label: t('live2d.config.ai') }
   ]
 
   return (
     <Sheet open={open} onOpenChange={(v) => setConfigPanelOpen(v)}>
-      <SheetContent side="left" className="w-[320px] bg-sidebar sm:max-w-[320px]">
+      <SheetContent side="left" className="w-[320px] overflow-y-auto bg-sidebar sm:max-w-[320px]">
         <SheetHeader>
           <SheetTitle className="font-mono text-sm tracking-[0.2em] text-primary">{t('live2d.config.title')}</SheetTitle>
         </SheetHeader>
@@ -100,6 +102,8 @@ export function ConfigPanel(): React.JSX.Element {
                 />
               </div>
             </>
+          ) : tab === 'expressions' ? (
+            <ExpressionPreview />
           ) : (
             <div className="space-y-3 text-xs">
               <div>
@@ -133,5 +137,56 @@ export function ConfigPanel(): React.JSX.Element {
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+/** 表情预览：情绪与动作按钮，走与 SSE 事件相同的 store 路径 */
+function ExpressionPreview(): React.JSX.Element {
+  const { t } = useTranslation()
+  const emotion = useLive2dStore((s) => s.emotion)
+  const setEmotion = useLive2dStore((s) => s.setEmotion)
+  const playGesture = useLive2dStore((s) => s.playGesture)
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs leading-relaxed text-muted-foreground">{t('live2d.config.previewHint')}</p>
+      <div className="space-y-2">
+        <Label>{t('live2d.config.emotions')}</Label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {EMOTIONS.map((name) => (
+            <button
+              key={name}
+              type="button"
+              aria-pressed={emotion === name}
+              onClick={() => setEmotion(name)}
+              className={cn(
+                'rounded-md border px-2 py-1.5 text-xs transition-colors',
+                emotion === name
+                  ? 'border-primary/60 bg-primary/15 text-primary'
+                  : 'border-border text-muted-foreground hover:bg-accent hover:text-foreground'
+              )}
+            >
+              {t(`live2d.emotion.${name}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <Separator />
+      <div className="space-y-2">
+        <Label>{t('live2d.config.gestures')}</Label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {GESTURES.map((name) => (
+            <button
+              key={name}
+              type="button"
+              onClick={() => playGesture(name)}
+              className="rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:bg-primary/15 active:text-primary"
+            >
+              {t(`live2d.gesture.${name}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }

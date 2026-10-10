@@ -63,7 +63,7 @@ const SAMPLE_EXPR = `(async () => {
     }
     out.push({ label, diffs })
   }
-  engine.playGesture = () => {}
+  engine.playTalkingGesture = () => {}
   engine.playIdleGesture = () => {}
   engine.blink = () => {}
   engine.setGazeImpulse(0, 0)

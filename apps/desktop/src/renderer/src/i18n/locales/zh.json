@@ -152,7 +152,11 @@
       "ai": "AI",
       "scale": "缩放",
       "positionX": "水平位置",
-      "positionY": "垂直位置"
+      "positionY": "垂直位置",
+      "expressions": "表情",
+      "emotions": "情绪",
+      "gestures": "动作",
+      "previewHint": "点击即可预览。语音对话时，AI 会根据回复内容自动切换表情和动作。"
     },
     "debug": {
       "title": "开发者调试",
@@ -165,6 +169,48 @@
     },
     "dialogPlaceholder": "（对话内容将显示在这里）",
     "loading": "模型加载中…",
-    "loadError": "模型加载失败"
+    "loadError": "模型加载失败",
+    "emotion": {
+      "neutral": "平静",
+      "smile": "微笑",
+      "happy": "开心",
+      "laugh": "大笑",
+      "smug": "得意",
+      "teasing": "坏笑",
+      "excited": "兴奋",
+      "curious": "好奇",
+      "thinking": "思考",
+      "confused": "疑惑",
+      "surprised": "惊讶",
+      "shocked": "震惊",
+      "shy": "害羞",
+      "flustered": "慌乱",
+      "tsundere": "傲娇",
+      "annoyed": "不耐烦",
+      "angry": "生气",
+      "disdain": "不屑",
+      "sad": "难过",
+      "crying": "哭泣",
+      "gloomy": "沮丧",
+      "worried": "担心",
+      "nervous": "尴尬",
+      "speechless": "无语",
+      "sleepy": "困倦"
+    },
+    "gesture": {
+      "nod": "点头",
+      "shake": "摇头",
+      "tilt": "歪头",
+      "lookaway": "别过脸",
+      "hmph": "哼",
+      "sigh": "叹气",
+      "lean": "凑近",
+      "startle": "吓一跳",
+      "wink": "眨眼",
+      "eyeroll": "翻白眼",
+      "giggle": "偷笑",
+      "crossarms": "抱臂",
+      "uncross": "放下手"
+    }
   }
 }

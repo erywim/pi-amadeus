@@ -5,6 +5,7 @@ import { RouterProvider } from 'react-router/dom'
 import { TooltipProvider } from './components/ui/tooltip'
 import { router } from './router'
 import { useLive2dStore } from './stores/live2dStore'
+import { useLive2dSpeechStore } from './stores/live2dSpeechStore'
 import { useSessionStore } from './stores/sessionStore'
 import { syncPersistedLanguage } from './stores/settingsStore'
 import { useUiStore } from './stores/uiStore'
@@ -22,7 +23,8 @@ if (import.meta.env.DEV) {
   ;(window as unknown as Record<string, unknown>).__amadeus = {
     sessionStore: useSessionStore,
     uiStore: useUiStore,
-    live2dStore: useLive2dStore
+    live2dStore: useLive2dStore,
+    live2dSpeechStore: useLive2dSpeechStore
   }
 }
 

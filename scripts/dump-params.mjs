@@ -10,7 +10,7 @@
  * 前置：node scripts/dev.mjs 已启动（vite 5173）；建议经 scripts/cdp-chrome.mjs 运行。
  */
 const CDP_HTTP = process.env.CDP_HTTP || 'http://127.0.0.1:9222'
-// Emotion 枚举 = 10 个资产名（shared/emotion.ts），非法名会被 setExpression 静默忽略
+// 情绪名经 E.emote() 解析（兼容旧资产名 joy/sadness/…），无法识别时返回 null
 const EMOTIONS = ['neutral', 'joy', 'sadness', 'anger', 'surprise', 'shy', 'shy2', 'smile1', 'smile2', 'unhappy']
 const PARAMS = [
   'ParamAngleX', 'ParamAngleY', 'ParamAngleZ', 'ParamBodyAngleX',
@@ -107,7 +107,7 @@ async function main() {
 
   // 确定性测试环境：静默待机手势/眨眼（保留注视游移），动作只由本脚本触发
   await evalJs(cdp, `(() => {
-    window.__live2d.playGesture = () => {}
+    window.__live2d.playTalkingGesture = () => {}
     window.__live2d.playIdleGesture = () => {}
     window.__live2d.blink = () => {}
     window.__live2d.setGazeImpulse(0, 0)
@@ -134,7 +134,7 @@ async function main() {
 
   console.log('\n=== 表情切换（无动作，只验证 manager 状态 + 无残留）===')
   for (const em of EMOTIONS.slice(1)) {
-    await evalJs(cdp, `window.__live2d.setExpression('${em}')`)
+    await evalJs(cdp, `window.__live2d.emote('${em}')`)
     await sleep(1600)
     const v = await evalJs(cdp, DUMP_EXPR)
     console.log(`[${em}] queue=${v.__exprQueue} cur=${v.__exprCur} w=${v.__exprWeight} motion=${v.__motionPlaying} ${JSON.stringify(nonzero(v))}`)
@@ -142,7 +142,7 @@ async function main() {
 
   // 情绪动作：中段采样（动作在跑）→ 播完 +0.3s 采样（应只剩程序层基线，无残留）
   console.log('\n=== joy 动作（4.3s，endTimer 4.25s）===')
-  await evalJs(cdp, `window.__live2d.setExpression('joy')`)
+  await evalJs(cdp, `window.__live2d.emote('joy')`)
   await sleep(1600)
   await evalJs(cdp, `window.__live2d.motionLayer.play('joy', 0, 3, 1)`)
   await sleep(1500)

@@ -96,7 +96,7 @@ async function main() {
 
   const EMOS = ['joy', 'sadness', 'anger', 'surprise', 'shy', 'joy', 'sadness', 'anger']
   for (const em of EMOS) {
-    await evalJs(cdp, `window.__live2d.setExpression('${em}')`)
+    await evalJs(cdp, `window.__live2d.emote('${em}')`)
     await sleep(700)
     await evalJs(cdp, `window.__live2d.motionLayer.play('${em}', 0, 3, 1)`)
     await sleep(1200)

@@ -15,16 +15,21 @@ interface Live2dSpeechState {
   speakingUntil: number
   /** 语音回合进行中（SSE 已发起、未 done/error/停止） */
   voiceActive: boolean
+  /** 口型开合值 0..1：ttsPlayer 用 AnalyserNode 实时 RMS 每帧写入 */
+  lipSyncValue: number
 
   markSpeaking: (ms?: number) => void
   setVoiceActive: (active: boolean) => void
+  setLipSyncValue: (value: number) => void
 }
 
 export const useLive2dSpeechStore = create<Live2dSpeechState>()((set) => ({
   speakingUntil: 0,
   voiceActive: false,
+  lipSyncValue: 0,
 
   markSpeaking: (ms = 1200) =>
     set((s) => ({ speakingUntil: Math.max(s.speakingUntil, performance.now() + ms) })),
-  setVoiceActive: (voiceActive) => set({ voiceActive })
+  setVoiceActive: (voiceActive) => set({ voiceActive }),
+  setLipSyncValue: (lipSyncValue) => set({ lipSyncValue })
 }))

@@ -249,6 +249,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           case 'emotion':
             useLive2dStore.getState().setEmotion(event.emotion)
             return
+          case 'gesture':
+            useLive2dStore.getState().playGesture(event.gesture)
+            return
           case 'done': {
             const finalDraft = get().stream.draft
             if (!finalDraft) return

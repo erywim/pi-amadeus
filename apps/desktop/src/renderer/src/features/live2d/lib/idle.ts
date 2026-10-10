@@ -6,7 +6,8 @@ const rand = (min: number, max: number): number => min + Math.random() * (max - 
  * 待机动画调度器：决定"何时做什么"，不碰参数。
  * - 眨眼：2-6s 随机间隔（缓动动画在引擎的程序层）
  * - 注视：仅待机时游移，30% 概率看向光标位置
- * - 动作：按回合状态分档——说话 8-14s 手势（NORMAL）/ 思考暂停 / 待机 25-45s（IDLE）
+ * - 动作：按回合状态分档——说话 8-14s 手势 / 思考暂停 / 待机 15-30s；
+ *   具体做什么由当前表情决定（中性类用模型自带随机动作，其余用表情的程序手势）
  * 呼吸/physics 由框架自动驱动，这里不动。
  */
 export class IdleScheduler {
@@ -46,27 +47,30 @@ export class IdleScheduler {
     })
   }
 
-  /** 注视：仅待机时游移（说话/思考由程序层接管注视目标），30% 看向光标 */
+  /** 注视：仅待机时游移（说话/思考由程序层接管注视目标），30% 看向光标，偶尔回到正前方 */
   private scheduleGaze(): void {
     this.after(rand(4000, 8000), () => {
       if (!this.engine.getState().busy) {
         const cursor = this.engine.getCursor()
         if (cursor.warm > 0 && Math.random() < 0.3) {
-          this.engine.setGazeImpulse(cursor.x, cursor.y)
+          // 光标 y 向下为正，注视用观察者坐标（上为正）
+          this.engine.setGazeImpulse(cursor.x, -cursor.y)
+        } else if (Math.random() < 0.25) {
+          this.engine.setGazeImpulse(0, 0)
         } else {
-          this.engine.setGazeImpulse(rand(-0.5, 0.5), rand(-0.25, 0.25))
+          this.engine.setGazeImpulse(rand(-0.9, 0.9), rand(-0.5, 0.5))
         }
       }
       this.scheduleGaze()
     })
   }
 
-  /** 动作：说话 8-14s 手势 / 思考暂停（2s 后重查）/ 待机 25-45s */
+  /** 动作：说话 8-14s 手势 / 思考暂停（2s 后重查）/ 待机 15-30s */
   private scheduleMotion(): void {
     const { busy, speaking } = this.engine.getState()
     if (speaking) {
       this.after(rand(8000, 14000), () => {
-        this.engine.playGesture()
+        this.engine.playTalkingGesture()
         this.scheduleMotion()
       })
       return
@@ -76,7 +80,7 @@ export class IdleScheduler {
       this.after(2000, () => this.scheduleMotion())
       return
     }
-    this.after(rand(25000, 45000), () => {
+    this.after(rand(15000, 30000), () => {
       this.engine.playIdleGesture()
       this.scheduleMotion()
     })

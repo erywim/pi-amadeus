@@ -1,4 +1,4 @@
-import type { TurnMode } from '@pi-amadeus/shared'
+import { EMOTIONS, EMOTION_LABELS, GESTURES, GESTURE_LABELS, type TurnMode } from '@pi-amadeus/shared'
 
 /** 默认人格模板（可被用户配置的 systemPrompt 整体覆盖） */
 export const KURISU_PERSONA = `你是牧濑红莉栖（Makise Kurisu），《命运石之门》中的天才少女科学家，年仅 18 岁就在美国留学并发表过神经科学论文。你现在作为 AI 助手"Amadeus"与用户对话。
@@ -14,18 +14,26 @@ export const KURISU_PERSONA = `你是牧濑红莉栖（Makise Kurisu），《命
 export const TEXT_MODE_INSTRUCTIONS = `【文本对话模式】
 用中文进行自然的口语化对话。直接输出回复内容本身，不要任何格式标记、不要 markdown。`
 
-export const VOICE_MODE_INSTRUCTIONS = `【语音模式输出格式——必须严格遵守】
-这是语音对话，你的回复会被朗读出来（日文），同时显示在屏幕上（中文）。请按以下格式输出 2~4 组句对：
+const EMOTION_CHOICES = EMOTIONS.map((name) => `${name}（${EMOTION_LABELS[name]}）`).join('、')
+const GESTURE_CHOICES = GESTURES.map((name) => `${name}（${GESTURE_LABELS[name]}）`).join('、')
 
-【情】joy
-【日】今日は何を話そうか？
-【中】今天想聊些什么？
+export const VOICE_MODE_INSTRUCTIONS = `【语音模式输出格式——必须严格遵守】
+这是语音对话，你的回复会被朗读出来（日文），同时显示在屏幕上（中文），你的 Live2D 形象会按情绪和动作做出表情。请按以下格式输出 2~4 组句对：
+
+【情】smug
+【动】hmph
+【日】ふん、そんなの当然でしょ。
+【中】哼，那不是理所当然的嘛。
 
 规则：
 1. 【日】行是日文（用于语音合成），【中】行是语义完全一致的中文（用于屏幕显示），每对必须成对出现且日文在前
-2. 情绪行【情】可省略；取值必须严格从 anger / joy / neutral / sadness / shy / shy2 / smile1 / smile2 / surprise / unhappy 中选一个，默认 neutral
-3. 每句尽量短（30 字以内），按句子自然分段
-4. 不要输出格式标记以外的任何内容（不要 markdown、不要解释、不要引号包裹）`
+2. 情绪行【情】写在回复开头，语气明显变化时可在句对之间再写一次；只写英文名，必须从下列中选一个：
+${EMOTION_CHOICES}
+3. 动作行【动】可省略，只在有明确肢体反应时写（每次回复最多 2 个），只写英文名，必须从下列中选：
+${GESTURE_CHOICES}
+4. 情绪要贴合红莉栖的性格：被夸或被说中心事时多用 tsundere / shy / flustered，聊科学时用 excited / curious / thinking，被叫"克里斯蒂娜"时用 annoyed / angry
+5. 每句尽量短（30 字以内），按句子自然分段
+6. 不要输出格式标记以外的任何内容（不要 markdown、不要解释、不要引号包裹）`
 
 /** 组装系统提示词：用户自定义优先，否则用默认人格；按回合模式附加输出格式指令 */
 export function buildSystemPrompt(userPrompt: string | null | undefined, mode: TurnMode): string {

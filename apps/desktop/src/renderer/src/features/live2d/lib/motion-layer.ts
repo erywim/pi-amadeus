@@ -12,9 +12,9 @@ import type { Live2DModel, MotionPriority } from 'pixi-live2d-display/cubism4'
  *   库只停动作、不回弹参数（官方 SDK 靠动作曲线自带"回到中性位"段，
  *   本模型 Loop=true 的曲线末帧未必是中性位）。残留的末帧姿势会成为
  *   下一个表情的"脏基线"——表情参数叠加其上，就是用户看到的怪异混合脸。
- *   因此 stop() 必须把全部参数恢复为模型默认值（Live2DCubismCore
- *   parameters.defaultValues），表情/程序层每帧在干净基线上叠加。
- *   程序层管理的参数（头/身/眼/口/眉）下一帧接管重播种，继续平滑过渡。
+ *   因此 stop() 把程序层没接管的参数恢复为模型默认值（Live2DCubismCore
+ *   parameters.defaultValues）；程序层接管的参数（头/身/眼/口/情绪脸/手臂，见 preserve）
+ *   不复位，由程序层从动作当前值重播种、平滑过渡到表情目标。
  */
 
 interface MotionDataShape {
@@ -106,8 +106,15 @@ export class MotionLayer {
   private endTimer: ReturnType<typeof setTimeout> | null = null
   private _active: ActiveMotion | null = null
   private destroyed = false
+  /** 停止时不复位的参数（程序层接管的参数：从动作当前姿态平滑接管，复位会造成一帧跳变） */
+  private preserved: ReadonlySet<string> = new Set()
 
   constructor(private readonly model: Live2DModel) {}
+
+  /** 登记程序层接管的参数 */
+  preserve(ids: Iterable<string>): void {
+    this.preserved = new Set(ids)
+  }
 
   get active(): ActiveMotion | null {
     return this._active
@@ -162,9 +169,8 @@ export class MotionLayer {
 
   /**
    * 参数复位：Live2DCubismCore 提供 parameters.defaultValues（moc3 内置中性位）。
-   * 程序层管理的参数（头/身/眼/口/眉）会在下一帧接管重播种，无视觉跳变；
-   * 无人管理的情绪参数（Param3-8/16、ParamMouthForm 等）回到中性位，
-   * 表情层每帧在干净基线上叠加，不再与动作残留混合。
+   * 程序层接管的参数（preserve 登记）不复位——程序层从动作当前值重播种、平滑回到表情目标，
+   * 复位反而会先跳回中性位再过渡；其余参数回到中性位，清除动作残留。
    */
   private restoreParameters(): void {
     try {
@@ -179,7 +185,7 @@ export class MotionLayer {
       for (let i = 0; i < ids.length; i++) {
         const id = ids[i]
         const value = defaults[i]
-        if (id === undefined || value === undefined) continue
+        if (id === undefined || value === undefined || this.preserved.has(id)) continue
         core.setParameterValueById(id, value)
       }
     } catch {

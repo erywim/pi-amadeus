@@ -202,6 +202,7 @@ export async function* runVoiceTurn(
     for await (const delta of streamText(target, { systemPrompt, messages }, { signal })) {
       const out = parser.feed(delta)
       if (out.emotion) yield { type: 'emotion', emotion: out.emotion }
+      for (const gesture of out.gestures) yield { type: 'gesture', gesture }
       if (out.cnDelta) yield { type: 'delta', delta: out.cnDelta }
       for (const jp of out.jpSentences) jpQueue.push(jp)
       // 非阻塞排出已就绪的音频块，与文本事件交错
@@ -210,6 +211,8 @@ export async function* runVoiceTurn(
       }
     }
     const fin = parser.finish()
+    if (fin.emotion) yield { type: 'emotion', emotion: fin.emotion }
+    for (const gesture of fin.gestures) yield { type: 'gesture', gesture }
     if (fin.cnDelta) yield { type: 'delta', delta: fin.cnDelta }
     for (const jp of fin.jpSentences) jpQueue.push(jp)
   } finally {
