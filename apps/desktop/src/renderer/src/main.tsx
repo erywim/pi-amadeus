@@ -12,8 +12,13 @@ import { useUiStore } from './stores/uiStore'
 import './i18n'
 import './styles/index.css'
 
-// 持久化的语言偏好需要在 i18n 初始化后同步（首次启动由 detector 给出默认）
-syncPersistedLanguage()
+// 持久化的语言偏好需要在 i18n 初始化后同步（首次启动由 detector 给出默认）。
+// 只有确实存在持久化的用户选择（amadeus_settings）时才同步：首次启动时 store
+// 里只是初始默认 'zh'，若拿来同步会覆盖 detector 按系统语言解析的结果，还会
+// 经由 changeLanguage 的缓存把 detector 的缓存一并改写成 'zh'
+if (localStorage.getItem('amadeus_settings') !== null) {
+  syncPersistedLanguage()
+}
 
 // 会话数据初始化（身份解析 + 会话列表拉取），不阻塞首屏渲染
 void useSessionStore.getState().init()

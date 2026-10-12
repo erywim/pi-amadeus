@@ -149,7 +149,10 @@ async function handleSegment(segment: SpeechSegment): Promise<void> {
       // 乐观渲染用户气泡；服务端回执（refreshSession）后由 CompanionThread 自动清除
       useCompanionStore.getState().setPendingUser(text)
       useUiStore.getState().setDialogText(`你说：${text}`)
-      startAssistantVoiceTurn(text)
+      // 回合发起被拒（如文本回合占用中）时没有回执前来，撤回乐观气泡避免残留
+      if (!startAssistantVoiceTurn(text)) {
+        useCompanionStore.getState().setPendingUser(null)
+      }
     }
   } finally {
     segmentBusy = false

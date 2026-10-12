@@ -11,6 +11,7 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const CDP_HTTP = 'http://127.0.0.1:9222'
+const BRAIN = 'http://localhost:3002'
 const results = []
 function report(name, ok, detail = '') {
   results.push({ name, ok })
@@ -69,6 +70,58 @@ async function waitFor(expression, timeoutMs = 30000, label = expression) {
   }
 }
 
+// ---------- 测试会话清理 ----------
+
+/** 本脚本自建的会话 id（结束统一 DELETE，不污染真实会话库）；并记住进入脚本前的活跃会话以便还原 */
+const createdSessionIds = []
+let prevActiveSessionId = null
+
+/** DELETE 自建会话、摘除页面内 watcher、同步页面 store；清理失败仅告警，不掩盖原测试结果 */
+async function cleanupSessions() {
+  for (const id of createdSessionIds) {
+    try {
+      const res = await fetch(`${BRAIN}/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      if (!res.ok) console.warn(`[e2e] 清理测试会话 ${id} 失败：HTTP ${res.status}`)
+    } catch (error) {
+      console.warn(`[e2e] 清理测试会话 ${id} 失败：${error instanceof Error ? error.message : error}`)
+    }
+  }
+  await evalJs(`(() => {
+    try { window.__stopUnsub?.() } catch {}
+    const ids = ${JSON.stringify(createdSessionIds)}
+    if (ids.length === 0) return true
+    const s = window.__amadeus.sessionStore
+    const st = s.getState()
+    const messages = { ...st.messages }
+    for (const id of ids) delete messages[id]
+    const sessions = st.sessions.filter((x) => !ids.includes(x.id))
+    const activeGone = ids.includes(st.activeSessionId)
+    s.setState({ sessions, messages, ...(activeGone ? { activeSessionId: null } : {}) })
+    const prev = ${JSON.stringify(prevActiveSessionId)}
+    if (activeGone && prev && sessions.some((x) => x.id === prev)) s.getState().selectSession(prev)
+    return true
+  })()`).catch((error) => console.warn(`[e2e] 页面侧会话状态同步失败：${error instanceof Error ? error.message : error}`))
+}
+
+// ---------- 信号兜底清理：Ctrl+C（SIGINT）/SIGTERM 时 try/finally 不会执行 ----------
+let cleanupPromise = null
+/** 收尾 + 信号兜底共用的一次性清理（多路触发只跑一次；失败仅告警，不掩盖原测试结果） */
+function cleanupOnce() {
+  cleanupPromise ??= cleanupSessions().catch((error) =>
+    console.warn(`[e2e] 清理失败：${error instanceof Error ? error.message : error}`)
+  )
+  return cleanupPromise
+}
+let signalExitCode = null
+/** 首次信号：清理后按信号码退出（SIGINT=130/SIGTERM=143）；清理中再次收到信号则立即退出，防清理卡死 */
+function onSignal(code) {
+  if (signalExitCode !== null) process.exit(code)
+  signalExitCode = code
+  void cleanupOnce().then(() => process.exit(code))
+}
+process.on('SIGINT', () => onSignal(130))
+process.on('SIGTERM', () => onSignal(143))
+
 try {
   await cdp.call('Runtime.enable')
   await cdp.call('Page.reload', {})
@@ -85,12 +138,11 @@ try {
     )
     await sleep(2500)
   }
-  // 无活动会话时欢迎屏不渲染 composer：先建会话
-  await evalJs(`(() => {
-    const s = window.__amadeus.sessionStore.getState();
-    if (!s.activeSessionId) s.createSession();
-    return true;
-  })()`)
+  // 自建专用测试会话（结束 DELETE 清理），不把测试消息写进用户当前活跃会话；
+  // 同时保证一定有活跃会话（无活动会话时欢迎屏不渲染 composer）
+  prevActiveSessionId = await evalJs(`window.__amadeus.sessionStore.getState().activeSessionId ?? null`)
+  const testSessionId = await evalJs(`window.__amadeus.sessionStore.getState().createSession()`)
+  createdSessionIds.push(testSessionId)
   await waitFor(`!!document.querySelector('textarea[placeholder]')`, 10000, 'composer 渲染')
 
   console.log('=== 发送长消息（页面内 watcher 于流式中段点击 Stop） ===')
@@ -158,5 +210,6 @@ try {
   console.log(`\n=== 汇总: ${results.length - failed.length}/${results.length} 通过 ===`)
   if (failed.length > 0) process.exitCode = 1
 } finally {
+  await cleanupOnce()
   cdp.close()
 }

@@ -44,6 +44,34 @@ async function evalJs(cdp, expression) {
   return res.result.value
 }
 
+// 退出前还原 update 钩子：快照在则回写/删除复原，快照缺失直接跳过。
+// 失败只告警不抛出——探针退出码语义不变
+const RESTORE_EXPR = `(() => {
+  const bak = window.__probeExprBackup
+  if (!bak) return 'no-patch'
+  for (const rec of bak.patches || []) {
+    if (!rec || !rec.obj) continue
+    if (rec.own) rec.obj[rec.key] = rec.fn
+    else delete rec.obj[rec.key]
+  }
+  delete window.__probeExprBackup
+  delete window.__exprNowSamples
+  return 'restored'
+})()`
+
+async function restorePatches(cdp) {
+  try {
+    let timedOut = false
+    await Promise.race([
+      evalJs(cdp, RESTORE_EXPR),
+      sleep(3000).then(() => { timedOut = true })
+    ])
+    if (timedOut) console.warn('[probe-expr] 补丁还原超时（CDP 已断开？），dev 实例刷新页面即可恢复')
+  } catch (e) {
+    console.warn('[probe-expr] 补丁还原失败（dev 实例刷新页面即可恢复）:', e && e.message)
+  }
+}
+
 const DUMP = `(() => {
   const em = window.__live2d.model.internalModel.motionManager.expressionManager
   const q = em.queueManager
@@ -61,16 +89,24 @@ const DUMP = `(() => {
   return { count: q._motions.length, userTime: q._userTimeSeconds.toFixed(2), entries }
 })()`
 
+// cdp 提升到模块级：异常路径也要能拿到连接做补丁还原
+let cdp = null
+
 async function main() {
   const res = await fetch(`${CDP_HTTP}/json/list`)
   const targets = await res.json()
   const target = targets.find((t) => t.type === 'page')
-  const cdp = await connect(target.webSocketDebuggerUrl)
+  cdp = await connect(target.webSocketDebuggerUrl)
 
-  // 挂钩 update：记录每帧收到的 now
+  // 挂钩 update：记录每帧收到的 now。原实现先快照进 __probeExprBackup，
+  // 退出时由 restorePatches 还原（本脚本不重载页面，不还原则 dev 实例计数钩子永久累积）
   await evalJs(cdp, `(() => {
     const em = window.__live2d.model.internalModel.motionManager.expressionManager
     window.__exprNowSamples = []
+    const bak = window.__probeExprBackup = window.__probeExprBackup || {}
+    if (!bak.patches) {
+      bak.patches = [{ obj: em, key: 'update', own: Object.prototype.hasOwnProperty.call(em, 'update'), fn: em.update }]
+    }
     const orig = em.update.bind(em)
     em.update = (m, now) => { window.__exprNowSamples.push(now); return orig(m, now) }
     return 'hooked'
@@ -86,10 +122,15 @@ async function main() {
   console.log('T+3s after sadness:', JSON.stringify(await evalJs(cdp, DUMP), null, 2))
   console.log('now samples (last 5):', await evalJs(cdp, `window.__exprNowSamples.slice(-5).map(n => n.toFixed(3))`))
 
+  // 正常结束：还原补丁后再断连
+  await restorePatches(cdp)
   cdp.close()
+  cdp = null
 }
 
 main().catch((e) => {
   console.error(e)
-  process.exit(1)
+  // 异常路径退出前同样还原页面补丁（失败只告警），退出码保持 1
+  const p = cdp ? restorePatches(cdp) : Promise.resolve()
+  p.finally(() => process.exit(1))
 })

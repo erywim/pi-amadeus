@@ -47,6 +47,34 @@ async function evalJs(cdp, expression) {
   return res.result.value
 }
 
+// 退出前还原本脚本自打的补丁（下面 SAMPLE_EXPR 里静默掉的 blink/手势）。
+// 注意区别于本脚本要验证的 restoreParameters（引擎层参数复位，被测对象，不动它）。
+// 快照缺失（补丁没打上或已还原过）直接跳过；失败只告警不抛出——退出码语义不变
+const RESTORE_EXPR = `(() => {
+  const bak = window.__probeRestoreBackup
+  if (!bak) return 'no-patch'
+  for (const rec of bak.patches || []) {
+    if (!rec || !rec.obj) continue
+    if (rec.own) rec.obj[rec.key] = rec.fn
+    else delete rec.obj[rec.key]
+  }
+  delete window.__probeRestoreBackup
+  return 'restored'
+})()`
+
+async function restorePatches(cdp) {
+  try {
+    let timedOut = false
+    await Promise.race([
+      evalJs(cdp, RESTORE_EXPR),
+      sleep(3000).then(() => { timedOut = true })
+    ])
+    if (timedOut) console.warn('[probe-restore] 补丁还原超时（CDP 已断开？），dev 实例刷新页面即可恢复')
+  } catch (e) {
+    console.warn('[probe-restore] 补丁还原失败（dev 实例刷新页面即可恢复）:', e && e.message)
+  }
+}
+
 const SAMPLE_EXPR = `(async () => {
   const engine = window.__live2d
   const core = engine.core
@@ -62,6 +90,17 @@ const SAMPLE_EXPR = `(async () => {
       if (Math.abs(v - d) > 0.01) diffs[ids[i]] = { v: +v.toFixed(3), d: +d.toFixed(3) }
     }
     out.push({ label, diffs })
+  }
+  // 静默手势/眨眼保证采样确定性（本脚本自打的补丁）；原实现入 __probeRestoreBackup，
+  // 脚本结束后由 restorePatches 还原——与被测的 restoreParameters 无关
+  const bak = window.__probeRestoreBackup = window.__probeRestoreBackup || {}
+  if (!bak.patches) {
+    bak.patches = ['playTalkingGesture', 'playIdleGesture', 'blink'].map((key) => ({
+      obj: engine,
+      key,
+      own: Object.prototype.hasOwnProperty.call(engine, key),
+      fn: engine[key]
+    }))
   }
   engine.playTalkingGesture = () => {}
   engine.playIdleGesture = () => {}
@@ -83,12 +122,15 @@ const SAMPLE_EXPR = `(async () => {
   return out
 })()`
 
+// cdp 提升到模块级：异常路径也要能拿到连接做补丁还原
+let cdp = null
+
 async function main() {
   const res = await fetch(`${CDP_HTTP}/json/list`)
   const targets = await res.json()
   const target = targets.find((t) => t.type === 'page')
   if (!target) throw new Error('no page target')
-  const cdp = await connect(target.webSocketDebuggerUrl)
+  cdp = await connect(target.webSocketDebuggerUrl)
   await cdp.send('Page.enable')
   await cdp.send('Page.navigate', { url: 'http://localhost:5173/companion' })
   await sleep(4000)
@@ -120,10 +162,15 @@ async function main() {
       console.log(`    ${id}: v=${dv.v} d=${dv.d} Δ=${(dv.v - dv.d).toFixed(3)}`)
     }
   }
+  // 正常结束：还原补丁后再断连
+  await restorePatches(cdp)
   cdp.close()
+  cdp = null
 }
 
 main().catch((e) => {
   console.error(e)
-  process.exit(1)
+  // 异常路径退出前同样还原页面补丁（失败只告警），退出码保持 1
+  const p = cdp ? restorePatches(cdp) : Promise.resolve()
+  p.finally(() => process.exit(1))
 })

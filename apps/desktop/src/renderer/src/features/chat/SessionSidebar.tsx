@@ -95,6 +95,8 @@ export function SessionSidebar(): React.JSX.Element {
   const createSession = useSessionStore((s) => s.createSession)
   const deleteSession = useSessionStore((s) => s.deleteSession)
   const streaming = useSessionStore((s) => s.stream.streaming)
+  // 流全局只有一条：运行中指示按 stream.sessionId 归属，后台回合不串到别的会话行
+  const streamSessionId = useSessionStore((s) => s.stream.sessionId)
   const username = useUiStore((s) => s.username)
   const worldLine = useDivergenceStore((s) => s.value)
 
@@ -137,7 +139,7 @@ export function SessionSidebar(): React.JSX.Element {
                   key={session.id}
                   session={session}
                   active={session.id === activeSessionId}
-                  running={streaming}
+                  running={streaming && session.id === streamSessionId}
                   onSelect={() => selectSession(session.id)}
                   onDelete={() => handleDelete(session.id)}
                 />

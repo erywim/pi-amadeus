@@ -2,6 +2,10 @@ import { join } from 'node:path'
 import { app, BrowserWindow, session, shell } from 'electron'
 import { registerIpcHandlers } from './ipc'
 
+// 允许交给系统打开的外链 scheme；file: 与自定义协议交给
+// shell.openExternal 等同启动本地程序，一律拦截
+const ALLOWED_EXTERNAL_PROTOCOLS = ['http:', 'https:', 'mailto:']
+
 // 开发期开 CDP 调试端口，供自动化 E2E 验证驱动
 if (!app.isPackaged) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222')
@@ -41,7 +45,13 @@ function createWindow(): void {
 
   // 外部链接一律走系统浏览器，不在应用内开新窗
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    try {
+      if (ALLOWED_EXTERNAL_PROTOCOLS.includes(new URL(url).protocol)) {
+        void shell.openExternal(url)
+      }
+    } catch {
+      // 解析失败的 URL 不予打开
+    }
     return { action: 'deny' }
   })
 

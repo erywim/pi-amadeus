@@ -22,8 +22,13 @@ const RULES: SafetyRule[] = [
   { pattern: /\bdd\s+.*\bof=\/dev\//, reason: '直接写入磁盘设备的 dd 命令被禁止' },
   { pattern: /\bshred\b/, reason: '文件销毁（shred）命令被禁止' },
   {
-    pattern: /(^|[\s;&|])rm\s+(-\w+\s+)*(-\w*r[fw]*\w*\s+)*(\/|~|\/\*|~\/*|"\/"|%windir%|c:\\windows|c:\\)/i,
-    reason: '递归删除系统根目录/家目录被禁止'
+    // 选项容忍长选项（--no-preserve-root 等含 '-' 的形态）；目标拦截 /、~、$HOME/${HOME}、
+    // 当前/上级目录逃逸与 Windows 系统目录。
+    // /、~、$HOME/${HOME} 容忍可选的成对引号（' 或 "）：rm -rf "$HOME" 是最常见写法，不许引号绕过；
+    // 相对路径精确化为恰为 . 、 .. 、 ./ 、 ../ 或 ./../ 打头的目标：
+    // ./node_modules、./x 与 .cache、..hidden 等隐藏文件放行，. 、 .. 、 ./ 、 ./* 、 ../x 、 ./../x 拦截。
+    pattern: /(^|[\s;&|])rm\s+(-{1,2}[\w-]+\s+)*(["']?\/|["']?~|["']?\$\{home\}|["']?\$home(?![\w])|\.\.(?![\w.-])|\.(?![\w./-])|\.\/(?:\.\.(?![\w.-])|[\s;&|*]|$)|%windir%|c:\\windows|c:\\)/i,
+    reason: '以根目录/家目录/当前目录等高危路径为目标的 rm 命令被禁止'
   },
   {
     pattern: /(^|[\s;&|])(rd|rmdir)\s+(\/s\s+\/q|\/q\s+\/s)\s+[a-z]:\\/i,
@@ -44,6 +49,11 @@ const RULES: SafetyRule[] = [
   // ---- 远程执行管道（提示注入 → 任意代码执行链） ----
   { pattern: /(curl|wget|fetch|iwr|invoke-webrequest)[^|;&<>]*\|\s*(ba)?sh\b/i, reason: '下载内容直通 shell 执行的管道被禁止' },
   { pattern: /(curl|wget)[^|;&<>]*\|\s*(sudo\s+)?(bash|zsh|sh|python|perl|ruby|node)\b/i, reason: '下载内容直通解释器执行的管道被禁止' },
+  // echo <b64> | base64 -d/--decode | sh 之类的"解码后直通解释器"（选项簇中含 d，如 -d/-di/-D）。
+  // 解码开关允许出现在 base64 与管道符之间的任意位置（base64 -w0 -d | sh、base64 -i in.b64 -d | sh
+  // 均命中），但须以空白开头，避免命中文件名里的 '-d'（base64 -i in-dir.b64 | 非解释器 放行）；
+  // 中间段容忍输入重定向 <（base64 -d < in.b64 | sh 仍拦截），输出重定向 > 出现时 stdout 不进管道，放行。
+  { pattern: /\bbase64\b(?=[^|;&>]*\s(?:-[\w-]*d[\w-]*|--decode)\b)[^|;&>]*\|\s*(sudo\s+)?(bash|zsh|sh|python|perl|ruby|node)\b/i, reason: '解码内容直通解释器执行的管道被禁止' },
   { pattern: /bash\s*<\s*\(\s*curl/i, reason: '进程替换远程执行（bash <(curl)）被禁止' },
   { pattern: /iex\s*[(\s]*\(?\s*iwr/i, reason: 'PowerShell 下载执行（iex iwr）被禁止' },
   { pattern: /invoke-expression\b/i, reason: 'Invoke-Expression 动态执行被禁止' },

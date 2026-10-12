@@ -25,6 +25,15 @@ export interface TurnWorkLog {
 }
 
 /**
+ * 渲染层用的流式状态：在共享 StreamState 上额外标注回合所属会话。
+ * 流全局只有一条，但展示/归档只认产生它的会话（切换会话不串台）。
+ */
+interface SessionStreamState extends StreamState {
+  /** 产生当前流的会话 id（sendMessage 时写入，回合结束随流状态一起清空） */
+  sessionId?: string
+}
+
+/**
  * 会话状态（真实后端）：sessions 列表 + 按会话懒加载的 messages 缓存 +
  * 当前流式状态。文本聊天走 /api/chat SSE；语音回合由 Live2D 页自行消费
  * /api/voice（音频播放需要实时调度），结束后调 refreshSession 同步落库数据。
@@ -33,7 +42,7 @@ interface SessionState {
   sessions: Session[]
   messages: Record<string, Message[]>
   activeSessionId: string | null
-  stream: StreamState
+  stream: SessionStreamState
   userId: string | null
   /** 启动初始化是否完成（失败也置 true，避免反复重试） */
   initialized: boolean
@@ -63,14 +72,16 @@ export const useSessionStore = create<SessionState>()((set, get) => {
 
   /** 结束当前回合流（中止 + 清空流状态）；markStopped 时把进行中的工具活动存为停止快照 */
   function endStream(markStopped = false): void {
-    const { stream, activeSessionId } = get()
-    if (markStopped && activeSessionId && stream.tools.length > 0 && turnStartedAt > 0) {
+    const { stream } = get()
+    // 归档到回合自己标注的会话：用户中途切了会话，停止快照也不挂错
+    const ownerSessionId = stream.sessionId ?? get().activeSessionId
+    if (markStopped && ownerSessionId && stream.tools.length > 0 && turnStartedAt > 0) {
       const stoppedLog: TurnWorkLog = {
         tools: stream.tools,
         durationMs: Date.now() - turnStartedAt,
         stopped: true
       }
-      set((s) => ({ stoppedLogs: { ...s.stoppedLogs, [activeSessionId]: stoppedLog } }))
+      set((s) => ({ stoppedLogs: { ...s.stoppedLogs, [ownerSessionId]: stoppedLog } }))
     }
     turnStartedAt = 0
     abortTurn?.abort()
@@ -163,10 +174,21 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       set((s) => {
         const sessions = s.sessions.filter((x) => x.id !== id)
         const messages = { ...s.messages }
+        // 一并摘除该会话的内存快照，避免永久滞留
+        // （停止快照按会话归档；工作卡按 assistant 消息 id 归档，消息删除后无从回看）
+        const removedMessageIds = new Set((messages[id] ?? []).map((m) => m.id))
         delete messages[id]
+        const stoppedLogs = { ...s.stoppedLogs }
+        delete stoppedLogs[id]
+        const workLogs = { ...s.workLogs }
+        for (const messageId of removedMessageIds) {
+          delete workLogs[messageId]
+        }
         return {
           sessions,
           messages,
+          stoppedLogs,
+          workLogs,
           activeSessionId: s.activeSessionId === id ? null : s.activeSessionId
         }
       })
@@ -202,7 +224,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
             [sessionId]: [...(s.messages[sessionId] ?? []), userMessage]
           },
           sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
-          stream: { streaming: true, draft: { messageId: draftId, content: '' }, tools: [] },
+          stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
           stoppedLogs
         }
       })

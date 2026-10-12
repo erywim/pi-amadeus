@@ -58,12 +58,54 @@ async function waitFor(expression, timeoutMs = 30000, label = expression) {
   }
 }
 
+let userId = ''
+let origModel = null
+let modelMutated = false
+
+/** 还原最初读到的 model 原值；原值读取失败则跳过并告警（不用常量兜底，失败仅告警不掩盖测试结果） */
+async function restoreModel() {
+  if (!modelMutated) return
+  if (!origModel) {
+    console.warn('[e2e-config-ui] 原 model 读取失败/为空，跳过还原，请人工检查设置页 model 值')
+    return
+  }
+  try {
+    const res = await fetch(`${BRAIN}/api/config/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: { provider: { model: origModel } } })
+    })
+    if (!res.ok) console.warn(`[e2e-config-ui] 还原 model 失败：HTTP ${res.status}`)
+  } catch (error) {
+    console.warn(`[e2e-config-ui] 还原 model 失败：${error instanceof Error ? error.message : error}`)
+  }
+}
+
+// 信号兜底清理：Ctrl+C（SIGINT）/SIGTERM 时 try/finally 不会执行
+let cleanupPromise = null
+/** 收尾 + 信号兜底共用的一次性清理（多路触发只跑一次；失败仅告警，不掩盖原测试结果） */
+function cleanupOnce() {
+  cleanupPromise ??= restoreModel().catch((error) =>
+    console.warn(`[e2e-config-ui] 清理失败：${error instanceof Error ? error.message : error}`)
+  )
+  return cleanupPromise
+}
+let signalExitCode = null
+/** 首次信号：清理后按信号码退出（SIGINT=130/SIGTERM=143）；清理中再次收到信号则立即退出，防清理卡死 */
+function onSignal(code) {
+  if (signalExitCode !== null) process.exit(code)
+  signalExitCode = code
+  void cleanupOnce().then(() => process.exit(code))
+}
+process.on('SIGINT', () => onSignal(130))
+process.on('SIGTERM', () => onSignal(143))
+
 try {
   await cdp.call('Runtime.enable')
   await cdp.call('Page.reload', {})
   await sleep(3500)
   await waitFor(`window.__amadeus?.sessionStore.getState().userId`, 20000, 'userId')
-  const userId = await evalJs(`window.__amadeus.sessionStore.getState().userId`)
+  userId = await evalJs(`window.__amadeus.sessionStore.getState().userId`)
   console.log(`userId: ${userId}`)
 
   console.log('\n=== 1. 设置页表单加载 ===')
@@ -72,6 +114,8 @@ try {
   await waitFor(`document.querySelector('#ai-base-url').value !== ''`, 10000, '表单回填')
   const baseUrl = await evalJs(`document.querySelector('#ai-base-url').value`)
   const model = await evalJs(`document.querySelector('#ai-model').value`)
+  // 记住原 model 值，结束在 finally 里还原（读取失败则跳过一次还原动作，不用常量兜底）
+  origModel = typeof model === 'string' && model ? model : null
   const keyPlaceholder = await evalJs(`document.querySelector('#ai-api-key').placeholder`)
   report('baseUrl 从服务端回填', baseUrl === 'https://api.deepseek.com/v1', baseUrl)
   report('model 从服务端回填', model === 'deepseek-v4-pro', model)
@@ -98,6 +142,7 @@ try {
     return true;
   })()`)
   report('点击保存按钮', clicked === true)
+  if (clicked === true) modelMutated = true
   await waitFor(
     `document.body.textContent.includes('已保存到大脑服务')`,
     15000,
@@ -106,12 +151,7 @@ try {
   report('toast 提示已保存', true)
   const g = await (await fetch(`${BRAIN}/api/config/${userId}`)).json()
   report('服务端 GET 确认 model 落库', g.config.provider.model === newModel, g.config.provider.model)
-  // 还原 model，避免影响后续 E2E
-  await fetch(`${BRAIN}/api/config/${userId}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config: { provider: { model: 'deepseek-v4-pro' } } })
-  })
+  // model 的还原挪到下方 finally：用最初读到的原值，异常/断言失败路径同样执行
 
   console.log('\n=== 3. Live2D 配置面板 AI tab 同源显示 ===')
   await evalJs(`window.history.pushState({}, '', '/companion'); window.dispatchEvent(new PopStateEvent('popstate')); true`)
@@ -127,5 +167,7 @@ try {
   console.log(`\n=== 汇总: ${results.length - failed.length}/${results.length} 通过 ===`)
   if (failed.length > 0) process.exitCode = 1
 } finally {
+  // 还原最初读到的 model 原值（restoreModel 内部按读到的原值还原，异常/断言失败/信号路径同样执行）
+  await cleanupOnce()
   cdp.close()
 }

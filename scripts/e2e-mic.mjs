@@ -16,6 +16,7 @@ const WAV_PATH = resolve(import.meta.dirname, '../.tmp-mic-test.wav')
 const wavB64 = readFileSync(WAV_PATH).toString('base64')
 
 const CDP_HTTP = 'http://127.0.0.1:9222'
+const BRAIN = 'http://localhost:3002'
 
 const results = []
 function report(name, ok, detail = '') {
@@ -85,12 +86,76 @@ async function waitFor(cdp, expression, timeoutMs = 30000, label = expression) {
   }
 }
 
+// ---------- 测试会话清理 ----------
+
+/** 本脚本自建的会话 id（结束统一 DELETE，不污染真实会话库）；并记住进入脚本前的活跃会话以便还原 */
+const createdSessionIds = []
+let prevActiveSessionId = null
+
+/** DELETE 自建会话并同步页面 store；清理失败仅告警，不掩盖原测试结果 */
+async function cleanupSessions(cdp) {
+  for (const id of createdSessionIds) {
+    try {
+      const res = await fetch(`${BRAIN}/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      if (!res.ok) console.warn(`[e2e] 清理测试会话 ${id} 失败：HTTP ${res.status}`)
+    } catch (error) {
+      console.warn(`[e2e] 清理测试会话 ${id} 失败：${error instanceof Error ? error.message : error}`)
+    }
+  }
+  if (createdSessionIds.length === 0) return
+  await evalJs(
+    cdp,
+    `(() => {
+      const ids = ${JSON.stringify(createdSessionIds)}
+      const s = window.__amadeus.sessionStore
+      const st = s.getState()
+      const messages = { ...st.messages }
+      for (const id of ids) delete messages[id]
+      const sessions = st.sessions.filter((x) => !ids.includes(x.id))
+      const activeGone = ids.includes(st.activeSessionId)
+      s.setState({ sessions, messages, ...(activeGone ? { activeSessionId: null } : {}) })
+      const prev = ${JSON.stringify(prevActiveSessionId)}
+      if (activeGone && prev && sessions.some((x) => x.id === prev)) s.getState().selectSession(prev)
+      return true
+    })()`
+  ).catch((error) => console.warn(`[e2e] 页面侧会话状态同步失败：${error instanceof Error ? error.message : error}`))
+}
+
 const target = await getPageTarget()
 if (!target) {
   console.error('未找到 Electron 页面目标。确认桌面端 dev 已启动（9222 调试端口）。')
   process.exit(1)
 }
 const cdp = await connect(target.webSocketDebuggerUrl)
+
+// ---------- 信号兜底清理：Ctrl+C（SIGINT）/SIGTERM 时 try/finally 不会执行 ----------
+let cleanupPromise = null
+/** 收尾 + 信号兜底共用的一次性清理（多路触发只跑一次；失败仅告警，不掩盖原测试结果） */
+function cleanupOnce() {
+  cleanupPromise ??= (async () => {
+    // 失败路径兜底：mic 还开着就关掉并还原假麦克风补丁，不留尾巴（正常路径收尾已做过，幂等）
+    await evalJs(
+      cdp,
+      `(() => {
+        try { if (window.__amadeus?.uiStore?.getState().micActive) document.querySelector('div.absolute.right-4 button')?.click() } catch {}
+        try { window.__fakeMic?.restore() } catch {}
+        return true
+      })()`
+    ).catch(() => {})
+    await cleanupSessions(cdp)
+  })().catch((error) => console.warn(`[e2e] 清理失败：${error instanceof Error ? error.message : error}`))
+  return cleanupPromise
+}
+let signalExitCode = null
+/** 首次信号：清理后按信号码退出（SIGINT=130/SIGTERM=143）；清理中再次收到信号则立即退出，防清理卡死 */
+function onSignal(code) {
+  if (signalExitCode !== null) process.exit(code)
+  signalExitCode = code
+  void cleanupOnce().then(() => process.exit(code))
+}
+process.on('SIGINT', () => onSignal(130))
+process.on('SIGTERM', () => onSignal(143))
+
 try {
   await cdp.call('Runtime.enable')
   console.log('\n=== M4 麦克风 VAD+STT 链路（合成语音假麦克风） ===')
@@ -119,6 +184,11 @@ try {
   }
   report('进入 Live2D 页（身份就绪、状态清理）', cleanup === true)
 
+  // 自建专用测试会话：语音回合落库到它，结束 DELETE，不污染用户当前活跃会话
+  prevActiveSessionId = await evalJs(cdp, `window.__amadeus.sessionStore.getState().activeSessionId ?? null`)
+  const testSessionId = await evalJs(cdp, `window.__amadeus.sessionStore.getState().createSession()`)
+  createdSessionIds.push(testSessionId)
+
   // 公共注入：假麦克风 + fetch 包装捕获 STT 响应
   const inject = (() => {
     const b64 = wavB64
@@ -131,7 +201,10 @@ try {
         const dest = ctx.createMediaStreamDestination();
         const src = ctx.createBufferSource();
         src.buffer = buffer; src.connect(dest);
-        const origGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        // 上一轮残留先整体还原（getUserMedia 补丁/音轨/AudioContext），再装本轮
+        try { window.__fakeMic?.restore() } catch {}
+        // 真·原实现只捕获一次放页面全局：否则第二轮会把上一轮的补丁当作"原实现"还原回去
+        const origGetUserMedia = (window.__origGetUserMedia ??= navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices));
         navigator.mediaDevices.getUserMedia = () => Promise.resolve(dest.stream);
         if (!window.__sttCalls) {
           const origFetch = window.fetch.bind(window);
@@ -146,8 +219,18 @@ try {
             return res;
           };
         }
-        try { window.__fakeMic?.ctx?.close() } catch {}
-        window.__fakeMic = { ctx, src };
+        window.__fakeMic = {
+          ctx,
+          src,
+          restore: () => {
+            // 还原 getUserMedia 补丁、停掉合成音轨、关 AudioContext，并清掉页面全局，不留尾巴
+            try { navigator.mediaDevices.getUserMedia = origGetUserMedia } catch {}
+            try { src.stop() } catch {}
+            try { dest.stream.getTracks().forEach((t) => t.stop()) } catch {}
+            try { ctx.close() } catch {}
+            try { delete window.__fakeMic } catch {}
+          }
+        };
         return { ok: true, seconds: buffer.duration };
       } catch (e) { return { ok: false, err: String(e) }; }
     })()`
@@ -242,7 +325,7 @@ try {
 
   // 收尾：关 mic + 还原 patch
   await evalJs(cdp, `(() => { if (window.__amadeus.uiStore.getState().micActive) document.querySelector('div.absolute.right-4 button')?.click(); return true })()`)
-  await evalJs(cdp, `try { window.__fakeMic?.ctx?.close(); delete window.__fakeMic } catch {} true`)
+  await evalJs(cdp, `try { window.__fakeMic?.restore() } catch {} true`)
   await sleep(300)
   report('mic 关闭收尾（micActive=false）', !(await evalJs(cdp, `window.__amadeus.uiStore.getState().micActive`)))
 
@@ -250,5 +333,6 @@ try {
   console.log(`\n=== 汇总: ${results.length - failed.length}/${results.length} 通过 ===`)
   if (failed.length > 0) process.exitCode = 1
 } finally {
+  await cleanupOnce()
   cdp.close()
 }

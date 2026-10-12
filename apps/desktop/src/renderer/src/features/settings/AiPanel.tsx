@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { OutputLanguage, UserConfig } from '@pi-amadeus/shared'
@@ -23,10 +23,19 @@ export function AiPanel(): React.JSX.Element {
   const saveAiConfig = useSettingsStore((s) => s.saveAiConfig)
   const [form, setForm] = useState<UserConfig>(aiConfig)
   const [saving, setSaving] = useState(false)
+  // 用户是否改过表单：改过之后，迟到的 loadAiConfig 回填不得覆盖用户输入
+  const dirtyRef = useRef(false)
 
-  // 表单与服务端配置同步（首屏加载；store 更新时回填）
+  function updateForm(next: UserConfig): void {
+    dirtyRef.current = true
+    setForm(next)
+  }
+
+  // 表单与服务端配置同步（首屏加载；store 更新时回填；用户已改动则跳过）
   useEffect(() => {
-    setForm(aiConfig)
+    if (!dirtyRef.current) {
+      setForm(aiConfig)
+    }
   }, [aiConfig])
 
   useEffect(() => {
@@ -42,6 +51,9 @@ export function AiPanel(): React.JSX.Element {
     setSaving(true)
     try {
       await saveAiConfig(userId, form)
+      // 保存成功：回到"未改动"状态，并用服务端返回的最新配置回填（密钥不回填）
+      dirtyRef.current = false
+      setForm(useSettingsStore.getState().aiConfig)
       toast.success(t('settings.ai.savedHint'))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
@@ -66,7 +78,7 @@ export function AiPanel(): React.JSX.Element {
             id="ai-base-url"
             value={form.provider.baseUrl}
             placeholder={t('settings.ai.baseUrlPlaceholder')}
-            onChange={(e) => setForm({ ...form, provider: { ...form.provider, baseUrl: e.target.value } })}
+            onChange={(e) => updateForm({ ...form, provider: { ...form.provider, baseUrl: e.target.value } })}
           />
         </div>
         <div className="space-y-2">
@@ -82,7 +94,7 @@ export function AiPanel(): React.JSX.Element {
                   ? t('settings.ai.keySaved')
                   : t('settings.ai.apiKeyPlaceholder')
             }
-            onChange={(e) => setForm({ ...form, provider: { ...form.provider, apiKey: e.target.value } })}
+            onChange={(e) => updateForm({ ...form, provider: { ...form.provider, apiKey: e.target.value } })}
           />
         </div>
         <div className="space-y-2">
@@ -91,7 +103,7 @@ export function AiPanel(): React.JSX.Element {
             id="ai-model"
             value={form.provider.model}
             placeholder={t('settings.ai.modelPlaceholder')}
-            onChange={(e) => setForm({ ...form, provider: { ...form.provider, model: e.target.value } })}
+            onChange={(e) => updateForm({ ...form, provider: { ...form.provider, model: e.target.value } })}
           />
         </div>
         <div className="space-y-2">
@@ -100,7 +112,7 @@ export function AiPanel(): React.JSX.Element {
             id="ai-proxy"
             value={form.provider.proxy ?? ''}
             placeholder={t('settings.ai.proxyPlaceholder')}
-            onChange={(e) => setForm({ ...form, provider: { ...form.provider, proxy: e.target.value } })}
+            onChange={(e) => updateForm({ ...form, provider: { ...form.provider, proxy: e.target.value } })}
           />
         </div>
         <div className="space-y-2">
@@ -111,14 +123,14 @@ export function AiPanel(): React.JSX.Element {
             className="font-mono text-xs"
             value={form.systemPrompt}
             placeholder={t('settings.ai.systemPromptPlaceholder')}
-            onChange={(e) => setForm({ ...form, systemPrompt: e.target.value })}
+            onChange={(e) => updateForm({ ...form, systemPrompt: e.target.value })}
           />
         </div>
         <div className="space-y-2">
           <Label>{t('settings.ai.outputLanguage')}</Label>
           <Select
             value={form.outputLanguage}
-            onValueChange={(v) => setForm({ ...form, outputLanguage: v as OutputLanguage })}
+            onValueChange={(v) => updateForm({ ...form, outputLanguage: v as OutputLanguage })}
           >
             <SelectTrigger className="w-[160px]">
               <SelectValue />
@@ -137,7 +149,7 @@ export function AiPanel(): React.JSX.Element {
           </div>
           <Switch
             checked={form.tools?.enabled ?? true}
-            onCheckedChange={(checked) => setForm({ ...form, tools: { enabled: checked } })}
+            onCheckedChange={(checked) => updateForm({ ...form, tools: { enabled: checked } })}
           />
         </div>
         <Button onClick={save} disabled={!userId || !configLoaded || saving}>

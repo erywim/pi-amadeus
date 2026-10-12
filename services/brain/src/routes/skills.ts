@@ -15,7 +15,12 @@ export function skillRoutes(cfg: BrainConfig): Hono {
     const body = (await c.req.json().catch(() => null)) as { enabled?: unknown } | null
     const enabled = body?.enabled === true
     const result = await setSkillEnabled(cfg, c.req.param('name'), enabled)
-    if (!result.ok) return c.json({ error: 'skill 不存在' }, 404)
+    if (!result.ok) {
+      if (result.status === 'notPersisted') {
+        return c.json({ error: 'skill 状态未落盘（状态文件损坏或写入失败，详见 brain 日志），本次修改未生效' }, 409)
+      }
+      return c.json({ error: 'skill 不存在' }, 404)
+    }
     return c.json({ ok: true, skill: result.skill })
   })
 

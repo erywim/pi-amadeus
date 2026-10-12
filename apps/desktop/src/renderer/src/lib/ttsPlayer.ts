@@ -106,7 +106,9 @@ export function enqueuePcm(base64: string, sampleRate: number): void {
 /** 全部停止（中途打断语音回合时） */
 export function stopTtsPlayback(): void {
   carry = null
-  scheduledUntil = audioCtx?.currentTime ?? 0
+  // 此处总是销毁 AudioContext，其时钟随之作废，调度游标必须一并归零；
+  // 否则下一回合在新建的 context（时钟从 0 起）上会把过期的旧时钟值当成调度起点
+  scheduledUntil = 0
   if (audioCtx) {
     void audioCtx.close()
     audioCtx = null

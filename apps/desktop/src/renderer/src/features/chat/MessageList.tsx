@@ -22,6 +22,8 @@ export function MessageList(): React.JSX.Element {
 
   const list = messages ?? []
   const draftLength = stream.draft?.content.length ?? 0
+  // 流式区块只展示给产生它的会话：流全局唯一，切会话后不串台渲染
+  const streamInView = stream.sessionId != null && stream.sessionId === activeSessionId
   const showTyping =
     stream.streaming && stream.tools.length === 0 && draftLength < TYPING_THRESHOLD
   const showDraftBubble =
@@ -44,7 +46,7 @@ export function MessageList(): React.JSX.Element {
         ))}
 
         {/* 当前回合的流式智能体区块：工作过程卡先行露出，随后流出正文 */}
-        {stream.streaming && (showTyping || showDraftBubble) && (
+        {stream.streaming && streamInView && (showTyping || showDraftBubble) && (
           <div className="anim-msg grid grid-cols-[30px_minmax(0,1fr)] gap-3">
             <div className="grid size-[30px] place-items-center rounded-full border border-line-strong bg-surface">
               <span className="font-mono text-[13px] font-bold">K</span>
@@ -73,9 +75,9 @@ export function MessageList(): React.JSX.Element {
         )}
 
         {/* 上轮手动停止的残留工作卡 */}
-        {!stream.streaming && stoppedLog && <WorkProcessCard log={stoppedLog} />}
+        {!(stream.streaming && streamInView) && stoppedLog && <WorkProcessCard log={stoppedLog} />}
 
-        {stream.pendingConfirm && (
+        {streamInView && stream.pendingConfirm && (
           <div className="grid grid-cols-[30px_minmax(0,1fr)] gap-3">
             <div className="size-[30px]" aria-hidden />
             <BashConfirmCard confirm={stream.pendingConfirm} onRespond={respondToolConfirm} />

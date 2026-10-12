@@ -6,9 +6,10 @@ import { defaultUserConfig } from '../conversation.ts'
 
 /** 用户级 AI 配置：Postgres user_configs 单一来源；未配置时回落 .env 默认 */
 
-/** 掩码密钥：只保留尾部 4 位，其余打码（响应永不回传完整密钥） */
+/** 掩码密钥：长度 ≤8 时整体打码，否则只露头尾各 4 位（响应永不回传完整密钥） */
 function maskKey(key: string): string {
   if (!key) return ''
+  if (key.length <= 8) return '****'
   const tail = key.slice(-4)
   return `${key.slice(0, 4)}…${tail}`
 }

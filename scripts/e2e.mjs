@@ -6,6 +6,7 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const CDP_HTTP = 'http://127.0.0.1:9222'
+const BRAIN = 'http://localhost:3002'
 
 const results = []
 function report(name, ok, detail = '') {
@@ -90,6 +91,41 @@ async function setTextarea(cdp, selector, text) {
   )
 }
 
+// ---------- 测试会话清理 ----------
+
+/** 本脚本自建的会话 id（结束统一 DELETE，不污染真实会话库）；并记住进入脚本前的活跃会话以便还原 */
+const createdSessionIds = []
+let prevActiveSessionId = null
+
+/** DELETE 自建会话并同步页面 store；清理失败仅告警，不掩盖原测试结果 */
+async function cleanupSessions(cdp) {
+  for (const id of createdSessionIds) {
+    try {
+      const res = await fetch(`${BRAIN}/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      if (!res.ok) console.warn(`[e2e] 清理测试会话 ${id} 失败：HTTP ${res.status}`)
+    } catch (error) {
+      console.warn(`[e2e] 清理测试会话 ${id} 失败：${error instanceof Error ? error.message : error}`)
+    }
+  }
+  if (createdSessionIds.length === 0) return
+  await evalJs(
+    cdp,
+    `(() => {
+      const ids = ${JSON.stringify(createdSessionIds)}
+      const s = window.__amadeus.sessionStore
+      const st = s.getState()
+      const messages = { ...st.messages }
+      for (const id of ids) delete messages[id]
+      const sessions = st.sessions.filter((x) => !ids.includes(x.id))
+      const activeGone = ids.includes(st.activeSessionId)
+      s.setState({ sessions, messages, ...(activeGone ? { activeSessionId: null } : {}) })
+      const prev = ${JSON.stringify(prevActiveSessionId)}
+      if (activeGone && prev && sessions.some((x) => x.id === prev)) s.getState().selectSession(prev)
+      return true
+    })()`
+  ).catch((error) => console.warn(`[e2e] 页面侧会话状态同步失败：${error instanceof Error ? error.message : error}`))
+}
+
 // ---------- 文本聊天链路 ----------
 
 async function testChat(cdp) {
@@ -104,8 +140,10 @@ async function testChat(cdp) {
   await sleep(600)
   const onText = await evalJs(cdp, `window.location.pathname.includes('/text')`)
   report('进入文本模式页', onText)
-  // 新建会话并发送
-  await evalJs(cdp, `window.__amadeus.sessionStore.getState().createSession(); true`)
+  // 新建专用测试会话并记录 id（结束 DELETE 清理，不留在真实会话库）
+  prevActiveSessionId ??= await evalJs(cdp, `window.__amadeus.sessionStore.getState().activeSessionId ?? null`)
+  const chatSessionId = await evalJs(cdp, `window.__amadeus.sessionStore.getState().createSession()`)
+  createdSessionIds.push(chatSessionId)
   await sleep(300)
   await setTextarea(cdp, 'textarea[placeholder]', '你好，自我介绍一下吧')
   await sleep(200)
@@ -177,6 +215,11 @@ async function testVoice(cdp) {
   await evalJs(cdp, `window.__amadeus.uiStore.getState().closeLogin(); true`)
   await sleep(400)
 
+  // 专用测试会话：语音回合落库到它，结束 DELETE，不污染用户当前活跃会话
+  prevActiveSessionId ??= await evalJs(cdp, `window.__amadeus.sessionStore.getState().activeSessionId ?? null`)
+  const voiceSessionId = await evalJs(cdp, `window.__amadeus.sessionStore.getState().createSession()`)
+  createdSessionIds.push(voiceSessionId)
+
   // 调试输入框
   await setTextarea(cdp, 'textarea', '用日语说一句鼓励我的话')
   await sleep(300)
@@ -215,6 +258,26 @@ if (!target) {
   process.exit(1)
 }
 const cdp = await connect(target.webSocketDebuggerUrl)
+
+// ---------- 信号兜底清理：Ctrl+C（SIGINT）/SIGTERM 时 try/finally 不会执行 ----------
+let cleanupPromise = null
+/** 收尾 + 信号兜底共用的一次性清理（多路触发只跑一次；失败仅告警，不掩盖原测试结果） */
+function cleanupOnce() {
+  cleanupPromise ??= cleanupSessions(cdp).catch((error) =>
+    console.warn(`[e2e] 清理失败：${error instanceof Error ? error.message : error}`)
+  )
+  return cleanupPromise
+}
+let signalExitCode = null
+/** 首次信号：清理后按信号码退出（SIGINT=130/SIGTERM=143）；清理中再次收到信号则立即退出，防清理卡死 */
+function onSignal(code) {
+  if (signalExitCode !== null) process.exit(code)
+  signalExitCode = code
+  void cleanupOnce().then(() => process.exit(code))
+}
+process.on('SIGINT', () => onSignal(130))
+process.on('SIGTERM', () => onSignal(143))
+
 try {
   await cdp.call('Runtime.enable')
   if (phase === 'chat' || phase === 'all') await testChat(cdp)
@@ -223,5 +286,6 @@ try {
   console.log(`\n=== 汇总: ${results.length - failed.length}/${results.length} 通过 ===`)
   if (failed.length > 0) process.exitCode = 1
 } finally {
+  await cleanupOnce()
   cdp.close()
 }

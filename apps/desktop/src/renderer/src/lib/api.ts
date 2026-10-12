@@ -106,7 +106,8 @@ interface TurnBody {
 
 /**
  * 发起一个回合的 SSE 流。onEvent 按事件回调；返回 AbortController 用于中途停止。
- * 网络错误抛出；done 事件正常结束流。
+ * 网络错误抛出；done 事件正常结束流；连接干净关闭但无 done/error 终止事件时
+ * 按 error 事件通知（否则 streaming/pendingUser 等状态卡死）。
  */
 function runTurn(
   endpoint: '/api/chat' | '/api/voice',
@@ -128,6 +129,8 @@ function runTurn(
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    /** 是否已收到终止事件（done/error）；连接关闭而未见终止 = 大脑被杀/代理掐断 */
+    let terminated = false
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
@@ -142,13 +145,19 @@ function runTurn(
             // 事件处理器的异常（如音频解码失败）不允许中断整条流，
             // 否则 done/后续事件会丢失
             try {
-              onEvent(JSON.parse(payload) as SseEvent)
+              const event = JSON.parse(payload) as SseEvent
+              if (event.type === 'done' || event.type === 'error') terminated = true
+              onEvent(event)
             } catch (error) {
               console.error('[sse] 事件处理异常：', error)
             }
           }
         }
       }
+    }
+    if (!terminated) {
+      // 抛给下方 catch，走与 error 事件等价的清理出口（abort 时 catch 内已静默）
+      throw new Error('连接中断：未收到回合终止事件')
     }
   })().catch((error: unknown) => {
     if (controller.signal.aborted) return
