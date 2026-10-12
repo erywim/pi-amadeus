@@ -97,6 +97,7 @@ export class Live2DEngine {
   private zoom = 0
   private lift = 0
   private tilt = 0
+  private wasSpeaking = false
   /** 整体歪头的旋转中心（模型局部坐标，首帧网格就绪后取一次） */
   private neck: { x: number; y: number } | null = null
 
@@ -135,9 +136,13 @@ export class Live2DEngine {
 
     const model = await Live2DModel.from(settings)
     if (this.destroyed) {
-      // 迟到加载：挂载已卸载，清理后退出
+      // 迟到加载：挂载已卸载，清理后退出。
+      // destroy() 若已处理过这个 app（this.app 置空），这里不再二次销毁（PIXI 不允许重复 destroy）
       model.destroy()
-      app.destroy(false)
+      if (this.app === app) {
+        this.app = null
+        app.destroy(false)
+      }
       return
     }
 
@@ -169,6 +174,8 @@ export class Live2DEngine {
 
     window.addEventListener('pointermove', this.onPointerMove)
     window.addEventListener('blur', this.onPointerLeave)
+    // 指针移出窗口但窗口未失焦（多屏/多窗口常见）时 blur 不触发，靠 document 的 mouseleave 兜底
+    document.addEventListener('mouseleave', this.onPointerLeave)
 
     window.__live2d = this
   }
@@ -184,6 +191,10 @@ export class Live2DEngine {
     this.elapsed += dt
 
     this.state = this.computeState()
+    // 说话沿：停掉在手的模型自带动作——动作曲线会拥有口/眼参数并盖住语音口型与眨眼
+    // （程序层从动作现值重播种，平滑接续，无跳变）
+    if (this.state.speaking && !this.wasSpeaking && this.motionLayer?.isPlaying) this.motionLayer.stop()
+    this.wasSpeaking = this.state.speaking
     const gesture = this.gestures.update(dt)
     procedural.update(
       {
@@ -303,14 +314,12 @@ export class Live2DEngine {
 
   // —— 供 IdleScheduler 调用的公共 API ——
 
-  /** 说话时的手势：中性类表情用模型自带随机动作，其余用本表情的程序手势 */
+  /** 说话时的手势：一律播本表情的程序手势。
+   *  模型自带动作会拥有口/眼参数、在渲染时盖住语音口型与眨眼（程序层在 tick 的写入到不了绘制），
+   *  所以 random1-5 只在待机时用（见 playIdleGesture），说话期间不播 */
   playTalkingGesture(): void {
     const expr = this.procedural?.expression
     if (!expr) return
-    if (expr.randomMotions) {
-      void this.motionLayer?.play(this.randomGroup(), 0, MotionPriority.NORMAL, 1)
-      return
-    }
     const pool: GestureName[] = expr.idle.length ? expr.idle : ['nod']
     this.playGestureName(pool[Math.floor(Math.random() * pool.length)]!)
   }
@@ -405,18 +414,32 @@ export class Live2DEngine {
     return out
   }
 
-  /** 冻结随机性：头身游走归零、关掉库自带的呼吸摆动（截图可复现） */
+  /** 冻结时游走器原始 min/max（解冻恢复用） */
+  private frozenSway: Array<{ min: number; max: number }> | null = null
+
+  /** 冻结随机性：头身游走归零、关掉库自带的呼吸摆动（截图可复现）；解冻时原样恢复 */
   debugFreeze(on: boolean): void {
     const internal = this.model?.internalModel as unknown as { breath?: unknown; __breath?: unknown } | undefined
     const walkers = (this.procedural as unknown as { walkers?: Record<string, { min: number; max: number; target: number; value: number }> } | null)?.walkers
     if (walkers) {
-      for (const w of Object.values(walkers)) {
-        if (on) {
+      const list = Object.values(walkers)
+      if (on) {
+        this.frozenSway ??= list.map((w) => ({ min: w.min, max: w.max }))
+        for (const w of list) {
           w.min = 0
           w.max = 0
           w.target = 0
           w.value = 0
         }
+      } else if (this.frozenSway) {
+        list.forEach((w, i) => {
+          const saved = this.frozenSway![i]
+          if (saved) {
+            w.min = saved.min
+            w.max = saved.max
+          }
+        })
+        this.frozenSway = null
       }
     }
     if (internal) {
@@ -444,7 +467,7 @@ export class Live2DEngine {
   }
 
   private readonly onPointerLeave = (): void => {
-    // 窗口失焦视为光标离开：程序层按衰减速率把跟随缓回中立位
+    // 窗口失焦或指针移出文档视为光标离开：程序层按衰减速率把跟随缓回中立位
     this.cursorInside = false
   }
 
@@ -480,6 +503,7 @@ export class Live2DEngine {
     }
     window.removeEventListener('pointermove', this.onPointerMove)
     window.removeEventListener('blur', this.onPointerLeave)
+    document.removeEventListener('mouseleave', this.onPointerLeave)
     this.unsubscribe?.()
     this.unsubscribe = null
     this.resizeObserver?.disconnect()

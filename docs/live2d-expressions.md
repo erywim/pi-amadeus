@@ -30,8 +30,8 @@
 ```
 
 - 情绪 25 种、动作 13 种，词表与中文含义在 `packages/shared/src/emotion.ts`（`EMOTIONS` / `GESTURES`），提示词和预览界面都从这里取。
-- 解析器（`services/brain/src/bilingual.ts`）容忍：一行多个标记、`【情绪】`/`【动作】` 等近似写法、附带中文说明、旧情绪名（`joy`、`shy2`、`smile1` 等会映射到新名字）；无法识别的情绪/动作直接丢弃，不会显示成正文。
-- SSE 事件：`emotion`（持续状态）与 `gesture`（一次性动作），前端写入 `live2dStore`，引擎订阅后执行。
+- 解析器（`services/brain/src/bilingual.ts`）容忍：一行多个标记、`【情绪】`/`【动作】` 等近似写法、附带中文说明、尾随标点、旧情绪名（`joy`、`shy2`、`smile1` 等会映射到新名字）；无法识别的情绪/动作名按协议噪音丢弃，但标记被写进行中时其后的正文按中文兜底（内容不丢，落库记录完整）。
+- SSE 事件：`emotion`（持续状态）与 `gesture`（一次性动作），按行内出现顺序发出，前端写入 `live2dStore`，引擎订阅后执行。
 - 情绪在空闲 30 秒后自动回落到 `neutral`。
 
 ## 3. 代码结构（`apps/desktop/src/renderer/src/features/live2d/lib/`）
@@ -47,7 +47,7 @@
 | `live2d-engine.ts` | 装配各层；订阅情绪/动作；空闲回落；调试钩子 `window.__live2d` |
 | `idle.ts` | 待机调度：眨眼、视线游移、按当前表情选择待机手势或模型自带随机动作 |
 
-模型自带的 `random1-5` 动作只在 `neutral` 下作为待机动作播放（它们会暂时覆盖眼、嘴、头，其他表情用各自的程序手势），原来的 10 个 `.exp3.json` 与情绪动作文件不再用于情绪表现。
+模型自带的 `random1-5` 动作只在 `neutral` 的**待机**时段播放（说话期间不播：动作曲线会拥有口/眼参数、盖住语音口型与眨眼），非中性表情用各自的程序手势；原来的 10 个 `.exp3.json` 与情绪动作文件不再用于情绪表现。
 
 判断方向时只看放大的固定区域截图（或做像素测量）：缩略图和跟随头部移动的裁剪框都容易看反。
 
@@ -71,7 +71,7 @@ node scripts/live2d-shot.mjs --url http://localhost:5199/live2d \
   --sheet sheet --dpr 2
 ```
 
-脚本会自己起一个 headless Chrome（可并行多个），隐藏界面、冻结待机随机性后逐条执行并截图。页面里 `E` 是引擎调试钩子：
+脚本会自己起一个 headless Chrome（可并行多个），隐藏界面、冻结待机随机性后逐条执行并截图。每条计划的 `js` 是语句体（内部包成 async IIFE）：要回显数值请用 `return`，返回值会打在输出备注里（参探测针用 `return JSON.stringify(E.debugParams([...]))`）。页面里 `E` 是引擎调试钩子：
 
 | 接口 | 用途 |
 |---|---|

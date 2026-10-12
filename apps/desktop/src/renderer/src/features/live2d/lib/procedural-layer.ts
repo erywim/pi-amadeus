@@ -7,7 +7,9 @@ import { FACE_KEYS, FACE_PARAMS, P, SIGN, type FaceKey } from './model-params'
  * 程序动画层：引擎每帧最后写模型参数的"表演"层。
  *
  * 与动作层（MotionLayer）通过**参数所有权**共存：
- * - 动作拥有其曲线的参数时程序层让位（两个特权例外：眨眼、说话口型）
+ * - 动作拥有其曲线的参数时程序层让位——动作曲线在渲染时覆写参数缓冲，
+ *   本层 tick 里的叠加根本到不了绘制（已在 pixi-live2d-display 0.4.0 源码核查），
+ *   因此引擎保证说话期间不播此类动作（live2d-engine 说话沿停机 + playTalkingGesture 只播程序手势）
  * - 动作结束（所有权消失）→ 从模型现值重播种，平滑回到程序目标——
  *   解决"动作硬切后参数卡死在最后帧"的问题
  *
@@ -243,16 +245,8 @@ export class ProceduralLayer {
       const ownedBefore = this.prevOwned.has(id)
 
       if (owned) {
-        // 动作拥有该参数：程序层让位。两个特权例外——
-        // 1) 说话时口型取 max：动作的嘴型曲线与语音口型并存
-        if (id === P.mouthOpen && this.lip > 0.02) {
-          const motionMouth = core.getParameterValueById(P.mouthOpen)
-          if (this.lip > motionMouth) core.setParameterValueById(P.mouthOpen, this.lip)
-        }
-        // 2) 眨眼瞬时覆盖（~180ms 窗口，可接受）
-        if ((id === P.eyeL || id === P.eyeR) && this.isBlinking) {
-          core.setParameterValueById(id, this.blinkValue)
-        }
+        // 动作拥有该参数：程序层让位（此刻写参数缓冲会被随后的动作曲线覆写，叠加无意义）。
+        // 说话期间引擎不安排此类动作，语音口型不被抢走
         continue
       }
 

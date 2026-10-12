@@ -6,12 +6,13 @@
  * 最后可选生成一张拼图（contact sheet）便于一次对比多张。
  *
  * 前置：渲染层 dev server 已启动（任选其一）
- *   - npm run dev                         （electron-vite dev，含 Electron）
- *   - cd apps/desktop && npx electron-vite dev --rendererOnly   （仅渲染层，无需 Electron）
+ *   - cd apps/desktop && node scripts/renderer-dev.mjs --port 5199   （仅渲染层，无 Electron，默认 --url 指向它）
+ *   - npm run dev                                                   （electron-vite dev，5173，需 --url 指定）
  *
  * 用法：
  *   node scripts/live2d-shot.mjs --plan plan.json [--out dir] [--sheet name] [--url URL]
  *   node scripts/live2d-shot.mjs --plan-json '{"shots":[{"name":"neutral"}]}'
+ *   （--url 缺省为 http://localhost:5199/live2d）
  *
  * 计划格式：
  *   {
@@ -70,6 +71,8 @@ function findChrome() {
 
 /** 起 headless Chrome：端口由 Chrome 自选（--remote-debugging-port=0），从 DevToolsActivePort 读回 */
 async function launchChrome({ width, height, dpr }) {
+  // 先找可执行文件再建临时目录：找不到 Chrome 时不会留下空的 profile 目录
+  const bin = findChrome()
   const profileDir = mkdtempSync(join(tmpdir(), 'amadeus-shot-'))
   const flags = [
     '--headless=new',
@@ -93,12 +96,14 @@ async function launchChrome({ width, height, dpr }) {
     '--allow-file-access-from-files',
     'about:blank'
   ]
-  const chrome = spawn(findChrome(), flags, {
+  const chrome = spawn(bin, flags, {
     stdio: 'ignore',
     windowsHide: true,
     // POSIX：独立进程组，结束时整组杀掉（含 GPU/渲染子进程）
     detached: process.platform !== 'win32'
   })
+  // spawn 失败（如权限问题）走超时/异常路径，避免未监听的 error 事件把整个进程带崩
+  chrome.on('error', () => {})
   const portFile = join(profileDir, 'DevToolsActivePort')
   const deadline = Date.now() + 20000
   while (Date.now() < deadline) {
@@ -116,6 +121,7 @@ async function launchChrome({ width, height, dpr }) {
     await sleep(200)
   }
   killChrome(chrome)
+  rmSync(profileDir, { recursive: true, force: true })
   throw new Error('Chrome 未在超时内就绪')
 }
 
@@ -281,7 +287,7 @@ async function main() {
     console.error('用法: node scripts/live2d-shot.mjs --plan plan.json | --plan-json <json> [--out dir] [--sheet name]')
     process.exit(2)
   }
-  const url = args.url || 'http://localhost:5173/live2d'
+  const url = args.url || 'http://localhost:5199/live2d'
   const outDir = resolve(args.out || join(tmpdir(), 'amadeus-shots'))
   mkdirSync(outDir, { recursive: true })
   const width = Number(args.width || 1280)

@@ -1,6 +1,6 @@
 import type { Emotion } from '@pi-amadeus/shared'
 import type { GestureName } from './gestures'
-import type { FaceKey } from './model-params'
+import { SHY_BLUSH_BASE, type FaceKey } from './model-params'
 import type { OverlayKind } from './overlays'
 
 /**
@@ -356,7 +356,7 @@ export const EXPRESSIONS: Record<Emotion, ExpressionRecipe> = {
   }
 }
 
-/** 配方补全默认值（缺省 = 中性：无情绪脸、睁眼、抱臂、模型原始脸红） */
+/** 配方补全默认值（缺省 = 中性：无情绪脸、睁眼、抱臂、害羞脸红回到模型原始基线） */
 export function resolveRecipe(recipe: ExpressionRecipe): ResolvedExpression {
   const eyeOpen = recipe.eyeOpen ?? 1
   return {
@@ -373,7 +373,7 @@ export function resolveRecipe(recipe: ExpressionRecipe): ResolvedExpression {
     roll: recipe.roll ?? 0,
     arms: recipe.arms ?? 1,
     cheekBlush: recipe.cheekBlush ?? 0,
-    shyBlush: recipe.shyBlush ?? 0.09,
+    shyBlush: recipe.shyBlush ?? SHY_BLUSH_BASE,
     overlays: recipe.overlays ?? [],
     entry: recipe.entry ?? null,
     idle: recipe.idle ?? [],

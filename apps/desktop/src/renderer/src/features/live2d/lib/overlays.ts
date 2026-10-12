@@ -119,9 +119,15 @@ abstract class Overlay {
 
   show(duration: number | null): void {
     if (this.target === 0 || duration !== null) this.t = 0
+    // 从隐藏状态重新显示时从头开始：淡出完成后 draw 停摆，粒子在半空冻结，
+    // 不清掉的话复显会看到上个周期残留的飞行粒子（半透明鬼影）
+    if (this.target === 0) this.reset()
     this.target = 1
     this.remaining = duration
   }
+
+  /** 子类清理飞行中的粒子（Z 字母/泪滴/烟团）；隐藏后复显时由 show() 调用 */
+  protected reset(): void {}
 
   hide(): void {
     this.target = 0
@@ -169,6 +175,11 @@ class Tears extends Overlay {
   constructor(parent: PIXI.Container) {
     super(parent)
     this.root.addChild(this.g)
+  }
+
+  protected override reset(): void {
+    this.drops = []
+    this.nextDrop = [0.2, 0.6]
   }
 
   draw(a: Anchors, dt: number): void {
@@ -437,6 +448,11 @@ class Steam extends Overlay {
     this.root.addChild(this.g)
   }
 
+  protected override reset(): void {
+    this.puffs = []
+    this.nextPuff = 0
+  }
+
   draw(a: Anchors, dt: number): void {
     const g = this.g
     const F = a.F
@@ -495,6 +511,12 @@ class Ellipsis extends Overlay {
 class Zzz extends Overlay {
   private letters: Array<{ t: number; text: PIXI.Text }> = []
   private nextZ = 0
+
+  protected override reset(): void {
+    for (const l of this.letters) l.text.destroy()
+    this.letters = []
+    this.nextZ = 0
+  }
 
   draw(a: Anchors, dt: number): void {
     const F = a.F
