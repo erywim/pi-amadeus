@@ -95,7 +95,7 @@ async function main() {
   await cdp.send('Page.enable')
 
   // 干净重载（清掉已调度的待机定时器/在飞动作）
-  await cdp.send('Page.navigate', { url: 'http://localhost:5173/live2d' })
+  await cdp.send('Page.navigate', { url: 'http://localhost:5173/companion' })
   await sleep(4000)
   let ready = false
   for (let i = 0; i < 60; i++) {

@@ -64,7 +64,7 @@
 cd apps/desktop && node scripts/renderer-dev.mjs --port 5199
 
 # 另一个终端：按计划截图并生成拼图
-node scripts/live2d-shot.mjs --url http://localhost:5199/live2d \
+node scripts/live2d-shot.mjs --url http://localhost:5199/companion \
   --plan-json '{"clip":"face","shots":[
     {"name":"a","js":"E.previewRecipe({face:\"angry\",eyeOpen:0.55,mouthForm:-0.4})"},
     {"name":"b","js":"E.emote(\"tsundere\")","waitMs":2500}]}' \

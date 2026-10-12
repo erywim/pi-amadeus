@@ -36,12 +36,14 @@ createRoot(container).render(
     <TooltipProvider>
       <RouterProvider router={router} />
       <Toaster
-        position="bottom-right"
+        position="top-center"
         toastOptions={{
           style: {
-            background: '#0d131b',
-            color: '#e6edf3',
-            border: '1px solid #1c2530'
+            background: 'var(--foreground)',
+            color: 'var(--accent-ink)',
+            border: 'none',
+            boxShadow: 'var(--shadow-pop)',
+            fontSize: '13.5px'
           }
         }}
       />

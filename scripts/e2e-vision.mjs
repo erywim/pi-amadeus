@@ -111,10 +111,10 @@ try {
   await sleep(3500)
   await waitFor(cdp, `window.__amadeus?.sessionStore.getState().userId`, 20000, 'userId')
   await evalJs(cdp, `window.__amadeus.uiStore.getState().closeLogin(); true`)
-  if (!(await evalJs(cdp, `window.location.pathname.includes('live2d')`))) {
+  if (!(await evalJs(cdp, `window.location.pathname.includes('companion')`))) {
     await evalJs(
       cdp,
-      `window.history.pushState({}, '', '/live2d'); window.dispatchEvent(new PopStateEvent('popstate')); true`
+      `window.history.pushState({}, '', '/companion'); window.dispatchEvent(new PopStateEvent('popstate')); true`
     )
     await sleep(2000)
   }

@@ -79,9 +79,9 @@ try {
     'sessionStore init'
   )
 
-  if (!(await evalJs(`window.location.pathname.includes('chat')`))) {
+  if (!(await evalJs(`window.location.pathname.includes('text')`))) {
     await evalJs(
-      `window.history.pushState({}, '', '/chat'); window.dispatchEvent(new PopStateEvent('popstate')); true`
+      `window.history.pushState({}, '', '/text'); window.dispatchEvent(new PopStateEvent('popstate')); true`
     )
     await sleep(2500)
   }

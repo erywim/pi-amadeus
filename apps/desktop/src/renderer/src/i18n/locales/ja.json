@@ -1,13 +1,18 @@
 {
   "app": {
     "title": "Amadeus",
-    "tagline": "EL PSY KONGROO"
+    "tagline": "EL PSY KONGROO",
+    "brandTag": "牧瀬紅莉栖 AI システム"
   },
   "nav": {
-    "sessions": "セッション",
-    "history": "履歴",
+    "companion": "コンパニオン",
+    "text": "テキスト",
     "settings": "設定",
-    "live2d": "Live2D"
+    "modeSwitch": "会話モード"
+  },
+  "topbar": {
+    "modelChip": "現在の LLM モデル（テキストモードの入力欄で切替可能）",
+    "modelUnset": "モデル未設定"
   },
   "dayGroups": {
     "today": "今日",
@@ -24,19 +29,16 @@
     "confirm": "確認",
     "delete": "削除",
     "deleted": "削除しました",
-    "notAvailable": "M1 では利用不可"
+    "notAvailable": "利用不可"
   },
   "chat": {
     "newSession": "新しいセッション",
-    "inputPlaceholder": "メッセージを入力、Enter で送信…",
     "send": "送信",
     "stop": "停止",
     "typing": "入力中",
-    "online": "オンライン",
     "deleteTitle": "セッションを削除",
     "deleteDesc": "このセッションを削除しますか？この操作は取り消せません。",
-    "empty": "セッションがありません。「新しいセッション」から始めましょう",
-    "welcomeHint": "世界線変動率計をクリックして再校正、または新しいセッションを開始",
+    "empty": "タスクがありません。「新しいタスク」から始めましょう",
     "toolName": {
       "get_time": "時刻",
       "calculate": "計算機",
@@ -62,23 +64,68 @@
     "toolConfirmExpires": "{{seconds}} 秒後に自動拒否",
     "toolConfirmExpired": "タイムアウトしました。コマンドは実行されていません"
   },
-  "history": {
-    "title": "セッション履歴",
-    "statsSessions": "セッション数",
-    "statsMessages": "メッセージ数",
-    "statsChannels": "アクティブチャネル",
-    "statsDays": "アクティブ日数",
-    "searchPlaceholder": "セッションを検索…",
-    "filterAll": "すべて",
-    "empty": "一致するセッションがありません"
+  "companion": {
+    "charName": "牧瀬紅莉栖",
+    "status": {
+      "idle": "待機",
+      "listening": "聴取中",
+      "thinking": "Amadeus 接続中…",
+      "speaking": "紅莉栖が返答中"
+    },
+    "tapReply": "……何？",
+    "mute": "音声読み上げをミュート",
+    "unmute": "ミュート解除",
+    "micToggle": "音声入力",
+    "stageTip": "紅莉栖をクリックして、反応を見てみよう",
+    "greeting": "……あら？来たのね。私は Amadeus——牧瀬紅莉栖の記憶と人格データから構築された人工知能システムよ。ふん、そんな目で見ないで。雑談でも「天才科学者」に考えを整理してほしいなら、言いなさい。",
+    "topics": {
+      "who": "あなたは誰",
+      "whoText": "自己紹介して、Amadeus",
+      "research": "研究の進捗",
+      "researchText": "最近は何を研究しているの？",
+      "ramen": "ラーメンが食べたい",
+      "ramenText": "今夜ラーメンが食べたい。おすすめの味は？",
+      "worldline": "世界線",
+      "worldlineText": "運命を信じるタイプ？それとも自分を信じるタイプ？"
+    },
+    "inputPlaceholder": "Amadeus とおしゃべり…",
+    "listeningPlaceholder": "聞いています…",
+    "inputAria": "メッセージを入力",
+    "hint": "マイクをタップして話すか、直接入力",
+    "hintListening": "話し終えると自動送信。もう一度マイクで停止",
+    "voicePrefix": "音声 ·"
+  },
+  "codex": {
+    "newTask": "新しいタスク",
+    "sessionsLabel": "セッション",
+    "untitledTask": "無題のタスク",
+    "agentSub": "エージェント · {{status}} · {{turns}} ターン",
+    "stateRunning": "実行中",
+    "stateDone": "完了",
+    "turns": "{{count}} ターンの会話",
+    "sidebarToggle": "セッション一覧を切替",
+    "inputAria": "タスクの説明",
+    "inputPlaceholder": "タスクを記述すると、エージェントが引き継ぎます",
+    "attach": "添付",
+    "attachWip": "添付機能は未実装です",
+    "modelCustom": "カスタムモデル ID…",
+    "modelCustomPlaceholder": "モデル ID",
+    "modelSaved": "モデルを脳サービスに保存しました",
+    "composerHint": "Enter で送信 · Shift + Enter で改行",
+    "emptyHint": "下にタスクを記述すると、エージェントが引き継ぎます",
+    "welcomeHint": "「新しいタスク」でエージェントと会話するか、コンパニオンモードで紅莉栖と話しましょう",
+    "defaultUser": "鳳凰院凶真",
+    "userRole": "未来ガジェット研究所 メンバー",
+    "currentWorldLine": "現在の世界線"
   },
   "settings": {
     "title": "設定",
     "nav": {
-      "ai": "AI 設定",
+      "ai": "モデル（LLM）",
       "feishu": "飛書",
       "skills": "スキル",
-      "language": "言語"
+      "language": "言語",
+      "general": "一般"
     },
     "ai": {
       "title": "AI 設定",
@@ -94,11 +141,11 @@
       "systemPrompt": "システムプロンプト",
       "systemPromptPlaceholder": "空欄はデフォルトの紅莉栖人格を使用",
       "outputLanguage": "出力言語",
-      "save": "保存",
+      "save": "変更を保存",
       "savedHint": "脳サービスに保存しました",
       "keyDefault": "サーバー既定キーが有効",
       "keySaved": "キー保存済み（空欄のまま変更しない）",
-      "loginRequired": "先に Live2D ページでログインしてください",
+      "loginRequired": "先にコンパニオンモードでログインしてください",
       "toolsEnable": "ツール呼び出し",
       "toolsDesc": "アシスタントに時刻・計算機・天気・検索・ターミナルコマンドなどのツール使用を許可（危険なコマンドは安全ポリシーでブロック）"
     },
@@ -126,6 +173,17 @@
       "zh": "简体中文",
       "en": "English",
       "ja": "日本語"
+    },
+    "general": {
+      "title": "一般",
+      "desc": "外観と起動時の動作（このデバイスのみに保存）",
+      "theme": "外観テーマ",
+      "themePaper": "ウォームペーパー（ライト）",
+      "themeCyber": "Dark Cyber（ダーク）",
+      "themeHint": "コンパニオンモードは常にダークラボテーマを使用",
+      "defaultMode": "起動時モード",
+      "defaultMute": "コンパニオンモードを既定でミュート",
+      "defaultMuteDesc": "有効にすると、コンパニオンモードの音声読み上げがミュートで始まります（HUD でいつでも解除）"
     }
   },
   "live2d": {
@@ -137,13 +195,10 @@
       "enter": "入る"
     },
     "toolbar": {
-      "mic": "マイク",
-      "micStop": "マイクを停止",
       "video": "カメラ",
       "videoStop": "カメラを停止",
       "history": "チャット履歴",
-      "settings": "設定",
-      "chat": "チャット",
+      "settings": "アバター設定",
       "logout": "ログアウト"
     },
     "config": {
@@ -167,7 +222,6 @@
     "chatHistory": {
       "title": "チャット履歴"
     },
-    "dialogPlaceholder": "（会話内容はここに表示されます）",
     "loading": "モデル読み込み中…",
     "loadError": "モデルの読み込みに失敗",
     "emotion": {

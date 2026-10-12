@@ -1,58 +1,73 @@
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { WORLD_LINES, useDivergenceStore } from '@renderer/stores/divergenceStore'
 
-const ROLL_TICKS = 10
-const ROLL_MS = 55
+const ROLL_TICKS = 9
+const ROLL_MS = 42
 
-function nextValue(): string {
-  return (0.2 + Math.random() * 1.1).toFixed(6)
+const reducedMotion =
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** 翻牌滚动：位数逐位锁定为目标世界线，未锁定位随机乱数 */
+function scramble(target: string, fraction: number): string {
+  const fixed = Math.floor(fraction * target.length)
+  let out = ''
+  for (let i = 0; i < target.length; i++) {
+    out += i < fixed || target[i] === '.' ? target[i] : String(Math.floor(Math.random() * 10))
+  }
+  return out
 }
 
-/** 世界线变动率计：CRT 绿荧光数字 + 扫描线覆盖，点击滚动重掷 */
+/**
+ * 世界线变动率计（陪伴舞台常驻设备）：深色蚀刻板 + DSEG7 辉光管数字，
+ * 点击观测下一条世界线（固定序列轮询，读数与文本模式侧栏脚部共享）。
+ */
 export function DivergenceMeter(): React.JSX.Element {
-  const [value, setValue] = useState(() => nextValue())
-  const [rolling, setRolling] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const value = useDivergenceStore((s) => s.value)
+  const next = useDivergenceStore((s) => s.next)
+  const [display, setDisplay] = useState(value)
+  const rollingRef = useRef(false)
 
-  useEffect(
-    () => () => {
-      if (timerRef.current !== null) clearInterval(timerRef.current)
-    },
-    []
-  )
-
-  function roll(): void {
-    if (rolling) return
-    setRolling(true)
-    let ticks = 0
-    timerRef.current = setInterval(() => {
-      ticks += 1
-      setValue(nextValue())
-      if (ticks >= ROLL_TICKS) {
-        if (timerRef.current !== null) clearInterval(timerRef.current)
-        timerRef.current = null
-        setRolling(false)
+  useEffect(() => {
+    if (value === display) return
+    if (reducedMotion) {
+      setDisplay(value)
+      return
+    }
+    rollingRef.current = true
+    let step = 0
+    const timer = setInterval(() => {
+      step += 1
+      setDisplay(scramble(value, step / ROLL_TICKS))
+      if (step >= ROLL_TICKS) {
+        clearInterval(timer)
+        setDisplay(value)
+        rollingRef.current = false
       }
     }, ROLL_MS)
-  }
+    return () => clearInterval(timer)
+    // display 不加入依赖：value 落定后动画自身驱动 display 追赶
+  }, [value])
 
   return (
-    <div className="relative w-[300px] overflow-hidden rounded-md border border-terminal-green-dim/40 bg-black/70 shadow-[0_0_32px_rgba(0,255,102,0.12)]">
-      <div className="crt-scanlines absolute inset-0" aria-hidden />
-      <button
-        type="button"
-        onClick={roll}
-        title="点击重新校准"
-        className="relative block w-full px-6 py-5 text-left transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-terminal-green"
+    <button
+      type="button"
+      onClick={() => {
+        if (!rollingRef.current) next()
+      }}
+      title={`当前世界线变动率 ${value}；在 ${WORLD_LINES.join(' / ')} 间观测`}
+      aria-label={`当前世界线变动率 ${value}，点击观测下一条世界线`}
+      className="pointer-events-auto grid justify-items-start gap-1 rounded-[3px] border border-lab-line bg-[rgba(10,12,17,0.78)] px-3.5 py-2.5 backdrop-blur-md transition-colors hover:border-lab-amber/55 focus-visible:outline focus-visible:outline-2 focus-visible:outline-lab-amber"
+    >
+      <span className="font-mono text-[9px] tracking-[0.34em] text-lab-ink/70">DIVERGENCE</span>
+      <span
+        className="font-digit text-[27px] leading-[1.1] tracking-[0.05em] text-lab-digit"
+        style={{
+          textShadow: '0 0 8px rgba(255,182,72,0.5), 0 0 26px rgba(255,152,40,0.22)'
+        }}
       >
-        <div className="mb-1.5 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.35em] text-terminal-green-dim">
-          <span>Divergence</span>
-          <span className="size-1.5 animate-pulse rounded-full bg-terminal-green" />
-        </div>
-        <span className="crt-flicker block font-mono text-[38px] font-bold leading-none tracking-[0.12em] tabular-nums text-terminal-green text-glow-green">
-          {value}
-        </span>
-      </button>
-    </div>
+        {display}
+      </span>
+    </button>
   )
 }

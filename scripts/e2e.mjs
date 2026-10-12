@@ -99,6 +99,11 @@ async function testChat(cdp) {
   report('会话初始化（身份 + 列表）', true)
 
   const before = await evalJs(cdp, `window.__amadeus.sessionStore.getState().sessions.length`)
+  // 文本聊天在 /text：直推 SPA 路由（顶栏「文本模式」tab 同效）
+  await evalJs(cdp, `window.history.pushState({}, '', '/text'); window.dispatchEvent(new PopStateEvent('popstate')); true`)
+  await sleep(600)
+  const onText = await evalJs(cdp, `window.location.pathname.includes('/text')`)
+  report('进入文本模式页', onText)
   // 新建会话并发送
   await evalJs(cdp, `window.__amadeus.sessionStore.getState().createSession(); true`)
   await sleep(300)
@@ -150,22 +155,22 @@ async function testChat(cdp) {
 
 async function testVoice(cdp) {
   console.log('\n=== 语音链路（Live2D 调试输入） ===')
-  // 进 Live2D 页：点左侧导航 Live2D 入口
+  // 进陪伴模式页：点顶栏「陪伴模式」tab
   const navigated = await evalJs(
     cdp,
     `(() => {
       const links = [...document.querySelectorAll('a, button')];
-      const target = links.find(x => x.getAttribute('href')?.includes('live2d') || x.textContent?.includes('Live2D') || x.title?.includes('Live2D'));
+      const target = links.find(x => x.getAttribute('href')?.includes('companion') || x.textContent?.includes('陪伴'));
       if (target) { target.click(); return true }
       return false
     })()`
   )
   if (!navigated) {
     // 直接改路由
-    await evalJs(cdp, `window.history.pushState({}, '', '/live2d'); window.dispatchEvent(new PopStateEvent('popstate')); true`)
+    await evalJs(cdp, `window.history.pushState({}, '', '/companion'); window.dispatchEvent(new PopStateEvent('popstate')); true`)
   }
   await sleep(2500)
-  const onLive2d = await evalJs(cdp, `window.location.pathname.includes('live2d')`)
+  const onLive2d = await evalJs(cdp, `window.location.pathname.includes('companion')`)
   report('进入 Live2D 页', onLive2d)
 
   // 登录覆盖层可能挡住：先关闭（若存在）

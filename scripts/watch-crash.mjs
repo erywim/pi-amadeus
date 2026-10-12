@@ -57,7 +57,7 @@ async function main() {
   await cdp.send('Page.enable')
 
   // 挂页面内错误钩子（在重载前注入的都会丢，所以用 CDP 事件流 + reload 后重新注入）
-  await cdp.send('Page.navigate', { url: 'http://localhost:5173/live2d' })
+  await cdp.send('Page.navigate', { url: 'http://localhost:5173/companion' })
   await sleep(4000)
 
   // 注入监控：ticker 心跳计数 + window.onerror 记录

@@ -109,11 +109,11 @@ try {
     })()`
   )
   await sleep(500)
-  const onLive2d = await evalJs(cdp, `window.location.pathname.includes('live2d')`)
+  const onLive2d = await evalJs(cdp, `window.location.pathname.includes('companion')`)
   if (!onLive2d) {
     await evalJs(
       cdp,
-      `window.history.pushState({}, '', '/live2d'); window.dispatchEvent(new PopStateEvent('popstate')); true`
+      `window.history.pushState({}, '', '/companion'); window.dispatchEvent(new PopStateEvent('popstate')); true`
     )
     await sleep(2500)
   }

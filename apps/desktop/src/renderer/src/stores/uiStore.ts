@@ -21,6 +21,8 @@ interface UiState {
   micActive: boolean
   /** 摄像头是否开启（视觉帧采集中） */
   cameraActive: boolean
+  /** 静音语音播报（TTS 播放与入队全部关闭） */
+  ttsMuted: boolean
 
   openLogin: () => void
   closeLogin: () => void
@@ -31,6 +33,7 @@ interface UiState {
   setDebugText: (text: string) => void
   setMicActive: (active: boolean) => void
   setCameraActive: (active: boolean) => void
+  setTtsMuted: (muted: boolean) => void
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -43,6 +46,7 @@ export const useUiStore = create<UiState>()((set) => ({
   debugText: '',
   micActive: false,
   cameraActive: false,
+  ttsMuted: false,
 
   openLogin: () => set({ loginOpen: true }),
   closeLogin: () => set({ loginOpen: false }),
@@ -53,5 +57,6 @@ export const useUiStore = create<UiState>()((set) => ({
   setDialogText: (dialogText) => set({ dialogText }),
   setDebugText: (debugText) => set({ debugText }),
   setMicActive: (micActive) => set({ micActive }),
-  setCameraActive: (cameraActive) => set({ cameraActive })
+  setCameraActive: (cameraActive) => set({ cameraActive }),
+  setTtsMuted: (ttsMuted) => set({ ttsMuted })
 }))

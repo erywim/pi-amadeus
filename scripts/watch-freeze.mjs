@@ -58,7 +58,7 @@ async function main() {
   await cdp.send('Runtime.enable')
 
   // 重载到 live2d，干净环境
-  await cdp.send('Page.navigate', { url: 'http://localhost:5173/live2d' })
+  await cdp.send('Page.navigate', { url: 'http://localhost:5173/companion' })
   await sleep(4000)
   for (let i = 0; i < 60; i++) {
     const r = await evalJs(cdp, `!!(window.__live2d && window.__live2d.model)`)

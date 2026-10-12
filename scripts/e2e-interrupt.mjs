@@ -78,7 +78,7 @@ try {
   await cdp.call('Page.reload', {})
   await sleep(3500)
   await waitFor(`window.__amadeus?.sessionStore.getState().userId`, 20000, 'userId')
-  await evalJs(`window.history.pushState({}, '', '/live2d'); window.dispatchEvent(new PopStateEvent('popstate')); true`)
+  await evalJs(`window.history.pushState({}, '', '/companion'); window.dispatchEvent(new PopStateEvent('popstate')); true`)
   await sleep(2500)
   await evalJs(`window.__amadeus.uiStore.getState().closeLogin(); true`)
   await sleep(400)

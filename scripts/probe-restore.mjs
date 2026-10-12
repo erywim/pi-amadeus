@@ -90,7 +90,7 @@ async function main() {
   if (!target) throw new Error('no page target')
   const cdp = await connect(target.webSocketDebuggerUrl)
   await cdp.send('Page.enable')
-  await cdp.send('Page.navigate', { url: 'http://localhost:5173/live2d' })
+  await cdp.send('Page.navigate', { url: 'http://localhost:5173/companion' })
   await sleep(4000)
   let ready = false
   for (let i = 0; i < 60; i++) {

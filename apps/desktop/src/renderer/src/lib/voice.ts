@@ -2,6 +2,7 @@ import toast from 'react-hot-toast'
 import { BRAIN_URL, startVoiceTurn } from './api'
 import { VadProcessor, type SpeechSegment } from './vad'
 import { enqueuePcm, stopTtsPlayback } from './ttsPlayer'
+import { useCompanionStore } from '@renderer/stores/companionStore'
 import { useLive2dStore } from '@renderer/stores/live2dStore'
 import { useLive2dSpeechStore } from '@renderer/stores/live2dSpeechStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
@@ -57,6 +58,7 @@ export function startAssistantVoiceTurn(text: string): boolean {
       case 'error':
         voiceAbort = null
         useLive2dSpeechStore.getState().setVoiceActive(false)
+        useCompanionStore.getState().setPendingUser(null)
         console.warn('[voice] 回合出错：', event.message)
         toast.error('呜……大脑好像短路了，等会儿再试吧')
         return
@@ -144,6 +146,8 @@ async function handleSegment(segment: SpeechSegment): Promise<void> {
   try {
     const text = await transcribeSegment(segment)
     if (text) {
+      // 乐观渲染用户气泡；服务端回执（refreshSession）后由 CompanionThread 自动清除
+      useCompanionStore.getState().setPendingUser(text)
       useUiStore.getState().setDialogText(`你说：${text}`)
       startAssistantVoiceTurn(text)
     }

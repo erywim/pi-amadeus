@@ -1,13 +1,18 @@
 {
   "app": {
     "title": "Amadeus",
-    "tagline": "EL PSY KONGROO"
+    "tagline": "EL PSY KONGROO",
+    "brandTag": "牧濑红莉栖 AI 系统"
   },
   "nav": {
-    "sessions": "会话",
-    "history": "历史",
+    "companion": "陪伴模式",
+    "text": "文本模式",
     "settings": "设置",
-    "live2d": "Live2D"
+    "modeSwitch": "对话模式"
+  },
+  "topbar": {
+    "modelChip": "当前 LLM 模型（文本模式输入区可切换）",
+    "modelUnset": "未配置模型"
   },
   "dayGroups": {
     "today": "今天",
@@ -24,19 +29,16 @@
     "confirm": "确定",
     "delete": "删除",
     "deleted": "已删除",
-    "notAvailable": "M1 暂不可用"
+    "notAvailable": "暂不可用"
   },
   "chat": {
     "newSession": "新会话",
-    "inputPlaceholder": "输入消息，Enter 发送…",
     "send": "发送",
     "stop": "停止",
     "typing": "正在输入",
-    "online": "在线",
     "deleteTitle": "删除会话",
     "deleteDesc": "确定删除该会话吗？此操作无法撤销。",
-    "empty": "暂无会话，点击上方“新会话”开始",
-    "welcomeHint": "点击世界线变动率计重新校准，或新建会话开始对话",
+    "empty": "暂无任务，点击“新任务”开始",
     "toolName": {
       "get_time": "查询时间",
       "calculate": "计算器",
@@ -62,23 +64,68 @@
     "toolConfirmExpires": "{{seconds}} 秒后自动拒绝",
     "toolConfirmExpired": "已超时，命令未执行"
   },
-  "history": {
-    "title": "会话历史",
-    "statsSessions": "会话数",
-    "statsMessages": "消息数",
-    "statsChannels": "活跃渠道",
-    "statsDays": "活跃天数",
-    "searchPlaceholder": "搜索会话…",
-    "filterAll": "全部",
-    "empty": "没有匹配的会话"
+  "companion": {
+    "charName": "牧濑红莉栖",
+    "status": {
+      "idle": "待机",
+      "listening": "正在倾听",
+      "thinking": "接入 Amadeus…",
+      "speaking": "红莉栖正在回复"
+    },
+    "tapReply": "……什么事？",
+    "mute": "静音语音播报",
+    "unmute": "取消静音",
+    "micToggle": "语音输入",
+    "stageTip": "点击红莉栖，看看她的反应",
+    "greeting": "……哦？你来了。我是 Amadeus——以牧濑红莉栖的记忆与人格数据构建的人工智能系统。哼，别用那种眼神看我。想闲聊还是让「天才科学家」帮你理思路，直接说就好。",
+    "topics": {
+      "who": "你是谁",
+      "whoText": "介绍一下你自己，Amadeus",
+      "research": "研究进展",
+      "researchText": "最近在研究什么？",
+      "ramen": "想吃拉面",
+      "ramenText": "今晚想吃拉面，你有什么推荐口味？",
+      "worldline": "世界线",
+      "worldlineText": "你是相信命运的类型，还是相信自己的类型？"
+    },
+    "inputPlaceholder": "和 Amadeus 聊聊…",
+    "listeningPlaceholder": "正在听你说…",
+    "inputAria": "输入消息",
+    "hint": "点麦克风说话，或直接打字",
+    "hintListening": "说完会自动发送；再点一次麦克风可停止",
+    "voicePrefix": "语音 ·"
+  },
+  "codex": {
+    "newTask": "新任务",
+    "sessionsLabel": "会话",
+    "untitledTask": "未命名任务",
+    "agentSub": "智能体 · {{status}} · {{turns}} 轮",
+    "stateRunning": "运行中",
+    "stateDone": "已完成",
+    "turns": "{{count}} 轮对话",
+    "sidebarToggle": "打开/收起会话列表",
+    "inputAria": "任务描述",
+    "inputPlaceholder": "描述你的任务，智能体接手处理",
+    "attach": "附件",
+    "attachWip": "附件功能暂未接入",
+    "modelCustom": "自定义模型 ID…",
+    "modelCustomPlaceholder": "模型 ID",
+    "modelSaved": "模型已保存到大脑服务",
+    "composerHint": "Enter 发送 · Shift + Enter 换行",
+    "emptyHint": "在下方描述你的任务，智能体接手处理",
+    "welcomeHint": "新建任务开始与智能体对话，或切换到陪伴模式找红莉栖聊聊",
+    "defaultUser": "凤凰院凶真",
+    "userRole": "未来道具研究所 成员",
+    "currentWorldLine": "当前世界线"
   },
   "settings": {
     "title": "设置",
     "nav": {
-      "ai": "AI 配置",
+      "ai": "模型（LLM）",
       "feishu": "飞书",
       "skills": "技能",
-      "language": "语言"
+      "language": "语言",
+      "general": "通用"
     },
     "ai": {
       "title": "AI 配置",
@@ -94,11 +141,11 @@
       "systemPrompt": "系统提示词",
       "systemPromptPlaceholder": "留空使用默认红莉栖人格",
       "outputLanguage": "输出语言",
-      "save": "保存",
+      "save": "保存更改",
       "savedHint": "已保存到大脑服务",
       "keyDefault": "服务端默认密钥已生效",
       "keySaved": "已保存密钥（留空不修改）",
-      "loginRequired": "请先在 Live2D 页面登录后配置",
+      "loginRequired": "请先在陪伴模式登录后配置",
       "toolsEnable": "工具调用",
       "toolsDesc": "允许助手使用时间/计算器/天气/搜索/终端命令等工具（危险命令会被安全策略拦截）"
     },
@@ -126,6 +173,17 @@
       "zh": "简体中文",
       "en": "English",
       "ja": "日本語"
+    },
+    "general": {
+      "title": "通用",
+      "desc": "外观与启动行为偏好，仅存在本机",
+      "theme": "外观主题",
+      "themePaper": "暖纸浅色",
+      "themeCyber": "Dark Cyber 深色",
+      "themeHint": "陪伴模式始终使用暗色实验台主题",
+      "defaultMode": "启动默认模式",
+      "defaultMute": "陪伴模式默认静音",
+      "defaultMuteDesc": "开启后进入陪伴模式时语音播报静音（HUD 可随时取消）"
     }
   },
   "live2d": {
@@ -137,13 +195,10 @@
       "enter": "进入"
     },
     "toolbar": {
-      "mic": "麦克风",
-      "micStop": "关闭麦克风",
       "video": "摄像头",
       "videoStop": "关闭摄像头",
       "history": "聊天记录",
-      "settings": "设置",
-      "chat": "聊天",
+      "settings": "形象配置",
       "logout": "退出"
     },
     "config": {
@@ -167,7 +222,6 @@
     "chatHistory": {
       "title": "聊天记录"
     },
-    "dialogPlaceholder": "（对话内容将显示在这里）",
     "loading": "模型加载中…",
     "loadError": "模型加载失败",
     "emotion": {

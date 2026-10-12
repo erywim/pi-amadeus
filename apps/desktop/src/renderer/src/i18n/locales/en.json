@@ -1,13 +1,18 @@
 {
   "app": {
     "title": "Amadeus",
-    "tagline": "EL PSY KONGROO"
+    "tagline": "EL PSY KONGROO",
+    "brandTag": "Kurisu Makise AI System"
   },
   "nav": {
-    "sessions": "Sessions",
-    "history": "History",
+    "companion": "Companion",
+    "text": "Text",
     "settings": "Settings",
-    "live2d": "Live2D"
+    "modeSwitch": "Chat mode"
+  },
+  "topbar": {
+    "modelChip": "Current LLM (switchable in Text mode)",
+    "modelUnset": "No model configured"
   },
   "dayGroups": {
     "today": "Today",
@@ -24,19 +29,16 @@
     "confirm": "Confirm",
     "delete": "Delete",
     "deleted": "Deleted",
-    "notAvailable": "Not available in M1"
+    "notAvailable": "Not available"
   },
   "chat": {
     "newSession": "New Session",
-    "inputPlaceholder": "Type a message, press Enter to send…",
     "send": "Send",
     "stop": "Stop",
     "typing": "Typing",
-    "online": "Online",
     "deleteTitle": "Delete Session",
     "deleteDesc": "Are you sure you want to delete this session? This cannot be undone.",
-    "empty": "No sessions yet. Click “New Session” to start.",
-    "welcomeHint": "Click the Divergence Meter to recalibrate, or start a new session",
+    "empty": "No tasks yet. Click “New Task” to start.",
     "toolName": {
       "get_time": "Time",
       "calculate": "Calculator",
@@ -62,23 +64,68 @@
     "toolConfirmExpires": "Auto-rejected in {{seconds}}s",
     "toolConfirmExpired": "Timed out — command was not executed"
   },
-  "history": {
-    "title": "Session History",
-    "statsSessions": "Sessions",
-    "statsMessages": "Messages",
-    "statsChannels": "Active Channels",
-    "statsDays": "Active Days",
-    "searchPlaceholder": "Search sessions…",
-    "filterAll": "All",
-    "empty": "No matching sessions"
+  "companion": {
+    "charName": "Kurisu Makise",
+    "status": {
+      "idle": "Standby",
+      "listening": "Listening",
+      "thinking": "Connecting to Amadeus…",
+      "speaking": "Kurisu is replying"
+    },
+    "tapReply": "…What is it?",
+    "mute": "Mute voice playback",
+    "unmute": "Unmute voice",
+    "micToggle": "Voice input",
+    "stageTip": "Click Kurisu and see how she reacts",
+    "greeting": "…Oh? You're here. I am Amadeus—an AI built from the memories and personality data of Kurisu Makise. Hmph, don't look at me like that. Small talk or letting a genius scientist sort out your thoughts—just say it.",
+    "topics": {
+      "who": "Who are you",
+      "whoText": "Introduce yourself, Amadeus",
+      "research": "Research progress",
+      "researchText": "What have you been researching lately?",
+      "ramen": "Ramen craving",
+      "ramenText": "I want ramen tonight. Any flavor you recommend?",
+      "worldline": "World lines",
+      "worldlineText": "Do you believe in fate, or in yourself?"
+    },
+    "inputPlaceholder": "Chat with Amadeus…",
+    "listeningPlaceholder": "Listening…",
+    "inputAria": "Type a message",
+    "hint": "Tap the mic to speak, or just type",
+    "hintListening": "Your words send automatically when you finish; tap the mic again to stop",
+    "voicePrefix": "Voice ·"
+  },
+  "codex": {
+    "newTask": "New Task",
+    "sessionsLabel": "Sessions",
+    "untitledTask": "Untitled task",
+    "agentSub": "Agent · {{status}} · {{turns}} turns",
+    "stateRunning": "Running",
+    "stateDone": "Done",
+    "turns": "{{count}} turns",
+    "sidebarToggle": "Toggle session list",
+    "inputAria": "Task description",
+    "inputPlaceholder": "Describe your task; the agent takes over",
+    "attach": "Attach",
+    "attachWip": "Attachments not integrated yet",
+    "modelCustom": "Custom model ID…",
+    "modelCustomPlaceholder": "Model ID",
+    "modelSaved": "Model saved to the brain service",
+    "composerHint": "Enter to send · Shift + Enter for newline",
+    "emptyHint": "Describe your task below; the agent takes over",
+    "welcomeHint": "Create a new task to talk to the agent, or switch to Companion mode for Kurisu",
+    "defaultUser": "Hououin Kyouma",
+    "userRole": "Future Gadget Lab member",
+    "currentWorldLine": "World line"
   },
   "settings": {
     "title": "Settings",
     "nav": {
-      "ai": "AI",
+      "ai": "Model (LLM)",
       "feishu": "Feishu",
       "skills": "Skills",
-      "language": "Language"
+      "language": "Language",
+      "general": "General"
     },
     "ai": {
       "title": "AI Configuration",
@@ -94,11 +141,11 @@
       "systemPrompt": "System Prompt",
       "systemPromptPlaceholder": "Blank uses the default Kurisu persona",
       "outputLanguage": "Output Language",
-      "save": "Save",
+      "save": "Save Changes",
       "savedHint": "Saved to the brain service",
       "keyDefault": "Server default key active",
       "keySaved": "Key saved (leave blank to keep)",
-      "loginRequired": "Log in on the Live2D page first",
+      "loginRequired": "Log in on the Companion page first",
       "toolsEnable": "Tool Calling",
       "toolsDesc": "Let the assistant use tools: time, calculator, weather, web search, terminal commands (dangerous commands are blocked by the safety policy)"
     },
@@ -126,6 +173,17 @@
       "zh": "简体中文",
       "en": "English",
       "ja": "日本語"
+    },
+    "general": {
+      "title": "General",
+      "desc": "Appearance and startup preferences, stored only on this device",
+      "theme": "Appearance",
+      "themePaper": "Warm Paper (Light)",
+      "themeCyber": "Dark Cyber",
+      "themeHint": "Companion mode always uses the dark lab theme",
+      "defaultMode": "Startup Mode",
+      "defaultMute": "Mute by default in Companion mode",
+      "defaultMuteDesc": "When on, voice playback starts muted in Companion mode (toggle anytime in the HUD)"
     }
   },
   "live2d": {
@@ -137,13 +195,10 @@
       "enter": "Enter"
     },
     "toolbar": {
-      "mic": "Microphone",
-      "micStop": "Stop Microphone",
       "video": "Camera",
       "videoStop": "Stop Camera",
       "history": "Chat History",
-      "settings": "Settings",
-      "chat": "Chat",
+      "settings": "Avatar Settings",
       "logout": "Log Out"
     },
     "config": {
@@ -167,7 +222,6 @@
     "chatHistory": {
       "title": "Chat History"
     },
-    "dialogPlaceholder": "(Conversation will appear here)",
     "loading": "Loading model…",
     "loadError": "Failed to load model",
     "emotion": {
@@ -193,7 +247,7 @@
       "crying": "Crying",
       "gloomy": "Gloomy",
       "worried": "Worried",
-      "nervous": "Nervous",
+      "nervous": "Embarrassed",
       "speechless": "Speechless",
       "sleepy": "Sleepy"
     },

@@ -27,7 +27,7 @@ export function DebugInput(): React.JSX.Element {
   }
 
   return (
-    <div className="absolute bottom-5 right-5 z-30 w-[300px] rounded-md border border-border bg-card/90 p-3 backdrop-blur-sm">
+    <div className="absolute right-7 top-[76px] z-30 w-[300px] rounded-md border border-border bg-card/90 p-3 backdrop-blur-sm">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
           {t('live2d.debug.title')}

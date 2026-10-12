@@ -48,7 +48,7 @@ export function Live2DStage({ className }: { className?: string }): React.JSX.El
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
       {!ready && !error && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="crt-flicker font-mono text-xs tracking-[0.3em] text-cyber-cyan/70">
+          <span className="crt-flicker font-mono text-xs tracking-[0.3em] text-primary/70">
             {t('live2d.loading')}
           </span>
         </div>

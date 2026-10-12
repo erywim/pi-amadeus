@@ -34,7 +34,7 @@ export function ChatHistoryDialog(): React.JSX.Element {
               onClick={() => {
                 selectSession(session.id)
                 setChatHistoryOpen(false)
-                navigate('/chat')
+                navigate('/text')
               }}
               className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >

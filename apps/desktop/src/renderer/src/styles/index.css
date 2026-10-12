@@ -2,8 +2,11 @@
 @import 'tw-animate-css';
 
 /* ============================================================
- * 语义 token（shadcn 风格）——inline 映射到 :root 变量，
- * 运行时改变量即可整体换肤，深色为默认（无 .dark 类）。
+ * 语义 token（shadcn 风格）——inline 映射到运行时变量，
+ * 换肤 = 改变量。三档主题：
+ *   :root              暖纸浅色（默认，移植自 OpenDesign 原型）
+ *   body.dark          命运石之门 dark cyber（可选深色）
+ *   body.theme-amadeus 陪伴模式的暗色实验台（琥珀荧光，原型同款）
  * ============================================================ */
 @theme inline {
   --color-background: var(--background);
@@ -30,10 +33,21 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
   --font-mono: var(--font-mono);
+
+  /* 原型扩展 token */
+  --color-surface: var(--surface);
+  --color-surface-soft: var(--surface-soft);
+  --color-stage: var(--stage);
+  --color-line-strong: var(--line-strong);
+  --color-ink-2: var(--ink-2);
+  --color-mint: var(--mint);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --font-digit: 'DSEG7', var(--font-mono);
 }
 
 /* ============================================================
- * 静态自定义色（命运石之门签名色）
+ * 静态自定义色
  * ============================================================ */
 @theme {
   --color-terminal-green: #00ff66;
@@ -43,15 +57,52 @@
   --color-glow-green: #a8ffcb;
   --color-feishu-blue: #3b82f6;
   --color-amber-sg: #f5a623;
+  /* 陪伴模式实验台专属定色（舞台器具不随浅色主题变化） */
+  --color-lab-amber: #e8a33d;
+  --color-lab-amber-dim: #c08a36;
+  --color-lab-digit: #ffb648;
+  --color-lab-line: #2c3040;
+  --color-lab-ink: #9aa1b0;
+  --color-listen: #4fb0be;
 }
 
 /* ============================================================
- * 深色命运石之门调色板（暗色为默认）
- *   --background  近黑蓝（"电话微波炉房"的暗）
- *   --primary     Amadeus 终端青
- *   --terminal-green  CRT 荧光绿（世界线计 / 用户气泡 / 在线点）
+ * 默认：暖纸浅色主题（OpenDesign 原型）
+ *   --background  纸面微暖白   --primary  靛蓝主色
  * ============================================================ */
 :root {
+  --background: #fbfbfa;
+  --foreground: #1a1d21;
+  --card: #ffffff;
+  --card-foreground: #1a1d21;
+  --primary: #4658e5;
+  --primary-foreground: #ffffff;
+  --muted: #f5f5f3;
+  --muted-foreground: #6b7280;
+  --accent: #eef0fd;
+  --accent-foreground: #1a1d21;
+  --destructive: #d64545;
+  --border: #e7e7e4;
+  --ring: #4658e5;
+  --sidebar: #fbfbfa;
+  --radius: 0.5rem;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+
+  --surface: #ffffff;
+  --surface-soft: #f5f5f3;
+  --stage: #f4f5fa;
+  --line-strong: #d9d9d5;
+  --ink-2: #3d434c;
+  --mint: #0d9488;
+  --accent-soft: #eef0fd;
+  --accent-ink: #ffffff;
+  --shadow-pop: 0 8px 24px rgba(26, 29, 33, 0.1), 0 2px 6px rgba(26, 29, 33, 0.06);
+}
+
+/* ============================================================
+ * body.dark：命运石之门 dark cyber（设置-通用中开启）
+ * ============================================================ */
+body.dark {
   --background: #050a0f;
   --foreground: #e6edf3;
   --card: #0d131b;
@@ -66,8 +117,56 @@
   --border: #1c2530;
   --ring: #00e5ff;
   --sidebar: #0a1018;
-  --radius: 0.5rem;
-  --font-mono: 'Consolas', 'Courier New', monospace;
+
+  --surface: #0d131b;
+  --surface-soft: #121a24;
+  --stage: #050a0f;
+  --line-strong: #2a3646;
+  --ink-2: #8b98a5;
+  --mint: #00b84d;
+  --accent-soft: rgba(0, 229, 255, 0.12);
+  --accent-ink: #04141a;
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================================
+ * body.theme-amadeus：陪伴模式暗色实验台（挂在对应路由时生效——
+ * 整套令牌翻转为暗色琥珀荧光，与原型 theme-amadeus 一致，
+ * 优先级高于 body.dark，故书写在最后）
+ * ============================================================ */
+body.theme-amadeus {
+  --background: #0c0e13;
+  --foreground: #e9ebf1;
+  --card: #13151c;
+  --card-foreground: #e9ebf1;
+  --primary: #e8a33d;
+  --primary-foreground: #161207;
+  --muted: #1a1d26;
+  --muted-foreground: #7f8595;
+  --accent: #1a1d26;
+  --accent-foreground: #e9ebf1;
+  --destructive: #e06c6c;
+  --border: #23262f;
+  --ring: #e8a33d;
+  --sidebar: #0c0e13;
+
+  --surface: #13151c;
+  --surface-soft: #1a1d26;
+  --stage: #0a0c11;
+  --line-strong: #2e3340;
+  --ink-2: #c2c7d3;
+  --mint: #3fb98f;
+  --accent-soft: rgba(232, 163, 61, 0.13);
+  --accent-ink: #161207;
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* 辉光管数字字体（DSEG7，SIL OFL，本地化 vendored） */
+@font-face {
+  font-family: 'DSEG7';
+  src: url('./fonts/DSEG7Modern-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
 }
 
 html,
@@ -84,7 +183,7 @@ body {
 }
 
 ::selection {
-  background: rgba(0, 229, 255, 0.3);
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
 /* 滚动条 */
@@ -96,15 +195,16 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1c2530;
+  background: var(--line-strong);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #2a3646;
+  background: var(--muted-foreground);
 }
 
 /* ============================================================
- * CRT 效果：扫描线覆盖层 / 荧光辉光 / glitch
+ * CRT 效果：扫描线覆盖层 / 荧光辉光 / glitch（dark cyber 气质，
+ * 浅色主题下仍可用于点缀）
  * ============================================================ */
 .crt-scanlines {
   background-image: repeating-linear-gradient(
@@ -190,4 +290,242 @@ body {
 
 .crt-flicker {
   animation: sg-flicker 4s linear infinite;
+}
+
+/* 浅色纸面主题下荧光辉光过重：关掉霓虹 text-shadow，保留下划线动效 */
+body:not(.dark):not(.theme-amadeus) .text-glow-cyan,
+body:not(.dark):not(.theme-amadeus) .text-glow-green {
+  text-shadow: none;
+}
+
+/* ============================================================
+ * 陪伴模式舞台（实验台）：点阵底 + 世界线标线与刻度
+ * ============================================================ */
+body.theme-amadeus .stage-pattern {
+  background-color: #0a0c11;
+  background-image:
+    radial-gradient(rgba(206, 212, 226, 0.06) 1px, transparent 1.4px),
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(232, 163, 61, 0.16) 16%,
+      rgba(232, 163, 61, 0.16) 84%,
+      transparent
+    ),
+    repeating-linear-gradient(90deg, rgba(206, 212, 226, 0.13) 0 1px, transparent 1px 34px);
+  background-size:
+    26px 26px,
+    100% 1px,
+    100% 9px;
+  background-position:
+    0 0,
+    0 32%,
+    0 calc(32% - 11px);
+  background-repeat: repeat, no-repeat, no-repeat;
+}
+
+/* 取景框：四角括线 */
+.frame-corners {
+  position: absolute;
+  inset: 12px;
+  pointer-events: none;
+  background-image:
+    linear-gradient(#3c4354, #3c4354), linear-gradient(#3c4354, #3c4354),
+    linear-gradient(#3c4354, #3c4354), linear-gradient(#3c4354, #3c4354),
+    linear-gradient(#3c4354, #3c4354), linear-gradient(#3c4354, #3c4354),
+    linear-gradient(#3c4354, #3c4354), linear-gradient(#3c4354, #3c4354);
+  background-size:
+    22px 1.5px, 1.5px 22px,
+    22px 1.5px, 1.5px 22px,
+    22px 1.5px, 1.5px 22px,
+    22px 1.5px, 1.5px 22px;
+  background-position:
+    left top, left top,
+    right top, right top,
+    left bottom, left bottom,
+    right bottom, right bottom;
+  background-repeat: no-repeat;
+}
+body:not(.theme-amadeus) .frame-corners {
+  opacity: 0.35;
+}
+
+/* 倾听 / 说话氛围环：挂在舞台容器上的 data-status 属性驱动 */
+.stage-edge::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 240ms cubic-bezier(0.2, 0.7, 0.3, 1),
+    box-shadow 240ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.stage-edge[data-status='listening']::after {
+  opacity: 1;
+  box-shadow:
+    inset 0 0 0 2px rgba(79, 176, 190, 0.45),
+    inset 0 0 48px rgba(79, 176, 190, 0.07);
+}
+.stage-edge[data-status='speaking']::after {
+  opacity: 1;
+  box-shadow:
+    inset 0 0 0 2px rgba(13, 148, 136, 0.35),
+    inset 0 0 48px rgba(13, 148, 136, 0.06);
+}
+body.theme-amadeus .stage-edge[data-status='listening']::after {
+  box-shadow:
+    inset 0 0 0 2px rgba(79, 176, 190, 0.5),
+    inset 0 0 60px rgba(79, 176, 190, 0.07);
+}
+body.theme-amadeus .stage-edge[data-status='speaking']::after {
+  box-shadow:
+    inset 0 0 0 2px rgba(232, 163, 61, 0.45),
+    inset 0 0 60px rgba(232, 163, 61, 0.08);
+}
+
+/* ============================================================
+ * 通用动效
+ * ============================================================ */
+
+/* 消息入场 */
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-msg {
+  animation: msg-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* 视图切换进入 */
+@keyframes view-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.anim-view {
+  animation: view-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* 呼吸点（typing 三点 / 会话运行态圆点） */
+@keyframes od-blink {
+  0%,
+  70%,
+  100% {
+    opacity: 0.25;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+.anim-blink {
+  animation: od-blink 1.1s ease-in-out infinite;
+}
+
+/* 麦克风倾听脉冲（色随主题：浅色靛蓝 / 实验台琥珀） */
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 38%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+.mic-listening {
+  animation: mic-pulse 1.2s ease-out infinite;
+}
+
+/* ============================================================
+ * 陪伴模式专属语义件：状态灯 / AMADEUS 署名标签
+ * ============================================================ */
+.status-pulse {
+  background: var(--mint);
+  transition: background-color 160ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.status-pulse[data-state='listening'] {
+  background: var(--primary);
+}
+.status-pulse[data-state='thinking'] {
+  background: #b7791f;
+}
+.status-pulse[data-state='speaking'] {
+  background: var(--primary);
+}
+body.theme-amadeus .status-pulse[data-state='listening'] {
+  background: #4fb0be;
+}
+body.theme-amadeus .status-pulse[data-state='thinking'] {
+  background: #d08b2a;
+}
+body.theme-amadeus .status-pulse[data-state='speaking'] {
+  background: #e8a33d;
+}
+body.dark .status-pulse[data-state='thinking'] {
+  background: #f5a623;
+}
+
+/* 她的消息：AMADEUS 署名标签（实验台灯下斜杠琥珀） */
+.amadeus-tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.3em;
+  color: var(--muted-foreground);
+}
+.amadeus-tag::after {
+  content: '　//';
+  color: #d08b2a;
+}
+
+/* 舞台角色落地阴影 */
+.char-ground {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(46%, 380px);
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(26, 29, 33, 0.06);
+  pointer-events: none;
+}
+body.theme-amadeus .char-ground {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* 舞台提示气泡：实验台下挪左下、深色单声道样式 */
+.stage-tip {
+  position: absolute;
+  left: 26px;
+  bottom: 16px;
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  border-radius: 999px;
+  pointer-events: none;
+  transition: opacity 240ms cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+body.theme-amadeus .stage-tip {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  color: #9aa1b0;
+  background: rgba(10, 12, 17, 0.6);
+  border-color: #2c3040;
+  border-radius: 3px;
+}
+.stage-tip.stage-tip-faded {
+  opacity: 0;
 }

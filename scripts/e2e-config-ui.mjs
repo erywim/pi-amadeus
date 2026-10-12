@@ -114,7 +114,7 @@ try {
   })
 
   console.log('\n=== 3. Live2D 配置面板 AI tab 同源显示 ===')
-  await evalJs(`window.history.pushState({}, '', '/live2d'); window.dispatchEvent(new PopStateEvent('popstate')); true`)
+  await evalJs(`window.history.pushState({}, '', '/companion'); window.dispatchEvent(new PopStateEvent('popstate')); true`)
   await sleep(2500)
   await evalJs(`window.__amadeus.uiStore.getState().setConfigPanelOpen(true, 'ai'); true`)
   await sleep(500)

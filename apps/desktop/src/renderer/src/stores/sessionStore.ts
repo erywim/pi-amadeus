@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Message, Session, StreamState, ToolStatus } from '@pi-amadeus/shared'
+import type { Message, Session, StreamState, ToolActivityItem, ToolStatus } from '@pi-amadeus/shared'
 import {
   confirmTool,
   deleteSessionApi,
@@ -14,6 +14,17 @@ import { useLive2dStore } from './live2dStore'
 import { useLive2dSpeechStore } from './live2dSpeechStore'
 
 /**
+ * 回合工作过程日志：一个回合的工具活动快照 + 耗时（Codex 风格折叠卡的数据源）。
+ * 不落库、仅内存：本会话窗口内可回看，重进页面后历史消息不带工作卡。
+ */
+export interface TurnWorkLog {
+  tools: ToolActivityItem[]
+  durationMs: number
+  /** 被手动停止（发送键变停止键时点击）的回合 */
+  stopped: boolean
+}
+
+/**
  * 会话状态（真实后端）：sessions 列表 + 按会话懒加载的 messages 缓存 +
  * 当前流式状态。文本聊天走 /api/chat SSE；语音回合由 Live2D 页自行消费
  * /api/voice（音频播放需要实时调度），结束后调 refreshSession 同步落库数据。
@@ -26,6 +37,10 @@ interface SessionState {
   userId: string | null
   /** 启动初始化是否完成（失败也置 true，避免反复重试） */
   initialized: boolean
+  /** assistant 消息 id → 工作过程日志（回合正常结束时写入） */
+  workLogs: Record<string, TurnWorkLog>
+  /** sessionId → 上一次手动停止的回合快照（展示在消息列尾部） */
+  stoppedLogs: Record<string, TurnWorkLog>
 
   init: () => Promise<void>
   refreshSessions: () => Promise<void>
@@ -43,9 +58,21 @@ interface SessionState {
 
 export const useSessionStore = create<SessionState>()((set, get) => {
   let abortTurn: AbortController | null = null
+  /** 当前回合开始时刻（工作卡耗时统计用） */
+  let turnStartedAt = 0
 
-  /** 结束当前回合流（中止 + 清空流状态） */
-  function endStream(): void {
+  /** 结束当前回合流（中止 + 清空流状态）；markStopped 时把进行中的工具活动存为停止快照 */
+  function endStream(markStopped = false): void {
+    const { stream, activeSessionId } = get()
+    if (markStopped && activeSessionId && stream.tools.length > 0 && turnStartedAt > 0) {
+      const stoppedLog: TurnWorkLog = {
+        tools: stream.tools,
+        durationMs: Date.now() - turnStartedAt,
+        stopped: true
+      }
+      set((s) => ({ stoppedLogs: { ...s.stoppedLogs, [activeSessionId]: stoppedLog } }))
+    }
+    turnStartedAt = 0
     abortTurn?.abort()
     abortTurn = null
     set({ stream: { streaming: false, tools: [] } })
@@ -58,6 +85,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     stream: { streaming: false, tools: [] },
     userId: null,
     initialized: false,
+    workLogs: {},
+    stoppedLogs: {},
 
     init: async () => {
       try {
@@ -161,15 +190,22 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         createdAt: Date.now()
       }
       const draftId = `local-${Date.now()}-a`
+      turnStartedAt = Date.now()
 
-      set((s) => ({
-        messages: {
-          ...s.messages,
-          [sessionId]: [...(s.messages[sessionId] ?? []), userMessage]
-        },
-        sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
-        stream: { streaming: true, draft: { messageId: draftId, content: '' }, tools: [] }
-      }))
+      set((s) => {
+        // 新回合开始：清掉上一回合的停止快照
+        const stoppedLogs = { ...s.stoppedLogs }
+        delete stoppedLogs[sessionId]
+        return {
+          messages: {
+            ...s.messages,
+            [sessionId]: [...(s.messages[sessionId] ?? []), userMessage]
+          },
+          sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
+          stream: { streaming: true, draft: { messageId: draftId, content: '' }, tools: [] },
+          stoppedLogs
+        }
+      })
 
       abortTurn = startChatTurn({ userId, sessionId, content: trimmed }, (event) => {
         const state = get()
@@ -269,8 +305,20 @@ export const useSessionStore = create<SessionState>()((set, get) => {
                 ...s.messages,
                 [sessionId]: [...(s.messages[sessionId] ?? []), assistantMessage]
               },
-              stream: { streaming: false, tools: [] }
+              stream: { streaming: false, tools: [] },
+              // 回合正常结束：工具活动快照归档到该条 assistant 消息（工作卡可展开回看）
+              workLogs: s.stream.tools.length
+                ? {
+                    ...s.workLogs,
+                    [event.messageId]: {
+                      tools: s.stream.tools,
+                      durationMs: turnStartedAt > 0 ? Date.now() - turnStartedAt : 0,
+                      stopped: false
+                    }
+                  }
+                : s.workLogs
             }))
+            turnStartedAt = 0
             abortTurn = null
             // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
             void get().refreshSessions()
@@ -288,7 +336,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     },
 
     stopStreaming: () => {
-      endStream()
+      endStream(true)
     },
 
     respondToolConfirm: (approved) => {

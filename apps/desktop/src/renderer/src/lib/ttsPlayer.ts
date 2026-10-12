@@ -8,6 +8,19 @@ import { useLive2dSpeechStore } from '@renderer/stores/live2dSpeechStore'
 
 const LIP_SYNC_GAIN = 1.6
 
+/** 静音时收到 PCM 直接丢弃（口型环路也不会起） */
+let muted = false
+
+/** 切换静音：开静音立刻停掉当前播放 */
+export function setTtsMuted(next: boolean): void {
+  muted = next
+  if (next) stopTtsPlayback()
+}
+
+export function isTtsMuted(): boolean {
+  return muted
+}
+
 let audioCtx: AudioContext | null = null
 let analyser: AnalyserNode | null = null
 let scheduledUntil = 0
@@ -55,6 +68,7 @@ let carry: number | null = null
 
 /** 入队一段 base64 PCM16（s16le）并顺序播放 */
 export function enqueuePcm(base64: string, sampleRate: number): void {
+  if (muted) return
   const ctx = getAudioContext()
   const raw = atob(base64)
   let bytes = new Uint8Array(raw.length)

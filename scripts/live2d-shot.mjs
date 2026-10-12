@@ -12,7 +12,7 @@
  * 用法：
  *   node scripts/live2d-shot.mjs --plan plan.json [--out dir] [--sheet name] [--url URL]
  *   node scripts/live2d-shot.mjs --plan-json '{"shots":[{"name":"neutral"}]}'
- *   （--url 缺省为 http://localhost:5199/live2d）
+ *   （--url 缺省为 http://localhost:5199/companion）
  *
  * 计划格式：
  *   {
@@ -287,7 +287,7 @@ async function main() {
     console.error('用法: node scripts/live2d-shot.mjs --plan plan.json | --plan-json <json> [--out dir] [--sheet name]')
     process.exit(2)
   }
-  const url = args.url || 'http://localhost:5199/live2d'
+  const url = args.url || 'http://localhost:5199/companion'
   const outDir = resolve(args.out || join(tmpdir(), 'amadeus-shots'))
   mkdirSync(outDir, { recursive: true })
   const width = Number(args.width || 1280)

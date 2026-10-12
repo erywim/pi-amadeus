@@ -12,7 +12,7 @@ import { join } from 'node:path'
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 const PORT = process.env.CDP_PORT || '9223'
-const TEST_URL = 'http://localhost:5173/live2d'
+const TEST_URL = 'http://localhost:5173/companion'
 const testArgs = process.argv.slice(2)
 if (!testArgs.length) {
   console.error('用法: node scripts/cdp-chrome.mjs <测试脚本.mjs> [args...]')

@@ -39,7 +39,8 @@ const ENTRY_GESTURE_DEBOUNCE_MS = 250
 // 空闲多久后情绪回落到 neutral（不说话、不在回合中）
 const EMOTION_DECAY_MS = 30_000
 // speaking 判定阈值：lipSyncValue 高于此视为嘴在动（TTS 的自然延伸器）
-const SPEAKING_LIP_THRESHOLD = 0.03
+// 唯一来源：companion UI（useCompanionStatus / StageBay）从本模块 import 共用
+export const SPEAKING_LIP_THRESHOLD = 0.03
 // 脸红淡入淡出速率
 const BLUSH_SPEED = 4
 
