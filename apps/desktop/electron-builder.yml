@@ -5,6 +5,8 @@ directories:
   output: release
 files:
   - out/**/*
+  # 主进程以 ?asset 引用的托盘图标（electron-vite 按 out/main/../../resources 原位引用，不复制）
+  - resources/**/*
   - '!**/*.map'
 win:
   target: nsis

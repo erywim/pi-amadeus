@@ -93,7 +93,8 @@
     "inputAria": "メッセージを入力",
     "hint": "マイクをタップして話すか、直接入力",
     "hintListening": "話し終えると自動送信。もう一度マイクで停止",
-    "voicePrefix": "音声 ·"
+    "voicePrefix": "音声 ·",
+    "petMode": "デスクトップマスコット"
   },
   "codex": {
     "newTask": "新しいタスク",

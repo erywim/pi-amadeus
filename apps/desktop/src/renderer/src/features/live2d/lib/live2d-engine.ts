@@ -64,6 +64,21 @@ interface CoreModel {
   getParameterValueById(id: string): number
 }
 
+export interface EngineOptions {
+  /**
+   * stage（默认）：容器居中 + live2dStore.avatar 偏移；
+   * free：由 setPlacement 指定容器内坐标与缩放（桌宠：角色在全屏透明窗口里自由摆放）
+   */
+  placement?: 'stage' | 'free'
+}
+
+/** 模型锚点（中心）在容器内的位置（CSS 像素）与缩放 */
+export interface Placement {
+  x: number
+  y: number
+  scale: number
+}
+
 /**
  * Live2D 引擎单实例（每挂载一个）：PIXI Application + 模型加载 + 分层动画装配。
  * 分层：MotionLayer（模型自带动作，一遍即停）→ ProceduralLayer（表情配方 + 待机表演，每帧最后写）
@@ -101,10 +116,13 @@ export class Live2DEngine {
   private wasSpeaking = false
   /** 整体歪头的旋转中心（模型局部坐标，首帧网格就绪后取一次） */
   private neck: { x: number; y: number } | null = null
+  /** free 摆放的当前位置（未设置前缩放为 0，不绘制） */
+  private placement: Placement | null = null
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    private readonly container: HTMLElement
+    private readonly container: HTMLElement,
+    private readonly options: EngineOptions = {}
   ) {}
 
   isDestroyed(): boolean {
@@ -474,14 +492,36 @@ export class Live2DEngine {
 
   // —— 变换 / 生命周期 ——
 
+  /** free 摆放：设置角色位置与缩放 */
+  setPlacement(placement: Placement): void {
+    this.placement = placement
+    this.applyTransform()
+  }
+
+  /** 模型画布原始尺寸（缩放为 1 时的 CSS 像素）；模型未加载时 null */
+  getModelSize(): { width: number; height: number } | null {
+    const internal = this.model?.internalModel
+    return internal ? { width: internal.width, height: internal.height } : null
+  }
+
+  private basePlacement(): Placement {
+    if (this.options.placement === 'free') return this.placement ?? { x: 0, y: 0, scale: 0 }
+    const { scale, positionX, positionY } = useLive2dStore.getState().avatar
+    return {
+      x: this.container.clientWidth / 2 + positionX,
+      y: this.container.clientHeight / 2 + positionY,
+      scale
+    }
+  }
+
   private applyTransform(): void {
     const model = this.model
     if (!model) return
-    const { scale, positionX, positionY } = useLive2dStore.getState().avatar
-    const s = scale * (1 + this.zoom)
+    const base = this.basePlacement()
+    const s = base.scale * (1 + this.zoom)
     model.scale.set(s)
-    model.x = this.container.clientWidth / 2 + positionX
-    model.y = this.container.clientHeight / 2 + positionY + this.lift
+    model.x = base.x
+    model.y = base.y + this.lift
     // 整体歪头：绕脖子旋转——旋转中心本是锚点（模型中心），补偿位移让脖子保持不动
     const theta = (this.tilt * Math.PI) / 180
     model.rotation = theta
@@ -529,6 +569,10 @@ export class Live2DEngine {
 }
 
 /** 引擎工厂：由 Live2DStage 的 effect 创建（StrictMode 双挂载每次得到独立实例） */
-export function createEngine(canvas: HTMLCanvasElement, container: HTMLElement): Live2DEngine {
-  return new Live2DEngine(canvas, container)
+export function createEngine(
+  canvas: HTMLCanvasElement,
+  container: HTMLElement,
+  options?: EngineOptions
+): Live2DEngine {
+  return new Live2DEngine(canvas, container, options)
 }

@@ -93,7 +93,8 @@
     "inputAria": "Type a message",
     "hint": "Tap the mic to speak, or just type",
     "hintListening": "Your words send automatically when you finish; tap the mic again to stop",
-    "voicePrefix": "Voice ·"
+    "voicePrefix": "Voice ·",
+    "petMode": "Desktop pet mode"
   },
   "codex": {
     "newTask": "New Task",

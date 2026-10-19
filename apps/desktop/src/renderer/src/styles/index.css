@@ -182,6 +182,13 @@ body {
   overflow: hidden; /* 桌面应用：页面级滚动交给各区域内部滚动容器 */
 }
 
+/* 桌宠窗口（?window=pet）：透明全屏覆盖层，桌面透出来，只画角色与对话框 */
+html.pet-window,
+html.pet-window body,
+html.pet-window #root {
+  background: transparent;
+}
+
 ::selection {
   background: color-mix(in srgb, var(--primary) 28%, transparent);
 }

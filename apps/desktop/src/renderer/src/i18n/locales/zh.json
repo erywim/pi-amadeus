@@ -93,7 +93,8 @@
     "inputAria": "输入消息",
     "hint": "点麦克风说话，或直接打字",
     "hintListening": "说完会自动发送；再点一次麦克风可停止",
-    "voicePrefix": "语音 ·"
+    "voicePrefix": "语音 ·",
+    "petMode": "桌宠模式"
   },
   "codex": {
     "newTask": "新任务",

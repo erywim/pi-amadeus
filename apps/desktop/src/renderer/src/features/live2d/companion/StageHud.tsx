@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { History, LogOut, Settings2, Video, Volume2, VolumeX } from 'lucide-react'
+import { History, LogOut, PictureInPicture2, Settings2, Video, Volume2, VolumeX } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
@@ -99,6 +99,12 @@ export function StageHud(): React.JSX.Element {
       <HudIconButton title={t('live2d.toolbar.settings')} onClick={() => setConfigPanelOpen(true)}>
         <Settings2 className="size-4" strokeWidth={1.6} />
       </HudIconButton>
+      {/* 桌宠模式需要 Electron 主进程（纯浏览器调试环境没有 preload） */}
+      {window.api && (
+        <HudIconButton title={t('companion.petMode')} onClick={() => window.api.setMode('pet')}>
+          <PictureInPicture2 className="size-4" strokeWidth={1.6} />
+        </HudIconButton>
+      )}
       <HudIconButton title={t('live2d.toolbar.logout')} onClick={openLogin}>
         <LogOut className="size-4" strokeWidth={1.6} />
       </HudIconButton>
