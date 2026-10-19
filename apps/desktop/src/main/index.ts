@@ -6,8 +6,9 @@ import { registerIpcHandlers } from './ipc'
 // shell.openExternal 等同启动本地程序，一律拦截
 const ALLOWED_EXTERNAL_PROTOCOLS = ['http:', 'https:', 'mailto:']
 
-// 开发期开 CDP 调试端口，供自动化 E2E 验证驱动
-if (!app.isPackaged) {
+// 开发期开 CDP 调试端口，供自动化 E2E 验证驱动。
+// 命令行已指定时不覆盖（9222 被占用时可用 electron-vite dev --remoteDebuggingPort <port>）
+if (!app.isPackaged && !app.commandLine.hasSwitch('remote-debugging-port')) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222')
 }
 
