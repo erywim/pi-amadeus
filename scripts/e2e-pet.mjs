@@ -98,6 +98,18 @@ async function waitForPage(pred, present, timeoutMs = 15000) {
 
 const debugState = (main) => evalJs(main, 'window.api.debug.state()')
 
+/** 给桌宠页派发左键事件（坐标是桌宠窗口内坐标） */
+function toPetMouse(cdp, type, x, y) {
+  return cdp.call('Input.dispatchMouseEvent', {
+    type,
+    x,
+    y,
+    button: 'left',
+    buttons: type === 'mouseReleased' ? 0 : 1,
+    clickCount: 1
+  })
+}
+
 async function enterPetViaHud(main) {
   const clicked = await evalJs(
     main,
@@ -355,6 +367,120 @@ try {
         return true
       })()`
     ).catch(() => undefined)
+  }
+
+  console.log('\n=== 8. 桌宠对话框 ===')
+  const pet4 = await enterPet(main)
+  try {
+    const dialogInfo = `(() => {
+      const d = document.querySelector('[data-pet-interactive][role=dialog]')
+      if (!d) return null
+      const r = d.getBoundingClientRect()
+      return {
+        text: d.textContent ?? '',
+        left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+        status: d.querySelector('.status-pulse')?.getAttribute('data-state') ?? null
+      }
+    })()`
+    const dialogGone = `!document.querySelector('[data-pet-interactive][role=dialog]')`
+    const clickByIcon = (icon) => evalJs(pet4, `(() => { const b = document.querySelector('button:has(svg.lucide-${icon})'); b?.click(); return !!b })()`)
+
+    report('无对话时对话框隐藏', (await evalJs(pet4, dialogInfo)) === null)
+
+    // 模拟一轮语音对话（不依赖 brain）：用户气泡 + 流式回复
+    await evalJs(
+      pet4,
+      `(() => {
+        const a = window.__amadeus
+        a.live2dSpeechStore.getState().setVoiceActive(true)
+        a.companionStore.getState().setPendingUser('你好呀')
+        a.uiStore.getState().setDialogText('第一句话。第二句话')
+        return true
+      })()`
+    )
+    const d1 = await waitFor(pet4, dialogInfo, 3000, '对话框出现')
+    report('对话开始 → 对话框出现', true)
+    report('用户气泡显示', d1.text.includes('你好呀'))
+    report('回复按句拆分：上一句折叠、当前句显示', d1.text.includes('第一句话。') && d1.text.includes('第二句话'))
+    report('状态灯跟随回合（thinking）', d1.status === 'thinking', String(d1.status))
+    const [vw, vh] = await evalJs(pet4, '[innerWidth, innerHeight]')
+    report(
+      '对话框完整落在窗口内',
+      d1.left >= 11.5 && d1.top >= 11.5 && d1.right <= vw - 11.5 && d1.bottom <= vh - 11.5,
+      `(${Math.round(d1.left)}, ${Math.round(d1.top)}) - (${Math.round(d1.right)}, ${Math.round(d1.bottom)}) / ${vw}x${vh}`
+    )
+    const face = await evalJs(pet4, `window.__live2d.faceRect()`)
+    const overlapsFace = !(d1.right <= face.x || d1.left >= face.x + face.width || d1.bottom <= face.y || d1.top >= face.y + face.height)
+    report('对话框贴在头部一侧（不盖住脸）', !overlapsFace)
+
+    // 对话框带 data-pet-interactive：光标在其上时窗口接收鼠标
+    const o8 = (await debugState(main)).pet.bounds
+    const dialogCenter = {
+      x: Math.round(o8.x + (d1.left + d1.right) / 2),
+      y: Math.round(o8.y + (d1.top + d1.bottom) / 2)
+    }
+    await evalJs(main, `window.api.debug.petCursor(${JSON.stringify(dialogCenter)})`)
+    report(
+      '光标在对话框上 → 接收鼠标',
+      !!(await waitFor(main, `window.api.debug.state().then((s) => s.petCapturing)`, 3000, '对话框命中').catch(() => false))
+    )
+    await evalJs(main, `window.api.debug.petCursor({ x: -10000, y: -10000 })`)
+
+    await evalJs(pet4, `window.__amadeus.uiStore.getState().setDialogText('第一句话。第二句话。第三')`)
+    const d2 = await waitFor(pet4, dialogInfo, 3000, '句子更新')
+    report('新句出现后只保留上一句（更早的折叠掉）', d2.text.includes('第二句话。') && d2.text.includes('第三') && !d2.text.includes('第一句话。'))
+
+    // 静音开关（只改本窗口状态，不碰用户数据）
+    await clickByIcon('volume-2')
+    report('静音按钮生效', (await evalJs(pet4, `window.__amadeus.uiStore.getState().ttsMuted`)) === true)
+    await clickByIcon('volume-x')
+    report('再次点击取消静音', (await evalJs(pet4, `window.__amadeus.uiStore.getState().ttsMuted`)) === false)
+
+    await clickByIcon('square')
+    report('停止按钮结束回合', (await evalJs(pet4, `window.__amadeus.live2dSpeechStore.getState().voiceActive`)) === false)
+
+    // 收起 → 点一下角色重新打开
+    await clickByIcon('x')
+    report('收起后对话框消失', !!(await waitFor(pet4, dialogGone, 2000, '收起消失').catch(() => false)))
+    const faceNow = await evalJs(pet4, `window.__live2d.debugRegion('face')`)
+    const tap = { x: Math.round(faceNow.x + faceNow.width / 2), y: Math.round(faceNow.y + faceNow.height / 2) }
+    await evalJs(main, `window.api.debug.petCursor(${JSON.stringify({ x: o8.x + tap.x, y: o8.y + tap.y })})`)
+    await waitFor(main, `window.api.debug.state().then((s) => s.petCapturing)`, 3000, '悬停接收')
+    toPetMouse(pet4, 'mousePressed', tap.x, tap.y)
+    toPetMouse(pet4, 'mouseReleased', tap.x, tap.y)
+    report('点一下角色重新打开对话框', !!(await waitFor(pet4, dialogInfo, 3000, '点按重开').catch(() => false)))
+    await evalJs(main, `window.api.debug.petCursor({ x: -10000, y: -10000 })`)
+
+    // 空闲停留 6 秒后自动隐藏
+    report(
+      '空闲约 6 秒后自动隐藏',
+      !!(await waitFor(pet4, dialogGone, 8000, '自动隐藏').catch(() => false))
+    )
+
+    // 手动收起后，下一轮对话自动重新出现
+    await evalJs(pet4, `window.__amadeus.uiStore.getState().setDialogText('还在。')`)
+    await waitFor(pet4, dialogInfo, 3000, '新文本重新显示')
+    await clickByIcon('x')
+    await waitFor(pet4, dialogGone, 2000, '手动收起')
+    await evalJs(pet4, `window.__amadeus.live2dSpeechStore.getState().setVoiceActive(true)`)
+    const d4 = await waitFor(pet4, dialogInfo, 3000, '下一轮自动出现').catch(() => null)
+    report('收起后下一轮对话自动重新出现', !!d4 && d4.status === 'thinking', d4 ? String(d4.status) : '未出现')
+  } finally {
+    await evalJs(
+      pet4,
+      `(() => {
+        const a = window.__amadeus
+        a.live2dSpeechStore.getState().setVoiceActive(false)
+        a.companionStore.getState().setPendingUser(null)
+        a.uiStore.getState().setDialogText('')
+        a.uiStore.getState().setTtsMuted(false)
+        a.uiStore.getState().setMicActive(false)
+        return true
+      })()`
+    ).catch(() => undefined)
+    await evalJs(main, `window.api.debug.petCursor(null)`).catch(() => undefined)
+    await exitPet(pet4, main)
+    pet4.close()
   }
 } catch (error) {
   report('执行', false, error instanceof Error ? error.message : String(error))

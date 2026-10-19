@@ -96,6 +96,11 @@
     "voicePrefix": "Voice ·",
     "petMode": "Desktop pet mode"
   },
+  "pet": {
+    "dialog": {
+      "closeLabel": "Hide dialog"
+    }
+  },
   "codex": {
     "newTask": "New Task",
     "sessionsLabel": "Sessions",

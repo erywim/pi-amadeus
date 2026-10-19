@@ -5,7 +5,9 @@ import { Live2DStage } from '@renderer/features/live2d/Live2DStage'
 import type { Live2DEngine, Placement } from '@renderer/features/live2d/lib/live2d-engine'
 import { poke } from '@renderer/features/live2d/poke'
 import { usePetStore } from '@renderer/stores/petStore'
+import { useSessionStore } from '@renderer/stores/sessionStore'
 import { clampPlacement, defaultPlacement, fromStored, toStored, type Size } from './placement'
+import { PetDialog } from './PetDialog'
 import { usePetDrag } from './usePetDrag'
 import { usePetPassthrough } from './usePetPassthrough'
 
@@ -19,8 +21,19 @@ const viewSize = (): Size => ({ width: window.innerWidth, height: window.innerHe
  */
 export default function PetApp(): React.JSX.Element {
   const [engine, setEngine] = useState<Live2DEngine | null>(null)
+  const [dialogReopen, setDialogReopen] = useState(0)
   const hold = usePetPassthrough(engine)
   const saveStoredPlacement = usePetStore((s) => s.setPlacement)
+
+  // 桌宠窗口是独立的渲染层，语音回合接着最新会话继续（与陪伴页的默认选中一致），
+  // 这样退出桌宠后主窗口刷新会话就能看到这轮对话
+  const userId = useSessionStore((s) => s.userId)
+  const activeSessionId = useSessionStore((s) => s.activeSessionId)
+  const sessions = useSessionStore((s) => s.sessions)
+  const selectSession = useSessionStore((s) => s.selectSession)
+  useEffect(() => {
+    if (userId && !activeSessionId && sessions.length > 0) selectSession(sessions[0]!.id)
+  }, [userId, activeSessionId, sessions, selectSession])
 
   function clamp(p: Placement): Placement {
     const size = engine?.getModelSize()
@@ -33,6 +46,7 @@ export default function PetApp(): React.JSX.Element {
     clamp,
     onTap: () => {
       poke(engine)
+      setDialogReopen((n) => n + 1)
     },
     onDragEnd: (p) => saveStoredPlacement(toStored(p, viewSize()))
   })
@@ -60,6 +74,7 @@ export default function PetApp(): React.JSX.Element {
       {...handlers}
     >
       <Live2DStage placement="free" onReady={handleReady} onError={() => window.api.setMode('window')} />
+      <PetDialog engine={engine} reopenSignal={dialogReopen} />
     </div>
   )
 }

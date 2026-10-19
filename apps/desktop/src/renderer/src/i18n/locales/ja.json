@@ -96,6 +96,11 @@
     "voicePrefix": "音声 ·",
     "petMode": "デスクトップマスコット"
   },
+  "pet": {
+    "dialog": {
+      "closeLabel": "会話を閉じる"
+    }
+  },
   "codex": {
     "newTask": "新しいタスク",
     "sessionsLabel": "セッション",

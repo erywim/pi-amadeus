@@ -96,6 +96,11 @@
     "voicePrefix": "语音 ·",
     "petMode": "桌宠模式"
   },
+  "pet": {
+    "dialog": {
+      "closeLabel": "收起对话"
+    }
+  },
   "codex": {
     "newTask": "新任务",
     "sessionsLabel": "会话",
