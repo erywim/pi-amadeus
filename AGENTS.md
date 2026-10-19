@@ -19,6 +19,8 @@
 - `npm run build` — 构建桌面端
 - `npm run verify` — 依次跑 typecheck、lint、build（提交前一键全量检查）
 - `node scripts/e2e.mjs [chat|voice|all]` — 桌面端 E2E（需 dev 已启动，端口 9222）
+- 9222 被占用（如本机 Chrome 开着远程调试）时：`npx --prefix apps/desktop electron-vite dev --remoteDebuggingPort <port>`，
+  再用 `CDP_HTTP=http://127.0.0.1:<port>` 指给读取该变量的脚本（`e2e-pet.mjs`、`e2e-all.mjs` 的前置检查等；多数专项脚本仍固定 9222）
 - `npm run e2e` — 全部 `scripts/e2e-*.mjs` 的回归套件（前置同上；前置不满足会直接报错，不会伪装成全过）
 - 其它专项 e2e 见 `scripts/e2e-*.mjs`（config / vision / tools / feishu / mic / skills …）
 
