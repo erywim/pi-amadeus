@@ -203,21 +203,9 @@ body {
 }
 
 /* ============================================================
- * CRT 效果：扫描线覆盖层 / 荧光辉光 / glitch（dark cyber 气质，
+ * CRT 效果：荧光辉光 / glitch（dark cyber 气质，
  * 浅色主题下仍可用于点缀）
  * ============================================================ */
-.crt-scanlines {
-  background-image: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.28) 0px,
-    rgba(0, 0, 0, 0.28) 1px,
-    transparent 1px,
-    transparent 3px
-  );
-  mix-blend-mode: overlay;
-  pointer-events: none;
-}
-
 .text-glow-green {
   text-shadow:
     0 0 6px rgba(0, 255, 102, 0.75),

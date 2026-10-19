@@ -4,7 +4,6 @@ import { useSessionStore } from '@renderer/stores/sessionStore'
 import { ChatHistoryDialog } from './ChatHistoryDialog'
 import { ConfigPanel } from './ConfigPanel'
 import { LoginOverlay } from './LoginOverlay'
-import { VideoChatWindow } from './VideoChatWindow'
 import { CompanionComposer } from './companion/CompanionComposer'
 import { CompanionThread } from './companion/CompanionThread'
 import { StageBay } from './companion/StageBay'
@@ -49,7 +48,6 @@ export default function CompanionPage(): React.JSX.Element {
       <ConfigPanel />
       <ChatHistoryDialog />
       <LoginOverlay />
-      <VideoChatWindow />
     </div>
   )
 }
