@@ -19,6 +19,7 @@
 - `npm run build` — 构建桌面端
 - `npm run verify` — 依次跑 typecheck、lint、build（提交前一键全量检查）
 - `node scripts/e2e.mjs [chat|voice|all]` — 桌面端 E2E（需 dev 已启动，端口 9222）
+- `npm run e2e` — 全部 `scripts/e2e-*.mjs` 的回归套件（前置同上；前置不满足会直接报错，不会伪装成全过）
 - 其它专项 e2e 见 `scripts/e2e-*.mjs`（config / vision / tools / feishu / mic / skills …）
 
 ## 规则

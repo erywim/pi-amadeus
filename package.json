@@ -19,7 +19,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "clean": "npm run clean --workspaces --if-present",
-    "verify": "npm run typecheck && npm run lint && npm run build"
+    "verify": "npm run typecheck && npm run lint && npm run build",
+    "e2e": "node scripts/e2e-all.mjs"
   },
   "overrides": {
     "@pixi/constants": "6.5.10",
