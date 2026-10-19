@@ -500,6 +500,11 @@ export class Live2DEngine {
     }
   }
 
+  /** 脸部区域（容器坐标，CSS 像素）：桌宠对话框按它贴在头部一侧；网格尚未算出时 null */
+  faceRect(): { x: number; y: number; width: number; height: number } | null {
+    return this.overlays?.regionOnScreen('face') ?? null
+  }
+
   /** 截图区域（CSS 像素）：face 面部特写 / head 头部含符号余量 */
   debugRegion(kind: string): { x: number; y: number; width: number; height: number } | null {
     if (kind !== 'face' && kind !== 'head') return null
