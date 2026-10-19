@@ -7,10 +7,13 @@
  *  3. 桌宠窗口里请求回到窗口模式 → 桌宠窗口销毁、主窗口恢复
  *  4. 再进再出一轮（状态不残留）
  *  5. 切换途中改主意：进入请求后、桌宠窗口就绪前立刻切回 → 不残留桌宠窗口
+ *  6. 鼠标穿透：光标到脸上 → 接收鼠标；到空白 → 穿透；强制穿透时一律穿透；
+ *     命中检测与实际渲染像素对照（一致率、可见像素零漏判）
  *
  * 前置：桌面端 dev 已启动（CDP 端口默认 9222，可用 CDP_HTTP 覆盖）。
  * 用法：node scripts/e2e-pet.mjs
- * 主进程窗口状态经 dev 专用的 window.api.debugState() 读取。
+ * 主进程窗口状态经 dev 专用的 window.api.debug.state() 读取；光标用 debug.petCursor
+ * 覆盖坐标驱动，不移动用户的真实鼠标。
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 
@@ -91,7 +94,7 @@ async function waitForPage(pred, present, timeoutMs = 15000) {
   }
 }
 
-const debugState = (main) => evalJs(main, 'window.api.debugState()')
+const debugState = (main) => evalJs(main, 'window.api.debug.state()')
 
 async function enterPetViaHud(main) {
   const clicked = await evalJs(
@@ -101,7 +104,7 @@ async function enterPetViaHud(main) {
   if (!clicked) throw new Error('陪伴页 HUD 上找不到桌宠模式按钮')
   const target = await waitForPage(isPetUrl, true)
   const pet = await connect(target.webSocketDebuggerUrl)
-  await waitFor(main, `window.api.debugState().then((s) => s.petShown)`, 15000, '桌宠窗口显示')
+  await waitFor(main, `window.api.debug.state().then((s) => s.petShown)`, 15000, '桌宠窗口显示')
   return pet
 }
 
@@ -110,7 +113,7 @@ async function exitPet(fromCdp, main) {
   evalJs(fromCdp, `window.api.setMode('window'); true`).catch(() => undefined)
   await waitForPage(isPetUrl, false)
   // macOS 先恢复 Dock 图标再显示主窗口（异步）：条件等待，不靠固定延时
-  await waitFor(main, `window.api.debugState().then((s) => s.main?.visible)`, 5000, '主窗口恢复可见').catch(() => undefined)
+  await waitFor(main, `window.api.debug.state().then((s) => s.main?.visible)`, 5000, '主窗口恢复可见').catch(() => undefined)
 }
 
 let main = null
@@ -118,7 +121,7 @@ try {
   const mainTarget = (await pages()).find((p) => !isPetUrl(p.url))
   if (!mainTarget) throw new Error(`${CDP_HTTP} 上没有主窗口页面（桌面端 dev 未启动？）`)
   main = await connect(mainTarget.webSocketDebuggerUrl)
-  await waitFor(main, `typeof window.api?.debugState === 'function'`, 10000, 'dev 调试接口')
+  await waitFor(main, `typeof window.api?.debug?.state === 'function'`, 10000, 'dev 调试接口')
 
   // 干净起点：窗口模式 + 陪伴页
   if ((await evalJs(main, 'window.api.getMode()')) !== 'window') {
@@ -178,7 +181,7 @@ try {
   const saved = await evalJs(main, `({ lang: window.__amadeus.settingsStore.getState().language, settings: localStorage.getItem('amadeus_settings'), cache: localStorage.getItem('amadeus_lang') })`)
   try {
     await evalJs(main, `window.__amadeus.settingsStore.getState().setLanguage('en'); true`)
-    const en = await waitFor(main, `window.api.debugState().then((s) => s.tray[0].label === 'Window Mode' ? s.tray : null)`, 5000, '托盘英文')
+    const en = await waitFor(main, `window.api.debug.state().then((s) => s.tray[0].label === 'Window Mode' ? s.tray : null)`, 5000, '托盘英文')
     report('切到英文后托盘为英文', en[1]?.label === 'Desktop Pet Mode', en.map((i) => i.label).join(' / '))
   } finally {
     await evalJs(
@@ -193,8 +196,67 @@ try {
       })()`
     )
   }
-  const back = await waitFor(main, `window.api.debugState().then((s) => (s.tray[0].label === 'Window Mode') === (${JSON.stringify(saved.lang)} === 'en') ? s.tray : null)`, 5000, '托盘语言恢复')
+  const back = await waitFor(main, `window.api.debug.state().then((s) => (s.tray[0].label === 'Window Mode') === (${JSON.stringify(saved.lang)} === 'en') ? s.tray : null)`, 5000, '托盘语言恢复')
   report('恢复原语言后托盘跟随', back.length > 0, back.map((i) => i.label).join(' / '))
+
+  console.log('\n=== 6. 鼠标穿透：按命中区域切换 ===')
+  // 光标用 dev 专用覆盖坐标驱动（不动用户真实鼠标），走的仍是主进程轮询 → 渲染层命中 → 主进程切换的完整链路
+  await evalJs(main, `window.api.setMode('pet'); true`)
+  const petTarget = await waitForPage(isPetUrl, true)
+  // 先把覆盖坐标放到窗口外，免得用户真实鼠标恰好停在角色上影响初始断言
+  await evalJs(main, `window.api.debug.petCursor({ x: -10000, y: -10000 })`)
+  const pet3 = await connect(petTarget.webSocketDebuggerUrl)
+  try {
+    const s6 = await waitFor(main, `window.api.debug.state().then((s) => s.petShown ? s : null)`, 15000, '桌宠显示')
+    const origin = s6.pet.bounds
+    const face = await waitFor(pet3, `window.__live2d?.debugRegion('face')`, 10000, '脸部区域')
+    const onFace = { x: Math.round(origin.x + face.x + face.width / 2), y: Math.round(origin.y + face.y + face.height / 2) }
+    const empty = { x: origin.x + 40, y: origin.y + 40 }
+    report('初始整窗穿透', s6.petCapturing === false)
+    await evalJs(main, `window.api.debug.petCursor(${JSON.stringify(onFace)})`)
+    report('光标移到脸上 → 接收鼠标', !!(await waitFor(main, `window.api.debug.state().then((s) => s.petCapturing)`, 3000, '命中切换').catch(() => false)))
+    await evalJs(main, `window.api.debug.petCursor(${JSON.stringify(empty)})`)
+    report('光标移到空白 → 恢复穿透', !!(await waitFor(main, `window.api.debug.state().then((s) => !s.petCapturing)`, 3000, '离开切换').catch(() => false)))
+
+    await evalJs(main, `window.api.debug.petCursor(${JSON.stringify(onFace)})`)
+    await waitFor(main, `window.api.debug.state().then((s) => s.petCapturing)`, 3000, '命中切换')
+    await evalJs(main, `window.api.debug.petPassthrough(true)`)
+    const forced = await debugState(main)
+    report('强制穿透：光标在脸上也不接收', forced.petCapturing === false && forced.petPassthroughForced === true)
+    report('托盘「鼠标穿透」勾选', forced.tray.some((i) => i.checked === true && /穿透|Passthrough|透過/.test(i.label)))
+    await evalJs(main, `window.api.debug.petPassthrough(false)`)
+    report('关闭强制穿透后恢复命中', (await debugState(main)).petCapturing === true)
+
+    // 命中检测与实际渲染像素对照：渲染后同一任务内 readPixels，包围盒内均匀采样
+    const cmp = await evalJs(
+      pet3,
+      `(() => {
+        const e = window.__live2d, app = e.app, r = app.renderer, gl = r.gl, res = r.resolution
+        r.render(app.stage)
+        const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight
+        const buf = new Uint8Array(W * H * 4)
+        gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf)
+        const b = e.model.getBounds()
+        let total = 0, agree = 0, missed = 0
+        for (let y = Math.max(0, b.y); y < Math.min(innerHeight, b.y + b.height); y += 6) {
+          for (let x = Math.max(0, b.x); x < Math.min(innerWidth, b.x + b.width); x += 6) {
+            const visible = buf[((H - 1 - Math.floor(y * res)) * W + Math.floor(x * res)) * 4 + 3] > 20
+            const hit = e.hitTest(x, y)
+            total++
+            if (visible === hit) agree++
+            else if (visible) missed++
+          }
+        }
+        return { total, agreement: agree / total, missed }
+      })()`
+    )
+    report('命中与渲染像素一致率 ≥ 97%', cmp.agreement >= 0.97, `${(cmp.agreement * 100).toFixed(2)}%（${cmp.total} 点）`)
+    report('可见像素无漏判', cmp.missed === 0, `漏判 ${cmp.missed}`)
+  } finally {
+    await evalJs(main, `window.api.debug.petPassthrough(false).then(() => window.api.debug.petCursor(null))`).catch(() => undefined)
+    await exitPet(pet3, main)
+    pet3.close()
+  }
 } catch (error) {
   report('执行', false, error instanceof Error ? error.message : String(error))
 } finally {

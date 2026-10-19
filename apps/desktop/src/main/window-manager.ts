@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, screen, session, shell, type WebContents } from 'electron'
+import { PetPointer } from './pet-pointer'
 
 export type AppMode = 'window' | 'pet'
 
@@ -64,9 +65,10 @@ export class WindowManager {
   private pet: BrowserWindow | null = null
   private petShown = false
   private readyTimer: ReturnType<typeof setTimeout> | null = null
+  private petPointer: PetPointer | null = null
   private mode: AppMode = 'window'
   private quitting = false
-  private readonly listeners = new Set<(mode: AppMode) => void>()
+  private readonly listeners = new Set<() => void>()
 
   constructor() {
     app.on('before-quit', () => {
@@ -78,8 +80,31 @@ export class WindowManager {
     return this.mode
   }
 
-  onModeChange(listener: (mode: AppMode) => void): void {
+  /** 模式或强制穿透变化时回调（托盘据此刷新） */
+  onStateChange(listener: () => void): void {
     this.listeners.add(listener)
+  }
+
+  /** 强制穿透：桌宠整窗不接收鼠标（每次进入桌宠时为关） */
+  isPassthroughForced(): boolean {
+    return this.petPointer?.isForced() ?? false
+  }
+
+  setPassthroughForced(forced: boolean): void {
+    if (!this.petPointer) return
+    this.petPointer.setForced(forced)
+    this.notify()
+  }
+
+  /** 渲染层命中检测结果：只认桌宠窗口自己的 webContents */
+  setPetInteractive(sender: WebContents, interactive: boolean): void {
+    if (sender !== this.pet?.webContents) return
+    this.petPointer?.setInteractive(interactive)
+  }
+
+  /** 开发期 e2e：用指定屏幕坐标代替真实光标 */
+  debugSetPetCursor(point: Electron.Point | null): void {
+    this.petPointer?.debugOverride(point)
   }
 
   createMainWindow(): BrowserWindow {
@@ -127,13 +152,20 @@ export class WindowManager {
   /** 托盘「显示」：当前模式的窗口 */
   showCurrent(): void {
     if (this.mode === 'window') this.showMain()
-    else if (this.petShown) this.pet?.showInactive()
+    else if (this.petShown) {
+      this.pet?.showInactive()
+      this.petPointer?.start()
+    }
   }
 
   /** 托盘「隐藏」：当前模式的窗口 */
   hideCurrent(): void {
-    if (this.mode === 'window') this.main?.hide()
-    else this.pet?.hide()
+    if (this.mode === 'window') {
+      this.main?.hide()
+      return
+    }
+    this.petPointer?.stop()
+    this.pet?.hide()
   }
 
   /** 桌宠渲染层首帧已画：显示桌宠窗口，隐藏主窗口 */
@@ -146,12 +178,16 @@ export class WindowManager {
     // macOS：所有桌面空间可见、浮在全屏应用之上。副作用：桌宠期间 Dock 图标隐藏（入口在托盘）
     if (isMac) pet.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
     pet.showInactive()
+    this.petPointer?.start()
   }
 
   /** 开发期 e2e 用：窗口状态快照 */
   debugState(): {
     mode: AppMode
     petShown: boolean
+    /** 桌宠窗口当前是否在接收鼠标（未穿透） */
+    petCapturing: boolean
+    petPassthroughForced: boolean
     main: WindowSnapshot | null
     pet: WindowSnapshot | null
     petWorkArea: Electron.Rectangle | null
@@ -160,6 +196,8 @@ export class WindowManager {
     return {
       mode: this.mode,
       petShown: this.petShown,
+      petCapturing: this.petPointer?.isCapturing() ?? false,
+      petPassthroughForced: this.isPassthroughForced(),
       main: snapshot(this.main),
       pet: snapshot(pet),
       petWorkArea: pet ? screen.getDisplayMatching(pet.getBounds()).workArea : null
@@ -169,6 +207,7 @@ export class WindowManager {
   private enterPetMode(): void {
     this.mode = 'pet'
     this.pet = this.createPetWindow()
+    this.petPointer = new PetPointer(this.pet)
     this.emit()
   }
 
@@ -178,6 +217,8 @@ export class WindowManager {
     const pet = this.pet
     this.pet = null
     this.petShown = false
+    this.petPointer?.stop()
+    this.petPointer = null
     pet?.destroy()
     // 先恢复桌宠期间隐藏的 Dock 图标，主窗口才能正常获得焦点
     if (isMac && app.dock) void app.dock.show().then(() => this.showMain())
@@ -259,7 +300,11 @@ export class WindowManager {
     for (const win of [this.main, this.pet]) {
       if (win && !win.isDestroyed()) win.webContents.send('mode:changed', this.mode)
     }
-    for (const listener of this.listeners) listener(this.mode)
+    this.notify()
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) listener()
   }
 
   private clearReadyTimer(): void {

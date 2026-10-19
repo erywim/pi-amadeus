@@ -79,6 +79,35 @@ export interface Placement {
   scale: number
 }
 
+/** 命中检测用到的 Cubism 网格接口（coreModel 声明类型是 Cubism2/4 联合，只取需要的） */
+interface MeshCore {
+  getDrawableCount(): number
+  getDrawableDynamicFlagIsVisible(index: number): boolean
+  getDrawableOpacity(index: number): number
+  /** 顶点（网格单位，y 向上） */
+  getDrawableVertices(index: number): Float32Array
+  getDrawableVertexIndices(index: number): Uint16Array
+}
+
+// 不透明度低于此值的网格不算命中（脸红等叠加网格平时为 0）
+const HIT_MIN_OPACITY = 0.1
+
+/** 点是否在三角形内（含边）：三条边叉积同号 */
+function inTriangle(px: number, py: number, v: Float32Array, a: number, b: number, c: number): boolean {
+  const ax = v[a * 2]!
+  const ay = v[a * 2 + 1]!
+  const bx = v[b * 2]!
+  const by = v[b * 2 + 1]!
+  const cx = v[c * 2]!
+  const cy = v[c * 2 + 1]!
+  const d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by)
+  const d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy)
+  const d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay)
+  const hasNeg = d1 < 0 || d2 < 0 || d3 < 0
+  const hasPos = d1 > 0 || d2 > 0 || d3 > 0
+  return !(hasNeg && hasPos)
+}
+
 /**
  * Live2D 引擎单实例（每挂载一个）：PIXI Application + 模型加载 + 分层动画装配。
  * 分层：MotionLayer（模型自带动作，一遍即停）→ ProceduralLayer（表情配方 + 待机表演，每帧最后写）
@@ -502,6 +531,37 @@ export class Live2DEngine {
   getModelSize(): { width: number; height: number } | null {
     const internal = this.model?.internalModel
     return internal ? { width: internal.width, height: internal.height } : null
+  }
+
+  /**
+   * 命中检测：容器坐标（CSS 像素）是否落在角色当前可见的网格上。
+   * 逐三角形判断（模型没有 HitArea，用包围盒会把发丝间、身侧的空白也算进来）；
+   * 用上一帧的世界变换，歪头/缩放/手势位移都已计入。
+   */
+  hitTest(x: number, y: number): boolean {
+    const model = this.model
+    if (!model || model.scale.x <= 0) return false
+    const internal = model.internalModel as unknown as {
+      coreModel: MeshCore
+      pixelsPerUnit: number
+      originalWidth: number
+      originalHeight: number
+    }
+    // 容器坐标 → 模型画布像素（toModelPosition）→ 网格单位（与 getDrawableVertices 原始值同空间）
+    const p = model.toModelPosition(new PIXI.Point(x, y), undefined, true)
+    const ux = (p.x - internal.originalWidth / 2) / internal.pixelsPerUnit
+    const uy = -(p.y - internal.originalHeight / 2) / internal.pixelsPerUnit
+    const core = internal.coreModel
+    const count = core.getDrawableCount()
+    for (let i = 0; i < count; i++) {
+      if (!core.getDrawableDynamicFlagIsVisible(i) || core.getDrawableOpacity(i) < HIT_MIN_OPACITY) continue
+      const vertices = core.getDrawableVertices(i)
+      const indices = core.getDrawableVertexIndices(i)
+      for (let t = 0; t + 2 < indices.length; t += 3) {
+        if (inTriangle(ux, uy, vertices, indices[t]!, indices[t + 1]!, indices[t + 2]!)) return true
+      }
+    }
+    return false
   }
 
   private basePlacement(): Placement {

@@ -17,8 +17,21 @@ const api = {
   getMode: (): Promise<AppMode> => ipcRenderer.invoke('mode:get'),
   setMode: (mode: AppMode): void => ipcRenderer.send('mode:set', mode),
   onModeChanged: (callback: (mode: AppMode) => void): (() => void) => subscribe('mode:changed', callback),
-  petReady: (): void => ipcRenderer.send('pet:ready'),
-  ...(import.meta.env.DEV ? { debugState: (): Promise<unknown> => ipcRenderer.invoke('debug:state') } : {})
+  pet: {
+    ready: (): void => ipcRenderer.send('pet:ready'),
+    setInteractive: (interactive: boolean): void => ipcRenderer.send('pet:set-interactive', interactive),
+    onCursor: (callback: (point: { x: number; y: number }) => void): (() => void) => subscribe('pet:cursor', callback),
+    onPassthrough: (callback: (forced: boolean) => void): (() => void) => subscribe('pet:passthrough', callback)
+  },
+  ...(import.meta.env.DEV
+    ? {
+        debug: {
+          state: (): Promise<unknown> => ipcRenderer.invoke('debug:state'),
+          petCursor: (point: { x: number; y: number } | null): Promise<void> => ipcRenderer.invoke('debug:pet-cursor', point),
+          petPassthrough: (forced: boolean): Promise<void> => ipcRenderer.invoke('debug:pet-passthrough', forced)
+        }
+      }
+    : {})
 }
 
 export type DesktopApi = typeof api

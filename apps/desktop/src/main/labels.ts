@@ -6,6 +6,7 @@ const LABELS = {
   zh: {
     windowMode: '窗口模式',
     petMode: '桌宠模式',
+    passthrough: '鼠标穿透',
     show: '显示',
     hide: '隐藏',
     quit: '退出'
@@ -13,6 +14,7 @@ const LABELS = {
   en: {
     windowMode: 'Window Mode',
     petMode: 'Desktop Pet Mode',
+    passthrough: 'Mouse Passthrough',
     show: 'Show',
     hide: 'Hide',
     quit: 'Quit'
@@ -20,6 +22,7 @@ const LABELS = {
   ja: {
     windowMode: 'ウィンドウモード',
     petMode: 'デスクトップマスコット',
+    passthrough: 'マウス透過',
     show: '表示',
     hide: '非表示',
     quit: '終了'

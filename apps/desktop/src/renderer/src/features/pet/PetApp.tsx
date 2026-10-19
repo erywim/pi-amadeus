@@ -1,8 +1,9 @@
 import * as React from 'react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Live2DStage } from '@renderer/features/live2d/Live2DStage'
 import type { Live2DEngine } from '@renderer/features/live2d/lib/live2d-engine'
 import { defaultPlacement } from './placement'
+import { usePetPassthrough } from './usePetPassthrough'
 
 /**
  * 桌宠窗口根组件（?window=pet）：铺满显示器工作区的透明窗口，只画角色。
@@ -10,15 +11,19 @@ import { defaultPlacement } from './placement'
  * 主进程随即隐藏主窗口，切换无闪烁。模型加载失败直接退回窗口模式。
  */
 export default function PetApp(): React.JSX.Element {
+  const [engine, setEngine] = useState<Live2DEngine | null>(null)
+  usePetPassthrough(engine)
+
   useEffect(() => {
     document.documentElement.classList.add('pet-window')
     document.body.classList.add('theme-amadeus')
   }, [])
 
-  function handleReady(engine: Live2DEngine): void {
-    const size = engine.getModelSize()
-    if (size) engine.setPlacement(defaultPlacement({ width: window.innerWidth, height: window.innerHeight }, size))
-    requestAnimationFrame(() => requestAnimationFrame(() => window.api.petReady()))
+  function handleReady(ready: Live2DEngine): void {
+    const size = ready.getModelSize()
+    if (size) ready.setPlacement(defaultPlacement({ width: window.innerWidth, height: window.innerHeight }, size))
+    setEngine(ready)
+    requestAnimationFrame(() => requestAnimationFrame(() => window.api.pet.ready()))
   }
 
   return (

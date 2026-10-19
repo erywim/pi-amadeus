@@ -16,10 +16,18 @@ app.whenReady().then(() => {
   registerIpcHandlers(windows, (lang) => {
     if (setMenuLanguage(lang)) tray.refresh()
   })
-  windows.onModeChange(() => tray.refresh())
+  windows.onStateChange(() => tray.refresh())
   // 开发期 e2e 断言主进程窗口状态（打包产物不注册）
   if (!app.isPackaged) {
     ipcMain.handle('debug:state', () => ({ ...windows.debugState(), tray: tray.debugItems() }))
+    ipcMain.handle('debug:pet-cursor', (_event, point: unknown) => {
+      const p = point as { x?: unknown; y?: unknown } | null
+      windows.debugSetPetCursor(p && typeof p.x === 'number' && typeof p.y === 'number' ? { x: p.x, y: p.y } : null)
+    })
+    // 与托盘「鼠标穿透」同一个入口
+    ipcMain.handle('debug:pet-passthrough', (_event, forced: unknown) => {
+      if (typeof forced === 'boolean') windows.setPassthroughForced(forced)
+    })
   }
 
   windows.createMainWindow()

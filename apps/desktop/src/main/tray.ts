@@ -9,7 +9,7 @@ import type { WindowManager } from './window-manager'
 
 const isMac = process.platform === 'darwin'
 
-/** 托盘：窗口模式 / 桌宠模式切换 + 显示 / 隐藏 / 退出（桌宠期间 macOS 无 Dock 图标，入口在这里） */
+/** 托盘：窗口模式 / 桌宠模式切换 +（桌宠时）鼠标穿透 + 显示 / 隐藏 / 退出（桌宠期间 macOS 无 Dock 图标，入口在这里） */
 export class AppTray {
   private tray: Tray | null = null
   private items: MenuItemConstructorOptions[] = []
@@ -35,6 +35,18 @@ export class AppTray {
       { label: labels.windowMode, type: 'radio', checked: mode === 'window', click: () => this.windows.setMode('window') },
       { label: labels.petMode, type: 'radio', checked: mode === 'pet', click: () => this.windows.setMode('pet') },
       { type: 'separator' },
+      // 强制穿透后角色点不到、右键菜单也出不来，只能从托盘关回来
+      ...(mode === 'pet'
+        ? ([
+            {
+              label: labels.passthrough,
+              type: 'checkbox',
+              checked: this.windows.isPassthroughForced(),
+              click: () => this.windows.setPassthroughForced(!this.windows.isPassthroughForced())
+            },
+            { type: 'separator' }
+          ] satisfies MenuItemConstructorOptions[])
+        : []),
       { label: labels.show, click: () => this.windows.showCurrent() },
       { label: labels.hide, click: () => this.windows.hideCurrent() },
       { type: 'separator' },
