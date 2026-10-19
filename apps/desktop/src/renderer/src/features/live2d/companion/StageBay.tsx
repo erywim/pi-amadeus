@@ -2,19 +2,10 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { DivergenceMeter } from '@renderer/components/effects/DivergenceMeter'
 import { useCompanionStore } from '@renderer/stores/companionStore'
-import { useLive2dSpeechStore } from '@renderer/stores/live2dSpeechStore'
 import { Live2DStage } from '../Live2DStage'
 import { DebugInput } from '../DebugInput'
-import { SPEAKING_LIP_THRESHOLD } from '../lib/live2d-engine'
+import { poke } from '../poke'
 import { useCompanionStatus } from './useCompanionStatus'
-
-/** 引擎调试钩子（live2d-engine 挂载时写入；戳一下走同一条手势路径） */
-interface EngineHandle {
-  gesture?: (name: string) => boolean
-}
-
-/** 戳一戳她的随机反应：傲娇池 */
-const POKE_GESTURES = ['tilt', 'wink', 'hmph', 'startle', 'nod'] as const
 
 /**
  * 舞台区：PIXI 画布 + 实验台氛围装饰（点阵标尺 / 取景框 / 世界线计 /
@@ -29,12 +20,8 @@ export function StageBay(): React.JSX.Element {
   function onStageClick(e: React.MouseEvent<HTMLDivElement>): void {
     // 点击落在可交互控件上（世界线计/按钮等）不算"点她"
     if ((e.target as HTMLElement).closest('button, a, input, textarea')) return
-    const speech = useLive2dSpeechStore.getState()
-    const speakingNow = performance.now() < speech.speakingUntil || speech.lipSyncValue > SPEAKING_LIP_THRESHOLD
-    if (speech.voiceActive || speakingNow) return
-    const engine = (window as unknown as { __live2d?: EngineHandle }).__live2d
-    const gesture = POKE_GESTURES[Math.floor(Math.random() * POKE_GESTURES.length)]!
-    if (engine?.gesture?.(gesture)) pokeNotice()
+    // 引擎调试钩子（live2d-engine 挂载时写入；戳一下走同一条手势路径）
+    if (poke(window.__live2d)) pokeNotice()
   }
 
   return (

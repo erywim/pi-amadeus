@@ -527,6 +527,11 @@ export class Live2DEngine {
     this.applyTransform()
   }
 
+  /** free 摆放的当前位置（未设置时 null） */
+  getPlacement(): Placement | null {
+    return this.placement
+  }
+
   /** 模型画布原始尺寸（缩放为 1 时的 CSS 像素）；模型未加载时 null */
   getModelSize(): { width: number; height: number } | null {
     const internal = this.model?.internalModel

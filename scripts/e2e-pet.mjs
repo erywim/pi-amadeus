@@ -9,6 +9,8 @@
  *  5. 切换途中改主意：进入请求后、桌宠窗口就绪前立刻切回 → 不残留桌宠窗口
  *  6. 鼠标穿透：光标到脸上 → 接收鼠标；到空白 → 穿透；强制穿透时一律穿透；
  *     命中检测与实际渲染像素对照（一致率、可见像素零漏判）
+ *  7. 拖动（按住期间拖出网格仍接收鼠标）/ 点按反应 / 边界限制 / 位置记忆与重进恢复 /
+ *     pet_config 损坏回落默认位置且现场另存（测完按原始字节还原 pet_config）
  *
  * 前置：桌面端 dev 已启动（CDP 端口默认 9222，可用 CDP_HTTP 覆盖）。
  * 用法：node scripts/e2e-pet.mjs
@@ -108,6 +110,17 @@ async function enterPetViaHud(main) {
   return pet
 }
 
+/** 经 api 进入桌宠，并把覆盖光标放到窗口外（排除用户真实鼠标的干扰）；返回桌宠页连接 */
+async function enterPet(main) {
+  await evalJs(main, `window.api.setMode('pet'); true`)
+  const target = await waitForPage(isPetUrl, true)
+  await evalJs(main, `window.api.debug.petCursor({ x: -10000, y: -10000 })`)
+  const pet = await connect(target.webSocketDebuggerUrl)
+  await waitFor(main, `window.api.debug.state().then((s) => s.petShown)`, 15000, '桌宠窗口显示')
+  await waitFor(pet, `!!window.__live2d?.getPlacement()`, 10000, '角色就位')
+  return pet
+}
+
 async function exitPet(fromCdp, main) {
   // 请求会销毁发起它的页面：不等这次求值的返回
   evalJs(fromCdp, `window.api.setMode('window'); true`).catch(() => undefined)
@@ -201,13 +214,9 @@ try {
 
   console.log('\n=== 6. 鼠标穿透：按命中区域切换 ===')
   // 光标用 dev 专用覆盖坐标驱动（不动用户真实鼠标），走的仍是主进程轮询 → 渲染层命中 → 主进程切换的完整链路
-  await evalJs(main, `window.api.setMode('pet'); true`)
-  const petTarget = await waitForPage(isPetUrl, true)
-  // 先把覆盖坐标放到窗口外，免得用户真实鼠标恰好停在角色上影响初始断言
-  await evalJs(main, `window.api.debug.petCursor({ x: -10000, y: -10000 })`)
-  const pet3 = await connect(petTarget.webSocketDebuggerUrl)
+  const pet3 = await enterPet(main)
   try {
-    const s6 = await waitFor(main, `window.api.debug.state().then((s) => s.petShown ? s : null)`, 15000, '桌宠显示')
+    const s6 = await debugState(main)
     const origin = s6.pet.bounds
     const face = await waitFor(pet3, `window.__live2d?.debugRegion('face')`, 10000, '脸部区域')
     const onFace = { x: Math.round(origin.x + face.x + face.width / 2), y: Math.round(origin.y + face.y + face.height / 2) }
@@ -256,6 +265,96 @@ try {
     await evalJs(main, `window.api.debug.petPassthrough(false).then(() => window.api.debug.petCursor(null))`).catch(() => undefined)
     await exitPet(pet3, main)
     pet3.close()
+  }
+
+  console.log('\n=== 7. 拖动 / 点按 / 位置记忆 ===')
+  // pet_config 是用户数据：测完按原始字节还原（含"原本不存在"），本节产生的 .bad-* 一并删除
+  const savedCfg = await evalJs(main, `({ raw: localStorage.getItem('pet_config'), bak: localStorage.getItem('pet_config.bak'), bad: Object.keys(localStorage).filter((k) => k.startsWith('pet_config.bad-')) })`)
+  try {
+    await evalJs(main, `localStorage.removeItem('pet_config'); localStorage.removeItem('pet_config.bak'); true`)
+    let pet = await enterPet(main)
+    const o = (await debugState(main)).pet.bounds
+    const mouse = (type, x, y) =>
+      pet.call('Input.dispatchMouseEvent', { type, x, y, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 })
+    const facePoint = async () => {
+      const f = await evalJs(pet, `window.__live2d.debugRegion('face')`)
+      return { x: Math.round(f.x + f.width / 2), y: Math.round(f.y + f.height / 2) }
+    }
+    const placement = () => evalJs(pet, `window.__live2d.getPlacement()`)
+    // 真实操作里按下前光标必然先悬停在角色上：用覆盖坐标模拟悬停，让窗口先接收鼠标
+    const hoverAt = async (p) => {
+      await evalJs(main, `window.api.debug.petCursor(${JSON.stringify({ x: o.x + p.x, y: o.y + p.y })})`)
+      await waitFor(main, `window.api.debug.state().then((s) => s.petCapturing)`, 3000, '悬停接收')
+    }
+
+    const p0 = await placement()
+    let f = await facePoint()
+    await hoverAt(f)
+    await mouse('mousePressed', f.x, f.y)
+    for (let i = 1; i <= 10; i++) await mouse('mouseMoved', f.x - i * 15, f.y - i * 5)
+    // 拖动途中光标离开角色网格：按住期间仍须接收鼠标，否则拖动会断
+    await evalJs(main, `window.api.debug.petCursor(${JSON.stringify({ x: o.x + 40, y: o.y + 40 })})`)
+    await sleep(250)
+    report('拖出网格时仍接收鼠标', (await debugState(main)).petCapturing === true)
+    await mouse('mouseReleased', f.x - 150, f.y - 50)
+    const p1 = await placement()
+    report('拖动后角色跟随指针', Math.round(p1.x - p0.x) === -150 && Math.round(p1.y - p0.y) === -50, `dx=${Math.round(p1.x - p0.x)} dy=${Math.round(p1.y - p0.y)}`)
+    report('松手后光标在空白处 → 恢复穿透', !!(await waitFor(main, `window.api.debug.state().then((s) => !s.petCapturing)`, 3000, '松手穿透').catch(() => false)))
+    const stored = await evalJs(pet, `JSON.parse(localStorage.getItem('pet_config') ?? 'null')?.state?.placement ?? null`)
+    report('松手后记住位置（相对窗口的比例）', !!stored && Math.abs(stored.fx * o.width - p1.x) < 1 && Math.abs(stored.fy * o.height - p1.y) < 1, JSON.stringify(stored))
+
+    f = await facePoint()
+    await hoverAt(f)
+    const motionBefore = await evalJs(pet, `window.__live2d.isMotionPlaying()`)
+    await mouse('mousePressed', f.x, f.y)
+    await mouse('mouseReleased', f.x, f.y)
+    const tapped = await waitFor(pet, `window.__live2d.isMotionPlaying()`, 2000, '点按反应').catch(() => false)
+    report('点按 → 播放反应手势', motionBefore === false && tapped === true)
+    const p2 = await placement()
+    report('点按不移动角色', p2.x === p1.x && p2.y === p1.y)
+
+    // 往窗口外猛拖：位置被限制在窗口内（模型画布至少三成留在窗口里）
+    f = await facePoint()
+    await hoverAt(f)
+    await mouse('mousePressed', f.x, f.y)
+    for (let i = 1; i <= 10; i++) await mouse('mouseMoved', f.x + i * 400, f.y + i * 400)
+    await mouse('mouseReleased', f.x + 4000, f.y + 4000)
+    const pc = await placement()
+    const size = await evalJs(pet, `window.__live2d.getModelSize()`)
+    const w = size.width * pc.scale
+    const h = size.height * pc.scale
+    report('拖出边界被限制', pc.x <= o.width - w * 0.3 + w / 2 + 0.5 && pc.y <= o.height - h * 0.3 + h / 2 + 0.5, `x=${Math.round(pc.x)} y=${Math.round(pc.y)}`)
+
+    await evalJs(main, `window.api.debug.petCursor(null)`)
+    await exitPet(pet, main)
+    pet.close()
+    pet = await enterPet(main)
+    const pr = await placement()
+    report('重进桌宠恢复上次位置', Math.abs(pr.x - pc.x) < 1 && Math.abs(pr.y - pc.y) < 1, `(${Math.round(pr.x)}, ${Math.round(pr.y)})`)
+    await exitPet(pet, main)
+    pet.close()
+
+    // pet_config 被写坏：回落默认位置，损坏原文另存 .bad-*（不静默覆盖现场）
+    await evalJs(main, `localStorage.removeItem('pet_config.bak'); localStorage.setItem('pet_config', '{broken-pet'); true`)
+    pet = await enterPet(main)
+    const pd = await placement()
+    const view = await evalJs(pet, `[innerWidth, innerHeight]`)
+    report('配置损坏 → 默认右下角', Math.abs(pd.x + (size.width * pd.scale) / 2 - view[0]) < 1 && Math.abs(pd.y + (size.height * pd.scale) / 2 - view[1]) < 1)
+    report('损坏原文已另存 .bad-*', await evalJs(pet, `Object.keys(localStorage).some((k) => k.startsWith('pet_config.bad-') && localStorage.getItem(k) === '{broken-pet')`))
+    await exitPet(pet, main)
+    pet.close()
+  } finally {
+    await evalJs(
+      main,
+      `(() => {
+        const saved = ${JSON.stringify(savedCfg)}
+        const put = (k, v) => (v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v))
+        put('pet_config', saved.raw)
+        put('pet_config.bak', saved.bak)
+        for (const k of Object.keys(localStorage)) if (k.startsWith('pet_config.bad-') && !saved.bad.includes(k)) localStorage.removeItem(k)
+        return true
+      })()`
+    ).catch(() => undefined)
   }
 } catch (error) {
   report('执行', false, error instanceof Error ? error.message : String(error))
