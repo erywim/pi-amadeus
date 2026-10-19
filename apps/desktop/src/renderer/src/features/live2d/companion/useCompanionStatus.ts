@@ -5,6 +5,14 @@ import { SPEAKING_LIP_THRESHOLD } from '../lib/live2d-engine'
 
 export type CompanionStatus = 'idle' | 'listening' | 'thinking' | 'speaking'
 
+/** 状态胶囊的文案键（陪伴页 HUD 与桌宠对话框共用） */
+export const COMPANION_STATUS_TEXT: Record<CompanionStatus, string> = {
+  idle: 'companion.status.idle',
+  listening: 'companion.status.listening',
+  thinking: 'companion.status.thinking',
+  speaking: 'companion.status.speaking'
+}
+
 /**
  * 陪伴模式状态胶囊的派生源：
  * 麦克风开着 → 倾听；嘴巴在动（TTS 口型幅度）→ 说话；

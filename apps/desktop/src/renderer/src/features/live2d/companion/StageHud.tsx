@@ -8,14 +8,7 @@ import { startCamera, stopCamera } from '@renderer/lib/camera'
 import { useCompanionStore } from '@renderer/stores/companionStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useUiStore } from '@renderer/stores/uiStore'
-import { useCompanionStatus, type CompanionStatus } from './useCompanionStatus'
-
-const STATUS_TEXT: Record<CompanionStatus, string> = {
-  idle: 'companion.status.idle',
-  listening: 'companion.status.listening',
-  thinking: 'companion.status.thinking',
-  speaking: 'companion.status.speaking'
-}
+import { COMPANION_STATUS_TEXT, useCompanionStatus } from './useCompanionStatus'
 
 /**
  * 舞台底部 HUD：角色铭牌（AMADEUS // KURISU MAKISE + 状态胶囊）+
@@ -72,7 +65,7 @@ export function StageHud(): React.JSX.Element {
             className="flex items-center gap-1.5 text-[12.5px] text-muted-foreground"
           >
             <span className={cn('status-pulse size-[7px] rounded-full', status === 'idle' && !poked && 'opacity-60')} data-state={status} />
-            <span>{poked ? t('companion.tapReply') : t(STATUS_TEXT[status])}</span>
+            <span>{poked ? t('companion.tapReply') : t(COMPANION_STATUS_TEXT[status])}</span>
           </span>
         </div>
       </div>
