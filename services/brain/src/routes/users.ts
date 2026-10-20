@@ -14,6 +14,14 @@ export function userRoutes(db: Db): Hono {
     return c.json({ userId: id })
   })
 
+  // 身份校验：桌面端启动时用它确认 localStorage 里缓存的 userId 仍然存在
+  // （数据库被重置后旧 id 会 404，客户端据此重新建档）
+  app.get('/users/:id', async (c) => {
+    const user = await db.getUser(c.req.param('id'))
+    if (!user) return c.json({ error: 'user not found' }, 404)
+    return c.json({ id: user.id, username: user.username })
+  })
+
   // 飞书绑定码：AMADEUS-XXXX，飞书侧发该码完成身份绑定
   app.get('/users/:id/bind-code', async (c) => {
     const user = await db.getUser(c.req.param('id'))

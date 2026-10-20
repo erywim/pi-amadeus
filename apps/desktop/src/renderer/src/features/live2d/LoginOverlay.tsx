@@ -5,7 +5,7 @@ import { DigitalRain } from '@renderer/components/effects/DigitalRain'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
-import { getLocalUserId, resolveUserId, setLocalUsername } from '@renderer/lib/api'
+import { setLocalUsername } from '@renderer/lib/api'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
@@ -24,12 +24,8 @@ export function LoginOverlay(): React.JSX.Element {
     const username = name.trim() || 'Guest'
     setUsername(username)
     setLocalUsername(username)
-    // 已有身份则沿用；否则按新用户名建档并刷新会话列表
-    if (!getLocalUserId()) {
-      void resolveUserId(username)
-        .then(() => useSessionStore.getState().init())
-        .catch(() => undefined)
-    }
+    // 已有身份则沿用；缓存身份失效（如数据库被重置）时由 resolveUserId 自动重新建档
+    void useSessionStore.getState().init()
     closeLogin()
   }
 

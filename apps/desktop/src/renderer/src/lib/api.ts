@@ -30,7 +30,13 @@ export function setLocalUsername(username: string): void {
 /** 解析（或创建）服务端用户：返回稳定 userId 并落 localStorage */
 export async function resolveUserId(username: string): Promise<string> {
   const cached = localStorage.getItem(USER_ID_KEY)
-  if (cached) return cached
+  if (cached) {
+    // 校验缓存身份仍存在于服务端；404 = 数据库被重置（如换库 / 清库），丢弃后重建。
+    // 网络错误照旧抛出，不清缓存（brain 不可达时保留身份是正确的）。
+    const res = await fetch(`${BRAIN_URL}/api/users/${encodeURIComponent(cached)}`)
+    if (res.status !== 404) return cached
+    localStorage.removeItem(USER_ID_KEY)
+  }
   const res = await fetch(`${BRAIN_URL}/api/users/resolve`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

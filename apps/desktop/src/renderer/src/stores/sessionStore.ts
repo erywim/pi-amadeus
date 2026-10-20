@@ -5,7 +5,6 @@ import {
   deleteSessionApi,
   fetchMessages,
   fetchSessions,
-  getLocalUserId,
   getLocalUsername,
   resolveUserId,
   startChatTurn
@@ -102,7 +101,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     init: async () => {
       try {
         const username = getLocalUsername()
-        const userId = getLocalUserId() ?? (await resolveUserId(username))
+        // resolveUserId 内部会校验缓存的 userId；数据库重置后自动重新建档
+        const userId = await resolveUserId(username)
         const sessions = await fetchSessions(userId)
         set({ userId, sessions, initialized: true })
       } catch (error) {
