@@ -97,6 +97,10 @@
     "petMode": "桌宠模式"
   },
   "pet": {
+    "escape": {
+      "title": "鼠标穿透中 · 点这里恢复",
+      "off": "关闭鼠标穿透"
+    },
     "dialog": {
       "backToWindow": "回到窗口模式",
       "closeLabel": "收起对话"

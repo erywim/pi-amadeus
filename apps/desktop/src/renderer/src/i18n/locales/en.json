@@ -97,6 +97,10 @@
     "petMode": "Desktop pet mode"
   },
   "pet": {
+    "escape": {
+      "title": "Mouse passthrough is on · click to recover",
+      "off": "Turn off mouse passthrough"
+    },
     "dialog": {
       "backToWindow": "Back to window mode",
       "closeLabel": "Hide dialog"

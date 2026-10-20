@@ -21,6 +21,10 @@ export type DesktopApi = {
     openMenu: () => void
     /** 命中检测结果：true=光标在角色/对话框上，关闭鼠标穿透 */
     setInteractive: (interactive: boolean) => void
+    /** 兜底 logo 命中：强制穿透时也只有这里能接管鼠标 */
+    setEscape: (escape: boolean) => void
+    /** 开关强制穿透（兜底 logo 的菜单） */
+    setPassthrough: (forced: boolean) => void
     /** 主进程轮询的全局光标（窗口内 CSS 像素，可能在窗口外）；返回取消订阅函数 */
     onCursor: (callback: (point: { x: number; y: number }) => void) => () => void
     /** 强制穿透开关变化（托盘「鼠标穿透」）；返回取消订阅函数 */

@@ -17,6 +17,7 @@ import {
   type Size
 } from './placement'
 import { PetDialog } from './PetDialog'
+import { PetEscapeBadge } from './PetEscapeBadge'
 import { usePetDrag } from './usePetDrag'
 import { usePetPassthrough } from './usePetPassthrough'
 
@@ -33,7 +34,7 @@ const WHEEL_SCALE_SPEED = 0.0015
 export default function PetApp(): React.JSX.Element {
   const [engine, setEngine] = useState<Live2DEngine | null>(null)
   const [dialogReopen, setDialogReopen] = useState(0)
-  const hold = usePetPassthrough(engine)
+  const { hold, forced } = usePetPassthrough(engine)
   const saveStoredPlacement = usePetStore((s) => s.setPlacement)
 
   // 桌宠窗口是独立的渲染层，语音回合接着最新会话继续（与陪伴页的默认选中一致），
@@ -111,6 +112,8 @@ export default function PetApp(): React.JSX.Element {
     >
       <Live2DStage placement="free" onReady={handleReady} onError={() => window.api.setMode('window')} />
       <PetDialog engine={engine} reopenSignal={dialogReopen} />
+      {/* 强制穿透时角色不可点：右上角的兜底 logo 仍然可点，用来关掉穿透或回到窗口 */}
+      <PetEscapeBadge forced={forced} />
     </div>
   )
 }

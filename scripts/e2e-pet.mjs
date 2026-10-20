@@ -245,8 +245,48 @@ try {
     const forced = await debugState(main)
     report('强制穿透：光标在脸上也不接收', forced.petCapturing === false && forced.petPassthroughForced === true)
     report('托盘「鼠标穿透」勾选', forced.tray.some((i) => i.checked === true && /穿透|Passthrough|透過/.test(i.label)))
-    await evalJs(main, `window.api.debug.petPassthrough(false)`)
-    report('关闭强制穿透后恢复命中', (await debugState(main)).petCapturing === true)
+
+    // 兜底 logo：强制穿透时唯一还能接管鼠标的区域（不然开了穿透就再也改不回来）
+    const badgePoint = await waitFor(
+      pet3,
+      `(() => { const b = document.querySelector('[data-pet-escape] button'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } })()`,
+      3000,
+      '兜底 logo 出现'
+    )
+    await evalJs(main, `window.api.debug.petCursor(${JSON.stringify({ x: origin.x + badgePoint.x, y: origin.y + badgePoint.y })})`)
+    report(
+      '强制穿透：光标在兜底 logo 上仍接收鼠标',
+      !!(await waitFor(main, `window.api.debug.state().then((s) => s.petCapturing)`, 3000, '兜底 logo 命中').catch(() => false))
+    )
+    // 点 logo → 菜单里关掉穿透
+    await evalJs(pet3, `document.querySelector('[data-pet-escape] button')?.click(); true`)
+    const offItem = await waitFor(
+      pet3,
+      `document.querySelectorAll('[data-pet-escape] button')[1] ? true : null`,
+      3000,
+      '兜底菜单出现'
+    ).catch(() => null)
+    const offClicked = await evalJs(
+      pet3,
+      `(() => { const b = document.querySelectorAll('[data-pet-escape] button')[1]; b?.click(); return !!b })()`
+    )
+    const offApplied = await waitFor(
+      main,
+      `window.api.debug.state().then((s) => !s.petPassthroughForced)`,
+      3000,
+      '关闭穿透生效'
+    ).catch(() => false)
+    report('兜底 logo → 关闭鼠标穿透', !!offItem && offClicked && !!offApplied)
+    report(
+      '关闭后兜底 logo 消失',
+      !!(await waitFor(pet3, `!document.querySelector('[data-pet-escape]')`, 3000, '兜底 logo 消失').catch(() => false))
+    )
+
+    await evalJs(main, `window.api.debug.petCursor(${JSON.stringify(onFace)})`)
+    report(
+      '关闭强制穿透后恢复命中',
+      !!(await waitFor(main, `window.api.debug.state().then((s) => s.petCapturing)`, 3000, '恢复命中').catch(() => false))
+    )
 
     // 命中检测与实际渲染像素对照：渲染后同一任务内 readPixels，包围盒内均匀采样
     const cmp = await evalJs(

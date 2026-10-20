@@ -97,6 +97,10 @@
     "petMode": "デスクトップマスコット"
   },
   "pet": {
+    "escape": {
+      "title": "マウス透過中・ここから戻せます",
+      "off": "マウス透過をオフ"
+    },
     "dialog": {
       "backToWindow": "ウィンドウモードに戻る",
       "closeLabel": "会話を閉じる"

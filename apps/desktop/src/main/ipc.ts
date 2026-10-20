@@ -26,4 +26,10 @@ export function registerIpcHandlers(windows: WindowManager, onUiLanguage: (lang:
   ipcMain.on('pet:set-interactive', (event, interactive: unknown) => {
     if (typeof interactive === 'boolean') windows.setPetInteractive(event.sender, interactive)
   })
+  ipcMain.on('pet:set-escape', (event, escape: unknown) => {
+    if (typeof escape === 'boolean') windows.setPetEscape(event.sender, escape)
+  })
+  ipcMain.on('pet:set-passthrough', (event, forced: unknown) => {
+    if (typeof forced === 'boolean') windows.setPetPassthrough(event.sender, forced)
+  })
 }

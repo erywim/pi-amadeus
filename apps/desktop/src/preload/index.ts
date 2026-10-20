@@ -21,6 +21,10 @@ const api = {
     ready: (): void => ipcRenderer.send('pet:ready'),
     openMenu: (): void => ipcRenderer.send('pet:menu'),
     setInteractive: (interactive: boolean): void => ipcRenderer.send('pet:set-interactive', interactive),
+    /** 兜底 logo 命中：强制穿透时也只有这里能接管鼠标 */
+    setEscape: (escape: boolean): void => ipcRenderer.send('pet:set-escape', escape),
+    /** 开关强制穿透（兜底 logo 的菜单） */
+    setPassthrough: (forced: boolean): void => ipcRenderer.send('pet:set-passthrough', forced),
     onCursor: (callback: (point: { x: number; y: number }) => void): (() => void) => subscribe('pet:cursor', callback),
     onPassthrough: (callback: (forced: boolean) => void): (() => void) => subscribe('pet:passthrough', callback)
   },

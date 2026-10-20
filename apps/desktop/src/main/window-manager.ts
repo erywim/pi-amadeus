@@ -103,6 +103,18 @@ export class WindowManager {
     this.petPointer?.setInteractive(interactive)
   }
 
+  /** 兜底 logo 的命中结果：强制穿透时这里仍然接管鼠标（只认桌宠窗口） */
+  setPetEscape(sender: WebContents, escape: boolean): void {
+    if (sender !== this.pet?.webContents) return
+    this.petPointer?.setEscape(escape)
+  }
+
+  /** 桌宠窗口自己的穿透开关请求（兜底 logo 的菜单）；只认桌宠窗口 */
+  setPetPassthrough(sender: WebContents, forced: boolean): void {
+    if (sender !== this.pet?.webContents) return
+    this.setPassthroughForced(forced)
+  }
+
   /** 开发期 e2e：用指定屏幕坐标代替真实光标 */
   debugSetPetCursor(point: Electron.Point | null): void {
     this.petPointer?.debugOverride(point)
