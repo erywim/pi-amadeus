@@ -219,6 +219,8 @@
     "config": {
       "title": "配置",
       "avatar": "形象",
+      "model": "模型",
+      "modelDebugHint": "非红莉栖模型没有专属情绪脸与漫画符号，用于调试模型加载、口型与动作。",
       "ai": "AI",
       "scale": "缩放",
       "positionX": "水平位置",

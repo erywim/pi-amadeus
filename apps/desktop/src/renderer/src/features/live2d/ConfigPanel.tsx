@@ -2,10 +2,12 @@ import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 import { EMOTIONS, GESTURES } from '@pi-amadeus/shared'
 import { Label } from '@renderer/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/components/ui/select'
 import { Separator } from '@renderer/components/ui/separator'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@renderer/components/ui/sheet'
 import { Slider } from '@renderer/components/ui/slider'
 import { cn } from '@renderer/lib/utils'
+import { MODEL_IDS, MODEL_PROFILES, resolveModelId } from '@renderer/features/live2d/lib/models'
 import { useLive2dStore } from '@renderer/stores/live2dStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useUiStore, type ConfigPanelTab } from '@renderer/stores/uiStore'
@@ -16,7 +18,10 @@ export function ConfigPanel(): React.JSX.Element {
   const open = useUiStore((s) => s.configPanelOpen)
   const tab = useUiStore((s) => s.configPanelTab)
   const setConfigPanelOpen = useUiStore((s) => s.setConfigPanelOpen)
-  const avatar = useLive2dStore((s) => s.avatar)
+  const modelId = useLive2dStore((s) => s.modelId)
+  const setModelId = useLive2dStore((s) => s.setModelId)
+  // 摆位按模型各存一份：切模型时滑块显示的是该模型自己的值
+  const avatar = useLive2dStore((s) => s.avatars[s.modelId])
   const setAvatar = useLive2dStore((s) => s.setAvatar)
   const aiConfig = useSettingsStore((s) => s.aiConfig)
   const keyStatus = useSettingsStore((s) => s.keyStatus)
@@ -53,6 +58,26 @@ export function ConfigPanel(): React.JSX.Element {
         <div className="mt-5 space-y-5">
           {tab === 'avatar' ? (
             <>
+              <div className="space-y-2.5">
+                <Label>{t('live2d.config.model')}</Label>
+                <Select value={modelId} onValueChange={(value) => setModelId(resolveModelId(value))}>
+                  <SelectTrigger aria-label={t('live2d.config.model')}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MODEL_IDS.map((id) => (
+                      <SelectItem key={id} value={id}>
+                        {MODEL_PROFILES[id].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {modelId !== 'kurisu' ? (
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {t('live2d.config.modelDebugHint')}
+                  </p>
+                ) : null}
+              </div>
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <Label>{t('live2d.config.scale')}</Label>

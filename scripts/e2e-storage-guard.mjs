@@ -127,8 +127,10 @@ try {
   await checkKey(cdp, {
     key: 'live2d_config',
     storeExpr: 'window.__amadeus.live2dStore',
-    pick: '(s) => ({ avatar: s.avatar })',
-    sample: '(n) => ({ avatar: { scale: 0.3 + n / 100, positionX: n, positionY: -n } })'
+    pick: '(s) => ({ modelId: s.modelId, avatars: s.avatars })',
+    // 样本写成 v0 存储：migrate 会把版本 0 的 modelId 回落到 kurisu，样本与之一致才算水合成功
+    sample:
+      '(n) => ({ modelId: "kurisu", avatars: { kurisu: { scale: 0.3 + n / 100, positionX: n, positionY: -n }, mao_pro: { scale: 0.085, positionX: 0, positionY: 24 }, shizuku: { scale: 0.42, positionX: 0, positionY: 24 } } })'
   })
 } catch (error) {
   report('执行', false, error instanceof Error ? error.message : String(error))

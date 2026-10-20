@@ -17,8 +17,8 @@ import {
   type GestureDef,
   type GestureName
 } from './gestures'
-import { DRAWABLES } from './model-params'
 import { MotionLayer } from './motion-layer'
+import { getModelProfile, modelUrl, type Live2dModelId, type ModelProfile } from './models'
 import { OverlayLayer } from './overlays'
 import { IDLE_PERFORMANCES, randomPerformance, type Performance } from './performances'
 import { ProceduralLayer } from './procedural-layer'
@@ -30,11 +30,6 @@ import { ProceduralLayer } from './procedural-layer'
 // 注意：tick 必须挂 shared 而不是 app.ticker（两者是独立的 RAF 循环，无顺序保证）。
 Live2DModel.registerTicker(PIXI.Ticker)
 
-const MODEL_DIR = 'live2dmodels/steinsGateKurisuNew/'
-const MODEL_FILE = '红莉栖.model3.json'
-// BASE_URL：dev 为 '/'，build 为 './'（file:// 下可用）
-const MODEL_URL = `${import.meta.env.BASE_URL}${MODEL_DIR}${encodeURIComponent(MODEL_FILE)}`
-
 // 情绪入场手势防抖：SSE 情绪事件可能连发，只播最后一个情绪的入场手势
 const ENTRY_GESTURE_DEBOUNCE_MS = 250
 // 空闲多久后情绪回落到 neutral（不说话、不在回合中）
@@ -44,8 +39,6 @@ const EMOTION_DECAY_MS = 30_000
 export const SPEAKING_LIP_THRESHOLD = 0.03
 // 脸红淡入淡出速率
 const BLUSH_SPEED = 4
-
-const RANDOM_MOTION_COUNT = 5
 
 interface ModelSettingsJson {
   url?: string
@@ -67,10 +60,12 @@ interface CoreModel {
 
 export interface EngineOptions {
   /**
-   * stage（默认）：容器居中 + live2dStore.avatar 偏移；
+   * stage（默认）：容器居中 + live2dStore 中该模型的摆位；
    * free：由 setPlacement 指定容器内坐标与缩放（桌宠：角色在全屏透明窗口里自由摆放）
    */
   placement?: 'stage' | 'free'
+  /** 加载哪个模型；缺省取 store 里当前选中的模型 */
+  modelId?: Live2dModelId
 }
 
 /** 模型锚点（中心）在容器内的位置（CSS 像素）与缩放 */
@@ -150,12 +145,16 @@ export class Live2DEngine {
   private neck: { x: number; y: number } | null = null
   /** free 摆放的当前位置（未设置前缩放为 0，不绘制） */
   private placement: Placement | null = null
+  /** 本次实例使用的模型档案（模型切换由 Live2DStage 重建引擎完成） */
+  private readonly profile: ModelProfile
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly container: HTMLElement,
     private readonly options: EngineOptions = {}
-  ) {}
+  ) {
+    this.profile = getModelProfile(options.modelId ?? useLive2dStore.getState().modelId)
+  }
 
   isDestroyed(): boolean {
     return this.destroyed
@@ -167,13 +166,14 @@ export class Live2DEngine {
   }
 
   async load(): Promise<void> {
-    const res = await fetch(MODEL_URL)
+    const url = modelUrl(this.profile)
+    const res = await fetch(url)
     if (this.destroyed) return
-    if (!res.ok) throw new Error(`model3.json 加载失败: HTTP ${res.status}`)
+    if (!res.ok) throw new Error(`${this.profile.file} 加载失败: HTTP ${res.status}`)
     const json = (await res.json()) as ModelSettingsJson
     if (this.destroyed) return
     // settings.url 钉成绝对地址：moc3/贴图/physics/exp/motion 的相对路径都按它解析
-    const settings = { ...json, url: MODEL_URL } as unknown as Parameters<typeof Live2DModel.from>[0]
+    const settings = { ...json, url } as unknown as Parameters<typeof Live2DModel.from>[0]
 
     const app = new PIXI.Application({
       view: this.canvas,
@@ -203,12 +203,16 @@ export class Live2DEngine {
     app.stage.addChild(model)
     this.applyTransform()
 
-    // 分层装配。表情不再用 exp3 文件（它们只是 6 张脸的开关），统一由程序层按配方驱动
+    // 分层装配。表情不再用 exp3 文件（它们只是 6 张脸的开关），统一由程序层按配方驱动。
+    // 网格覆盖与漫画符号依赖红莉栖的网格 ID：其它模型只在程序层用参数驱动，
+    // 不构造这两层（构造了也找不到锚点，画不出来）。
     this.motionLayer = new MotionLayer(model)
-    this.procedural = new ProceduralLayer()
+    this.procedural = new ProceduralLayer(this.profile)
     this.motionLayer.preserve(this.procedural.managedIds)
-    this.fx = new DrawableFx(model.internalModel.coreModel as unknown as ConstructorParameters<typeof DrawableFx>[0])
-    this.overlays = new OverlayLayer(model)
+    this.fx = this.profile.drawables
+      ? new DrawableFx(model.internalModel.coreModel as unknown as ConstructorParameters<typeof DrawableFx>[0])
+      : null
+    this.overlays = this.profile.overlays ? new OverlayLayer(model) : null
     this.applyEmotion(useLive2dStore.getState().emotion, false)
     this.lastActiveAt = performance.now()
 
@@ -222,7 +226,7 @@ export class Live2DEngine {
         this.applyEmotion(state.emotion, true)
       }
       if (state.gesture && state.gesture !== prev.gesture) this.playGesture(state.gesture.name)
-      if (state.avatar !== prev.avatar) this.applyTransform()
+      if (state.avatars !== prev.avatars) this.applyTransform()
     })
     this.resizeObserver = new ResizeObserver(() => this.applyTransform())
     this.resizeObserver.observe(this.container)
@@ -299,13 +303,14 @@ export class Live2DEngine {
   private updateBlush(dt: number): void {
     const procedural = this.procedural
     const fx = this.fx
-    if (!procedural || !fx) return
+    const drawables = this.profile.drawables
+    if (!procedural || !fx || !drawables) return
     const target = procedural.blush
     const k = 1 - Math.exp(-BLUSH_SPEED * dt)
     this.blushCheek += (target.cheek - this.blushCheek) * k
     this.blushShy += (target.shy - this.blushShy) * k
-    for (const id of DRAWABLES.cheekBlush) fx.setOpacity(id, this.blushCheek)
-    for (const id of DRAWABLES.shyBlush) fx.setOpacity(id, this.blushShy)
+    for (const id of drawables.cheekBlush) fx.setOpacity(id, this.blushCheek)
+    for (const id of drawables.shyBlush) fx.setOpacity(id, this.blushShy)
   }
 
   /** 空闲足够久，情绪回落到 neutral（经 store，界面与引擎一致） */
@@ -404,7 +409,8 @@ export class Live2DEngine {
     const expr = this.procedural?.expression
     if (!expr) return
     if (expr.randomMotions && (expr.idle.length === 0 || Math.random() < 0.5)) {
-      void this.motionLayer?.play(this.randomGroup(), 0, MotionPriority.IDLE, 1)
+      const motion = this.randomIdleMotion()
+      void this.motionLayer?.play(motion.group, motion.index, MotionPriority.IDLE, 1)
       return
     }
     if (expr.idle.length === 0 || this.gestures.isPlaying()) return
@@ -420,7 +426,10 @@ export class Live2DEngine {
     this.clearPerformance()
     this.applyResolved(resolveExpression(perf.emotion), false)
     if (perf.gesture) this.playGestureName(perf.gesture)
-    else void this.motionLayer?.play(this.randomGroup(), 0, MotionPriority.IDLE, 1)
+    else {
+      const motion = this.randomIdleMotion()
+      void this.motionLayer?.play(motion.group, motion.index, MotionPriority.IDLE, 1)
+    }
     this.performanceTimer = setTimeout(() => {
       // 表演中 → 回落到 store 的当前情绪（期间没有新的真实情绪，否则订阅回调已提前撤掉定时器）
       this.performanceTimer = null
@@ -473,8 +482,9 @@ export class Live2DEngine {
     this.procedural?.blink(cycles)
   }
 
-  private randomGroup(): string {
-    return `random${1 + Math.floor(Math.random() * RANDOM_MOTION_COUNT)}`
+  private randomIdleMotion(): { group: string; index: number } {
+    const motions = this.profile.idleMotions
+    return motions[Math.floor(Math.random() * motions.length)] ?? { group: 'Idle', index: 0 }
   }
 
   // —— 调试钩子（window.__live2d；scripts/live2d-shot.mjs 截图与调参用） ——
@@ -569,13 +579,34 @@ export class Live2DEngine {
 
   /** 脸部区域（容器坐标，CSS 像素）：桌宠对话框按它贴在头部一侧；网格尚未算出时 null */
   faceRect(): { x: number; y: number; width: number; height: number } | null {
-    return this.overlays?.regionOnScreen('face') ?? null
+    return this.overlays?.regionOnScreen('face') ?? this.boundsRegion('face')
+  }
+
+  /**
+   * 没有逐网格锚点的模型（mao/shizuku）用整体包围盒估算头/脸区域。
+   * 只用于把桌宠对话框贴到角色旁边，不用于漫画符号定位。
+   */
+  private boundsRegion(kind: 'face' | 'head'): { x: number; y: number; width: number; height: number } | null {
+    const model = this.model
+    if (!model) return null
+    const b = model.getBounds()
+    if (!(b.width > 0 && b.height > 0)) return null
+    if (kind === 'head') {
+      return { x: b.x + b.width * 0.1, y: b.y, width: b.width * 0.8, height: b.height * 0.55 }
+    }
+    // 脸大致在模型上部居中：宽 60%、高 32%
+    return { x: b.x + b.width * 0.2, y: b.y + b.height * 0.04, width: b.width * 0.6, height: b.height * 0.32 }
   }
 
   /** 截图区域（CSS 像素）：face 面部特写 / head 头部含符号余量 */
   debugRegion(kind: string): { x: number; y: number; width: number; height: number } | null {
     if (kind !== 'face' && kind !== 'head') return null
-    return this.overlays?.regionOnScreen(kind) ?? null
+    return this.overlays?.regionOnScreen(kind) ?? this.boundsRegion(kind)
+  }
+
+  /** 调试钩子：当前模型 ID（模型切换的 e2e 断言用） */
+  getModelProfileId(): Live2dModelId {
+    return this.profile.id
   }
 
   // —— 光标跟随 ——
@@ -643,7 +674,8 @@ export class Live2DEngine {
 
   private basePlacement(): Placement {
     if (this.options.placement === 'free') return this.placement ?? { x: 0, y: 0, scale: 0 }
-    const { scale, positionX, positionY } = useLive2dStore.getState().avatar
+    const { avatars } = useLive2dStore.getState()
+    const { scale, positionX, positionY } = avatars[this.profile.id] ?? this.profile.defaultAvatar
     return {
       x: this.container.clientWidth / 2 + positionX,
       y: this.container.clientHeight / 2 + positionY,

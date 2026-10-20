@@ -219,6 +219,8 @@
     "config": {
       "title": "設定",
       "avatar": "アバター",
+      "model": "モデル",
+      "modelDebugHint": "Kurisu 以外のモデルには専用の表情やマンガ記号がないため、モデルの読み込み・リップシンク・モーションのデバッグ用です。",
       "ai": "AI",
       "scale": "拡大率",
       "positionX": "横位置",

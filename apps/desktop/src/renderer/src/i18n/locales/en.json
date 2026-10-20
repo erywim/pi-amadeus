@@ -219,6 +219,8 @@
     "config": {
       "title": "Configuration",
       "avatar": "Avatar",
+      "model": "Model",
+      "modelDebugHint": "Models other than Kurisu have no custom emotion faces or comic overlays; use them to debug model loading, lip sync, and motions.",
       "ai": "AI",
       "scale": "Scale",
       "positionX": "Position X",

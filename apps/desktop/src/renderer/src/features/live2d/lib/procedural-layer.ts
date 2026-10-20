@@ -1,7 +1,8 @@
 import type { ResolvedExpression } from './expressions'
 import { resolveExpression } from './expressions'
 import type { GestureSample } from './gestures'
-import { FACE_KEYS, FACE_PARAMS, P, SIGN, type FaceKey } from './model-params'
+import { FACE_KEYS, SIGN, type FaceKey, type ParamKey } from './model-params'
+import type { ModelProfile } from './models'
 
 /**
  * 程序动画层：引擎每帧最后写模型参数的"表演"层。
@@ -91,7 +92,12 @@ export interface ProceduralInput {
   gesture: GestureSample
 }
 
+/** 程序层能写的键：通用参数、红莉栖的情绪脸、以及参数驱动的脸红 */
+type ManagedKey = ParamKey | FaceKey | 'blush'
+
 interface ManagedParam {
+  /** 该模型上的实际参数 ID；缺失的键根本不会注册 */
+  id: string
   value: number
   target: number
   speed: number
@@ -150,10 +156,10 @@ export class ProceduralLayer {
   private expr: ResolvedExpression = resolveExpression('neutral')
   private armsOverride: number | null = null
   private readonly walkers: Record<string, Walker>
-  private readonly params = new Map<string, ManagedParam>()
+  private readonly params = new Map<ManagedKey, ManagedParam>()
   private readonly prevOwned = new Set<string>()
 
-  constructor() {
+  constructor(profile: ModelProfile) {
     // 头/身摆动游走器（调试截图时可把 min/max 置 0 冻结）
     this.walkers = {
       angleX: createWalker(-SWAY_HEAD.angleX, SWAY_HEAD.angleX, [2500, 5000], 1.8),
@@ -164,32 +170,45 @@ export class ProceduralLayer {
       bodyZ: createWalker(-SWAY_BODY.z, SWAY_BODY.z, [5000, 8000], 1.2)
     }
 
-    // 注册受管参数（value 初始值会在首帧"未拥有"分支里从模型现值接管，无跳变）
-    const reg = (id: string, speed: number, min: number, max: number, sign = 1, value = 0): void => {
-      this.params.set(id, { value, target: value, speed, sign, min, max })
+    // 注册受管参数（value 初始值会在首帧"未拥有"分支里从模型现值接管，无跳变）。
+    // 模型没有的参数键不注册：写入不存在的参数虽然不会崩，但也没有任何效果，
+    // 更重要的是不能把"缺参数"当成 0 去参与表情计算。
+    const reg = (
+      key: ManagedKey,
+      id: string | undefined,
+      speed: number,
+      min: number,
+      max: number,
+      sign = 1,
+      value = 0
+    ): void => {
+      if (!id) return
+      this.params.set(key, { id, value, target: value, speed, sign, min, max })
     }
-    reg(P.angleX, ANGLE_SPEED, -30, 30, SIGN.angleX)
-    reg(P.angleY, ANGLE_SPEED, -30, 30, SIGN.angleY)
-    reg(P.angleZ, ANGLE_SPEED, -30, 30)
-    reg(P.headYaw, POSE_SPEED, -30, 30, SIGN.headYaw)
-    reg(P.headPitch, POSE_SPEED, -30, 30, SIGN.headPitch)
-    reg(P.bodyX, BODY_SPEED, -10, 10)
-    reg(P.bodyY, BODY_SPEED, -10, 10)
-    reg(P.bodyZ, BODY_SPEED, -10, 10)
-    reg(P.breath, BODY_SPEED, 0, 1, 1, BREATH_BASE)
-    reg(P.eyeL, EYE_SPEED, 0, 1, 1, 1)
-    reg(P.eyeR, EYE_SPEED, 0, 1, 1, 1)
-    reg(P.eyeBallX, GAZE_K, -1, 1, SIGN.eyeBallX)
-    reg(P.eyeBallY, GAZE_K, -1, 1, SIGN.eyeBallY)
-    reg(P.mouthOpen, MOUTH_SPEED, 0, 1)
-    reg(P.mouthForm, MOUTH_SPEED, -1, 1)
-    reg(P.arms, ARMS_SPEED, 0, 1, 1, 1)
-    for (const key of FACE_KEYS) reg(FACE_PARAMS[key], FACE_SPEED, 0, 1)
+    const params = profile.params
+    reg('angleX', params.angleX, ANGLE_SPEED, -30, 30, SIGN.angleX)
+    reg('angleY', params.angleY, ANGLE_SPEED, -30, 30, SIGN.angleY)
+    reg('angleZ', params.angleZ, ANGLE_SPEED, -30, 30)
+    reg('headYaw', params.headYaw, POSE_SPEED, -30, 30, SIGN.headYaw)
+    reg('headPitch', params.headPitch, POSE_SPEED, -30, 30, SIGN.headPitch)
+    reg('bodyX', params.bodyX, BODY_SPEED, -10, 10)
+    reg('bodyY', params.bodyY, BODY_SPEED, -10, 10)
+    reg('bodyZ', params.bodyZ, BODY_SPEED, -10, 10)
+    reg('breath', params.breath, BODY_SPEED, 0, 1, 1, BREATH_BASE)
+    reg('eyeL', params.eyeL, EYE_SPEED, 0, 1, 1, 1)
+    reg('eyeR', params.eyeR, EYE_SPEED, 0, 1, 1, 1)
+    reg('eyeBallX', params.eyeBallX, GAZE_K, -1, 1, SIGN.eyeBallX)
+    reg('eyeBallY', params.eyeBallY, GAZE_K, -1, 1, SIGN.eyeBallY)
+    reg('mouthOpen', params.mouthOpen, MOUTH_SPEED, 0, 1)
+    reg('mouthForm', params.mouthForm, MOUTH_SPEED, -1, 1)
+    reg('arms', params.arms, ARMS_SPEED, 0, 1, 1, 1)
+    reg('blush', profile.blushParam, FACE_SPEED, 0, 1)
+    for (const key of FACE_KEYS) reg(key, profile.faceParams[key], FACE_SPEED, 0, 1)
   }
 
-  /** 程序层每帧写入的全部参数（动作层停止时不复位它们） */
+  /** 程序层每帧写入的全部参数 ID（动作层停止时不复位它们） */
   get managedIds(): string[] {
-    return [...this.params.keys()]
+    return [...this.params.values()].map((p) => p.id)
   }
 
   /** 切换表情配方（手臂临时覆盖随之清除） */
@@ -240,9 +259,9 @@ export class ProceduralLayer {
     this.roll = approach(this.roll, this.expr.roll, POSE_SPEED, dt)
     this.tilt = (this.roll + g.roll) * ROLL_TO_TILT
 
-    for (const [id, p] of this.params.entries()) {
-      const owned = motionOwned?.has(id) ?? false
-      const ownedBefore = this.prevOwned.has(id)
+    for (const [key, p] of this.params.entries()) {
+      const owned = motionOwned?.has(p.id) ?? false
+      const ownedBefore = this.prevOwned.has(p.id)
 
       if (owned) {
         // 动作拥有该参数：程序层让位（此刻写参数缓冲会被随后的动作曲线覆写，叠加无意义）。
@@ -251,10 +270,10 @@ export class ProceduralLayer {
       }
 
       // 刚失去所有权：从模型现值重播种（换回观察者坐标），平滑回落无跳变
-      if (ownedBefore) p.value = core.getParameterValueById(id) * p.sign
+      if (ownedBefore) p.value = core.getParameterValueById(p.id) * p.sign
 
       p.value = approach(p.value, p.target, p.speed, dt)
-      core.setParameterValueById(id, clamp(this.finalValue(id, p.value, g), p.min, p.max) * p.sign)
+      core.setParameterValueById(p.id, clamp(this.finalValue(key, p.value, g), p.min, p.max) * p.sign)
     }
 
     // 重建上一帧所有权集合
@@ -263,34 +282,40 @@ export class ProceduralLayer {
   }
 
   /** 平滑值 + 不经平滑的瞬时成分（眨眼、手势、口型） */
-  private finalValue(id: string, v: number, g: GestureSample): number {
-    switch (id) {
-      case P.eyeL:
+  private finalValue(key: ManagedKey, v: number, g: GestureSample): number {
+    switch (key) {
+      case 'eyeL':
         return v * this.blinkValue * (1 - clamp(g.eyeCloseL, 0, 1))
-      case P.eyeR:
+      case 'eyeR':
         return v * this.blinkValue * (1 - clamp(g.eyeCloseR, 0, 1))
-      case P.mouthOpen:
+      case 'mouthOpen':
         // v 是表情的基础张嘴；说话口型在剩余空间里叠加
         return v + this.lipShape * (1 - v) + g.mouthOpen
-      case P.mouthForm:
+      case 'mouthForm':
         return v + g.mouthForm
-      case P.headYaw:
+      // 没有独立"大幅转头/俯仰"参数的模型（mao/shizuku）：把手势的 yaw/pitch
+      // 并入标准 ParamAngleX/Y，否则点头、摇头这些程序手势会静默失效
+      case 'angleX':
+        return v + (this.params.has('headYaw') ? 0 : g.yaw)
+      case 'angleY':
+        return v + (this.params.has('headPitch') ? 0 : g.pitch)
+      case 'headYaw':
         return v + g.yaw
-      case P.headPitch:
+      case 'headPitch':
         return v + g.pitch
-      case P.angleZ:
+      case 'angleZ':
         return v + g.roll
-      case P.bodyX:
+      case 'bodyX':
         return v + g.bodyX
-      case P.bodyY:
+      case 'bodyY':
         return v + g.bodyY
-      case P.bodyZ:
+      case 'bodyZ':
         return v + g.bodyZ
-      case P.eyeBallX:
+      case 'eyeBallX':
         return v + g.eyeX
-      case P.eyeBallY:
+      case 'eyeBallY':
         return v + g.eyeY
-      case P.breath:
+      case 'breath':
         return v + g.breath
       default:
         return v
@@ -395,35 +420,46 @@ export class ProceduralLayer {
       y: approach(this.gaze.y, gy, GAZE_K, input.dt)
     }
     const p = this.params
+    /** 只给该模型存在的参数设目标；缺参数时整条通道静默跳过 */
+    const set = (key: ManagedKey, target: number): void => {
+      const param = p.get(key)
+      if (param) param.target = target
+    }
     const look = this.gaze
     const cursorX = input.cursor.x * cw
     const cursorUp = -input.cursor.y * cw
+    // 没有 Param14/15 的模型把表情的大幅转头/俯仰并进标准角度参数（见 finalValue）
+    const poseYaw = p.has('headYaw') ? 0 : e.yaw
+    const posePitch = p.has('headPitch') ? 0 : e.pitch
 
     // 3) 头部：小幅角度 = 摆动 + 注视带动 + 光标跟随 + 说话点头 + 思考仰头；
     //    大幅角度 = 表情姿态
-    p.get(P.angleX)!.target = w.angleX!.value + look.x * GAZE_LEAN_YAW + cursorX * CURSOR_YAW
-    p.get(P.angleY)!.target =
+    set('angleX', w.angleX!.value + look.x * GAZE_LEAN_YAW + cursorX * CURSOR_YAW + poseYaw)
+    set(
+      'angleY',
       w.angleY!.value +
-      look.y * GAZE_LEAN_PITCH +
-      cursorUp * CURSOR_PITCH +
-      Math.sin(t * Math.PI * 2 * SPEAK_NOD_HZ) * SPEAK_NOD_AMP * s +
-      THINK_TILT_UP * th
-    p.get(P.angleZ)!.target = w.angleZ!.value + THINK_TILT_Z * th + e.roll
-    p.get(P.headYaw)!.target = e.yaw
-    p.get(P.headPitch)!.target = e.pitch
+        look.y * GAZE_LEAN_PITCH +
+        cursorUp * CURSOR_PITCH +
+        Math.sin(t * Math.PI * 2 * SPEAK_NOD_HZ) * SPEAK_NOD_AMP * s +
+        THINK_TILT_UP * th +
+        posePitch
+    )
+    set('angleZ', w.angleZ!.value + THINK_TILT_Z * th + e.roll)
+    set('headYaw', e.yaw)
+    set('headPitch', e.pitch)
 
     // 4) 身体：独立慢摆 + 说话微动 + 注视轻微带动
-    p.get(P.bodyX)!.target = w.bodyX!.value + SPEAK_LEAN * s + look.x * GAZE_LEAN_BODY
-    p.get(P.bodyY)!.target = w.bodyY!.value
-    p.get(P.bodyZ)!.target = w.bodyZ!.value
+    set('bodyX', w.bodyX!.value + SPEAK_LEAN * s + look.x * GAZE_LEAN_BODY)
+    set('bodyY', w.bodyY!.value)
+    set('bodyZ', w.bodyZ!.value)
 
     // 5) 眼睛：表情开合（眨眼与手势闭眼在写入时相乘）
-    p.get(P.eyeL)!.target = e.eyeOpenL
-    p.get(P.eyeR)!.target = e.eyeOpenR
+    set('eyeL', e.eyeOpenL)
+    set('eyeR', e.eyeOpenR)
 
     // 6) 眼球：注视 + 表情视线偏置
-    p.get(P.eyeBallX)!.target = clamp(look.x + e.eyeX, -1, 1)
-    p.get(P.eyeBallY)!.target = clamp(look.y + e.eyeY, -1, 1)
+    set('eyeBallX', clamp(look.x + e.eyeX, -1, 1))
+    set('eyeBallY', clamp(look.y + e.eyeY, -1, 1))
 
     // 7) 口型：表情基础张嘴 + 说话包络（非对称 + 语素抖动，三正弦不互质）
     const lipRaw = input.lipTarget
@@ -437,27 +473,32 @@ export class ProceduralLayer {
           Math.sin(t * Math.PI * 2 * 2.9 + 0.6))) /
         3
     this.lipShape = this.lip > 0.01 ? clamp(this.lip * (0.8 + 0.4 * wobble), 0, 1) : 0
-    p.get(P.mouthOpen)!.target = e.mouthOpen
-    p.get(P.mouthForm)!.target = e.mouthForm
+    set('mouthOpen', e.mouthOpen)
+    set('mouthForm', e.mouthForm)
 
-    // 8) 情绪脸：顺序切换——其他脸还没退下去时，新脸先不进
+    // 8) 脸红：没有网格覆盖方案的模型（mao/shizuku）用模型自己的脸红参数直接驱动
+    set('blush', e.cheekBlush)
+
+    // 9) 情绪脸：顺序切换——其他脸还没退下去时，新脸先不进（只有红莉栖注册了这些键）
     for (const key of FACE_KEYS) {
-      const param = p.get(FACE_PARAMS[key])!
+      if (!p.has(key)) continue
       const wanted = e.face === key ? e.faceWeight : 0
-      param.target = wanted > 0 && this.otherFacesActive(key) ? 0 : wanted
+      set(key, wanted > 0 && this.otherFacesActive(key) ? 0 : wanted)
     }
 
-    // 9) 手臂：两级平滑，起止都缓
+    // 10) 手臂：两级平滑，起止都缓
     this.armsMid = approach(this.armsMid, this.armsOverride ?? e.arms, ARMS_SPEED * 1.6, input.dt)
-    p.get(P.arms)!.target = this.armsMid
+    set('arms', this.armsMid)
 
-    // 10) 呼吸基线（手势在写入时叠加；库自带的呼吸摆动在其后相加）
-    p.get(P.breath)!.target = BREATH_BASE
+    // 11) 呼吸基线（手势在写入时叠加；库自带的呼吸摆动在其后相加）
+    set('breath', BREATH_BASE)
   }
 
   private otherFacesActive(key: FaceKey): boolean {
     for (const other of FACE_KEYS) {
-      if (other !== key && this.params.get(FACE_PARAMS[other])!.value > FACE_SWAP_GATE) return true
+      if (other === key) continue
+      const param = this.params.get(other)
+      if (param && param.value > FACE_SWAP_GATE) return true
     }
     return false
   }

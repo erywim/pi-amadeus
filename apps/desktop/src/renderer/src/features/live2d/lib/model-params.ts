@@ -31,6 +31,9 @@ export const P = {
   arms: 'Param16'
 } as const
 
+/** 程序层管理的通用参数键；各模型在 models.ts 里映射到自己的参数 ID，缺失的键不注册 */
+export type ParamKey = keyof typeof P
+
 /**
  * 方向符号：程序层统一用"画面右为 +x、上为 +y"的观察者坐标，
  * 写参数时乘以对应符号（实测方向见文件头）。

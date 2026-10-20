@@ -97,6 +97,8 @@
 ### 5.4 Live2D 虚拟形象
 
 - Cubism 3 模型，沿用红莉栖 Kurisu 模型资产（属资源非代码，可整体迁移）。资产位置：`amadeus-system-new/public/live2dmodels/`。
+- **形象可切换**（配置面板「形象」页）：默认红莉栖；另收录 Live2D 官方示例模型 Mao Pro / Shizuku（移植自 Open-LLM-VTuber 的 `live2d-models/`），用于调试模型加载、口型与动作。模型切换会重建 Live2D 舞台；摆位（缩放/位移）按模型分别保存。非红莉栖模型没有专属情绪脸与漫画符号，程序层通过参数映射驱动眨眼/口型/姿态。
+- Cubism Core 随模型升级到 5.0（`public/live2d/live2dcubismcore.min.js`），以支持 Mao Pro 的 moc3 v5；旧版 moc3（含红莉栖 v4）保持兼容。
 - LLM 情绪分类 → 表情枚举 ↔ `.exp3.json` 一一映射，驱动表情与 motion 动作。
 - 音频驱动口型同步（TTS 音频幅度 → 口型参数）。
 - 待机程序化动画（眨眼、头部微动等）。
