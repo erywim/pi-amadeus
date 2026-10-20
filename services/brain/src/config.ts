@@ -10,7 +10,8 @@ const env = (name: string, fallback = ''): string => process.env[name] ?? fallba
 
 export interface BrainConfig {
   port: number
-  db: { host: string; port: number; database: string; user: string; password: string }
+  /** SQLite 单文件路径（自动建库建表，无需数据库服务） */
+  db: { path: string }
   llm: { apiKey: string; baseUrl: string; model: string }
   whisper: { apiKey: string; baseUrl: string; model: string; proxy: string }
   fish: { apiKey: string; voice: string; endpoint: string; model: string; sampleRate: number; proxy: string }
@@ -24,11 +25,8 @@ export function loadConfig(): BrainConfig {
   return {
     port: Number(env('PORT', '3002')) || 3002,
     db: {
-      host: env('PGHOST', '127.0.0.1'),
-      port: Number(env('PGPORT', '5432')) || 5432,
-      database: env('PGDATABASE', 'amadeus'),
-      user: env('PGUSER', 'amadeus'),
-      password: env('PGPASSWORD', 'amadeus')
+      // 默认 services/brain/data/amadeus.db；DB_PATH 相对路径按启动目录解析
+      path: env('DB_PATH') ? resolve(env('DB_PATH')) : resolve(import.meta.dirname, '../data/amadeus.db')
     },
     llm: {
       apiKey: env('LLM_API_KEY'),

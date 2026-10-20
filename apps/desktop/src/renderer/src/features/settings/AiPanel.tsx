@@ -12,7 +12,7 @@ import { Textarea } from '@renderer/components/ui/textarea'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 
-/** AI 配置表单：读写大脑服务 /api/config/:userId（Postgres 单一来源） */
+/** AI 配置表单：读写大脑服务 /api/config/:userId（服务端 SQLite 单一来源） */
 export function AiPanel(): React.JSX.Element {
   const { t } = useTranslation()
   const userId = useSessionStore((s) => s.userId)

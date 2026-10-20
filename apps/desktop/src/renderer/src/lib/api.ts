@@ -65,7 +65,7 @@ export async function deleteSessionApi(sessionId: string): Promise<void> {
   if (!res.ok) throw new Error(`会话删除失败: HTTP ${res.status}`)
 }
 
-// ---------- 用户配置（Postgres 单一来源） ----------
+// ---------- 用户配置（服务端 SQLite 单一来源） ----------
 
 export type ApiKeyStatus = 'default' | 'custom' | 'none'
 

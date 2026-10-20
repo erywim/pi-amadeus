@@ -14,7 +14,7 @@ export type UiTheme = 'paper' | 'cyber'
 /** 启动默认模式（顶栏 tab 的目标路由） */
 export type DefaultMode = 'companion' | 'text'
 
-/** 表单初值：仅作加载前的占位；真正配置以大脑服务 Postgres 为单一来源 */
+/** 表单初值：仅作加载前的占位；真正配置以大脑服务 SQLite 为单一来源 */
 const FORM_PLACEHOLDER: UserConfig = {
   provider: {
     baseUrl: '',
@@ -47,9 +47,9 @@ interface SettingsState {
 }
 
 /**
- * 语言偏好保留在本地（UI 偏好，非 AI 配置）；AI 配置以服务端 Postgres
+ * 语言偏好保留在本地（UI 偏好，非 AI 配置）；AI 配置以服务端 SQLite
  * user_configs 为单一来源，此处只作表单缓存，不再持久化到 localStorage
- * （消除原版 localStorage / Postgres / 进程内 dict 三处重复存储的缺陷）。
+ * （消除原版 localStorage / 数据库 / 进程内 dict 三处重复存储的缺陷）。
  */
 export const useSettingsStore = create<SettingsState>()(
   persist(

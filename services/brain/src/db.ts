@@ -1,9 +1,10 @@
-import pg from 'pg'
+import { mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
+import type { SQLInputValue } from 'node:sqlite'
 import type { Channel, TurnMode } from '@pi-amadeus/shared'
 import type { UserConfig } from '@pi-amadeus/shared'
 import type { BrainConfig } from './config.ts'
-
-const { Pool } = pg
 
 export interface SessionRow {
   id: string
@@ -26,7 +27,6 @@ export interface MessageRow {
 }
 
 export interface Db {
-  pool: pg.Pool
   init(): Promise<void>
   close(): Promise<void>
   // users
@@ -59,129 +59,213 @@ export interface Db {
   countMessages(sessionId: string): Promise<number>
 }
 
+/** 读取一行并收窄为业务类型（node:sqlite 返回宽泛的 SQLOutputValue 记录） */
+function first<T>(db: DatabaseSync, sql: string, params: SQLInputValue[] = []): T | undefined {
+  return db.prepare(sql).get(...params) as unknown as T | undefined
+}
+
+/** 读取多行并收窄为业务类型 */
+function all<T>(db: DatabaseSync, sql: string, params: SQLInputValue[] = []): T[] {
+  return db.prepare(sql).all(...params) as unknown as T[]
+}
+
+function run(db: DatabaseSync, sql: string, params: SQLInputValue[] = []): void {
+  db.prepare(sql).run(...params)
+}
+
+/**
+ * 解析 user_configs.config。
+ * 读取/解析失败必须抛错（未知 ≠ 空）：上层若拿到 null 会回落默认配置，
+ * 下一次保存就可能覆盖用户原配置。
+ */
+function parseUserConfig(userId: string, raw: unknown): UserConfig {
+  if (typeof raw !== 'string') {
+    throw new Error(`用户配置不是文本（user_id=${userId}）`)
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`用户配置 JSON 解析失败（user_id=${userId}）：${reason}`)
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`用户配置不是 JSON 对象（user_id=${userId}）`)
+  }
+  return parsed as UserConfig
+}
+
 export function createDb(cfg: BrainConfig['db']): Db {
-  const pool = new Pool(cfg)
+  let conn: DatabaseSync | null = null
+
+  const getConn = (): DatabaseSync => {
+    if (!conn) throw new Error('SQLite 数据库尚未初始化')
+    return conn
+  }
 
   const db: Db = {
-    pool,
-
     async init(): Promise<void> {
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS users (
-          id TEXT PRIMARY KEY,
-          username TEXT NOT NULL UNIQUE,
-          feishu_open_id TEXT,
-          bind_code TEXT,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-        CREATE TABLE IF NOT EXISTS user_configs (
-          user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-          config JSONB NOT NULL,
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-        CREATE TABLE IF NOT EXISTS sessions (
-          id TEXT PRIMARY KEY,
-          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          channel TEXT NOT NULL,
-          title TEXT NOT NULL DEFAULT '',
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-        CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, updated_at DESC);
-        CREATE TABLE IF NOT EXISTS messages (
-          id TEXT PRIMARY KEY,
-          session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-          role TEXT NOT NULL,
-          content TEXT NOT NULL,
-          tts_text TEXT,
-          mode TEXT NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        );
-        CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
-      `)
+      let sqlite: DatabaseSync | null = null
+      try {
+        mkdirSync(dirname(cfg.path), { recursive: true })
+        sqlite = new DatabaseSync(cfg.path, { enableForeignKeyConstraints: true })
+        // WAL：读写并发更好；busy_timeout 兜底短暂的写锁竞争。
+        // foreign_keys 由构造参数开启，这里显式再设一次，避免未来换构造方式时静默失效。
+        sqlite.exec(`
+          PRAGMA journal_mode = WAL;
+          PRAGMA busy_timeout = 5000;
+          PRAGMA synchronous = NORMAL;
+          PRAGMA foreign_keys = ON;
+
+          CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            feishu_open_id TEXT,
+            bind_code TEXT,
+            created_at INTEGER NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS user_configs (
+            user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            config TEXT NOT NULL CHECK (json_valid(config)),
+            updated_at INTEGER NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            channel TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, updated_at DESC);
+          CREATE TABLE IF NOT EXISTS messages (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            tts_text TEXT,
+            mode TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
+        `)
+        conn = sqlite
+      } catch (error) {
+        sqlite?.close()
+        conn = null
+        const reason = error instanceof Error ? error.message : String(error)
+        throw new Error(`无法初始化 SQLite 数据库 ${cfg.path}：${reason}`, { cause: error })
+      }
     },
 
     async close(): Promise<void> {
-      await pool.end()
+      // close 不幂等：SIGINT/SIGTERM 或 --watch 重启可能触发两次
+      if (!conn) return
+      conn.close()
+      conn = null
     },
 
     async resolveUser(username) {
+      const sqlite = getConn()
       const name = username.trim()
-      const existing = await pool.query('SELECT id FROM users WHERE username = $1', [name])
-      if (existing.rowCount) return { id: existing.rows[0].id as string }
+      const existing = first<{ id: string }>(sqlite, 'SELECT id FROM users WHERE username = ?', [name])
+      if (existing) return { id: existing.id }
       const { randomUUID } = await import('node:crypto')
       const id = randomUUID()
-      await pool.query(
-        'INSERT INTO users (id, username) VALUES ($1, $2) ON CONFLICT (username) DO NOTHING',
-        [id, name]
+      run(
+        sqlite,
+        'INSERT INTO users (id, username, created_at) VALUES (?, ?, ?) ON CONFLICT(username) DO NOTHING',
+        [id, name, Date.now()]
       )
-      const row = await pool.query('SELECT id FROM users WHERE username = $1', [name])
-      return { id: row.rows[0]?.id ?? id }
+      const row = first<{ id: string }>(sqlite, 'SELECT id FROM users WHERE username = ?', [name])
+      return { id: row?.id ?? id }
     },
 
     async getUser(id) {
-      const r = await pool.query(
-        'SELECT id, username, feishu_open_id, bind_code FROM users WHERE id = $1',
-        [id]
-      )
-      const row = r.rows[0]
+      const row = first<{
+        id: string
+        username: string
+        feishu_open_id: string | null
+        bind_code: string | null
+      }>(getConn(), 'SELECT id, username, feishu_open_id, bind_code FROM users WHERE id = ?', [id])
       if (!row) return null
       return {
-        id: row.id as string,
-        username: row.username as string,
-        feishuOpenId: (row.feishu_open_id as string | null) ?? null,
-        bindCode: (row.bind_code as string | null) ?? null
+        id: row.id,
+        username: row.username,
+        feishuOpenId: row.feishu_open_id ?? null,
+        bindCode: row.bind_code ?? null
       }
     },
 
     async setBindCode(userId, code) {
-      await pool.query('UPDATE users SET bind_code = $2 WHERE id = $1', [userId, code])
+      run(getConn(), 'UPDATE users SET bind_code = ? WHERE id = ?', [code, userId])
     },
 
     async findUserByBindCode(code) {
-      const r = await pool.query('SELECT id, username FROM users WHERE bind_code = $1', [code.trim()])
-      const row = r.rows[0]
-      return row ? { id: row.id as string, username: row.username as string } : null
+      const row = first<{ id: string; username: string }>(
+        getConn(),
+        'SELECT id, username FROM users WHERE bind_code = ?',
+        [code.trim()]
+      )
+      return row ? { id: row.id, username: row.username } : null
     },
 
     async bindFeishu(userId, openId) {
-      await pool.query('UPDATE users SET feishu_open_id = $2 WHERE id = $1', [userId, openId])
+      run(getConn(), 'UPDATE users SET feishu_open_id = ? WHERE id = ?', [openId, userId])
     },
 
     async findUserByFeishu(openId) {
-      const r = await pool.query('SELECT id, username FROM users WHERE feishu_open_id = $1', [openId])
-      const row = r.rows[0]
-      return row ? { id: row.id as string, username: row.username as string } : null
+      const row = first<{ id: string; username: string }>(
+        getConn(),
+        'SELECT id, username FROM users WHERE feishu_open_id = ?',
+        [openId]
+      )
+      return row ? { id: row.id, username: row.username } : null
     },
 
     async getUserConfig(userId) {
-      const r = await pool.query('SELECT config FROM user_configs WHERE user_id = $1', [userId])
-      return (r.rows[0]?.config as UserConfig | undefined) ?? null
+      const row = first<{ config: string }>(
+        getConn(),
+        'SELECT config FROM user_configs WHERE user_id = ?',
+        [userId]
+      )
+      if (!row) return null
+      return parseUserConfig(userId, row.config)
     },
 
     async setUserConfig(userId, config) {
-      await pool.query(
-        `INSERT INTO user_configs (user_id, config) VALUES ($1, $2)
-         ON CONFLICT (user_id) DO UPDATE SET config = EXCLUDED.config, updated_at = now()`,
-        [userId, JSON.stringify(config)]
+      run(
+        getConn(),
+        `INSERT INTO user_configs (user_id, config, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET config = excluded.config, updated_at = excluded.updated_at`,
+        [userId, JSON.stringify(config), Date.now()]
       )
     },
 
     async listSessions(userId) {
-      const r = await pool.query(
+      const rows = all<{
+        id: string
+        user_id: string
+        channel: Channel
+        title: string
+        created_ms: number
+        updated_ms: number
+        message_count: number
+      }>(
+        getConn(),
         `SELECT s.id, s.user_id, s.channel, s.title,
-                EXTRACT(EPOCH FROM s.created_at)::bigint * 1000 AS created_ms,
-                EXTRACT(EPOCH FROM s.updated_at)::bigint * 1000 AS updated_ms,
-                (SELECT count(*) FROM messages m WHERE m.session_id = s.id) AS message_count
-         FROM sessions s WHERE s.user_id = $1 ORDER BY s.updated_at DESC`,
+                s.created_at AS created_ms, s.updated_at AS updated_ms,
+                (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
+         FROM sessions s WHERE s.user_id = ?
+         ORDER BY s.updated_at DESC, s.rowid DESC`,
         [userId]
       )
-      return r.rows.map(
+      return rows.map(
         (row): SessionRow => ({
-          id: row.id as string,
-          userId: row.user_id as string,
-          channel: row.channel as Channel,
-          title: row.title as string,
+          id: row.id,
+          userId: row.user_id,
+          channel: row.channel,
+          title: row.title,
           createdAt: Number(row.created_ms),
           updatedAt: Number(row.updated_ms),
           messageCount: Number(row.message_count)
@@ -190,21 +274,28 @@ export function createDb(cfg: BrainConfig['db']): Db {
     },
 
     async getSession(id) {
-      const r = await pool.query(
+      const row = first<{
+        id: string
+        user_id: string
+        channel: Channel
+        title: string
+        created_ms: number
+        updated_ms: number
+        message_count: number
+      }>(
+        getConn(),
         `SELECT s.id, s.user_id, s.channel, s.title,
-                EXTRACT(EPOCH FROM s.created_at)::bigint * 1000 AS created_ms,
-                EXTRACT(EPOCH FROM s.updated_at)::bigint * 1000 AS updated_ms,
-                (SELECT count(*) FROM messages m WHERE m.session_id = s.id) AS message_count
-         FROM sessions s WHERE s.id = $1`,
+                s.created_at AS created_ms, s.updated_at AS updated_ms,
+                (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
+         FROM sessions s WHERE s.id = ?`,
         [id]
       )
-      const row = r.rows[0]
       if (!row) return null
       return {
-        id: row.id as string,
-        userId: row.user_id as string,
-        channel: row.channel as Channel,
-        title: row.title as string,
+        id: row.id,
+        userId: row.user_id,
+        channel: row.channel,
+        title: row.title,
         createdAt: Number(row.created_ms),
         updatedAt: Number(row.updated_ms),
         messageCount: Number(row.message_count)
@@ -212,53 +303,74 @@ export function createDb(cfg: BrainConfig['db']): Db {
     },
 
     async touchSession(input) {
-      await pool.query(
-        `INSERT INTO sessions (id, user_id, channel) VALUES ($1, $2, $3)
-         ON CONFLICT (id) DO UPDATE SET updated_at = now()`,
-        [input.id, input.userId, input.channel]
+      const now = Date.now()
+      run(
+        getConn(),
+        `INSERT INTO sessions (id, user_id, channel, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at`,
+        [input.id, input.userId, input.channel, now, now]
       )
     },
 
     async deleteSession(id) {
-      await pool.query('DELETE FROM sessions WHERE id = $1', [id])
+      run(getConn(), 'DELETE FROM sessions WHERE id = ?', [id])
     },
 
     async setSessionTitle(id, title) {
-      await pool.query('UPDATE sessions SET title = $2, updated_at = now() WHERE id = $1', [id, title])
+      run(getConn(), 'UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?', [title, Date.now(), id])
     },
 
     async listMessages(sessionId, limit = 200) {
-      const r = await pool.query(
-        `SELECT id, session_id, role, content, tts_text, mode,
-                EXTRACT(EPOCH FROM created_at)::bigint * 1000 AS created_ms
-         FROM (SELECT * FROM messages WHERE session_id = $1 ORDER BY created_at DESC LIMIT $2) t
-         ORDER BY created_at`,
+      const rows = all<{
+        id: string
+        session_id: string
+        role: 'user' | 'assistant'
+        content: string
+        tts_text: string | null
+        mode: TurnMode
+        created_ms: number
+      }>(
+        getConn(),
+        `SELECT id, session_id, role, content, tts_text, mode, created_at AS created_ms
+         FROM (
+           SELECT id, session_id, role, content, tts_text, mode, created_at, rowid AS seq
+           FROM messages
+           WHERE session_id = ?
+           ORDER BY created_at DESC, rowid DESC
+           LIMIT ?
+         ) t
+         ORDER BY created_at, seq`,
         [sessionId, limit]
       )
-      return r.rows.map(
+      return rows.map(
         (row): MessageRow => ({
-          id: row.id as string,
-          sessionId: row.session_id as string,
-          role: row.role as 'user' | 'assistant',
-          content: row.content as string,
-          ttsText: (row.tts_text as string | null) ?? null,
-          mode: row.mode as TurnMode,
+          id: row.id,
+          sessionId: row.session_id,
+          role: row.role,
+          content: row.content,
+          ttsText: row.tts_text ?? null,
+          mode: row.mode,
           createdAt: Number(row.created_ms)
         })
       )
     },
 
     async appendMessage(input) {
-      await pool.query(
-        `INSERT INTO messages (id, session_id, role, content, tts_text, mode)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [input.id, input.sessionId, input.role, input.content, input.ttsText ?? null, input.mode]
+      run(
+        getConn(),
+        `INSERT INTO messages (id, session_id, role, content, tts_text, mode, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [input.id, input.sessionId, input.role, input.content, input.ttsText ?? null, input.mode, Date.now()]
       )
     },
 
     async countMessages(sessionId) {
-      const r = await pool.query('SELECT COUNT(*)::int AS n FROM messages WHERE session_id = $1', [sessionId])
-      return (r.rows[0]?.n as number | undefined) ?? 0
+      const row = first<{ n: number }>(
+        getConn(),
+        'SELECT COUNT(*) AS n FROM messages WHERE session_id = ?',
+        [sessionId]
+      )
+      return Number(row?.n ?? 0)
     }
   }
 

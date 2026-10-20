@@ -98,7 +98,7 @@
 ## 用户数据的安全（针对 Electron 桌面端的落点）
 
 > 这一节来自同类 agent 项目反复出事故的教训。本项目的对应位置：
-> 脑服务的会话库（pg）、`services/brain/skills/.amadeus-state.json`、
+> 脑服务的会话库（SQLite 文件）、`services/brain/skills/.amadeus-state.json`、
 > Electron 端的 userData 目录、用户的 LLM key。
 
 - **读取 / 解析失败 = "未知"，不等于 "空"。** 状态文件解析失败时：

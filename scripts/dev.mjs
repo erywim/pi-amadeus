@@ -4,8 +4,9 @@
  * 前置检查（不通过只警告不阻止，除了缺依赖）：
  * - Node >= 22.19.0（workspaces engines 要求）
  * - 依赖已安装（根 node_modules）
- * - Postgres 可达（brain 启动即 CREATE TABLE，不可达会崩；用 socket 探活提前告知）
  * - services/brain/.env 存在（LLM/Whisper/TTS 密钥；缺失时 AI 回复会失败）
+ *
+ * 存储为 SQLite 单文件，由 brain 启动时自动建库建表，无需安装数据库服务。
  *
  * 用法：npm run dev:all    （等价 node scripts/dev.mjs）
  * Ctrl+C 一次即可退出并级联清理两个子进程（Windows 下用 taskkill /T 杀进程树）。
@@ -13,13 +14,10 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { createConnection } from 'node:net'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const ENGINE_MAJOR = 22
 const BRAIN_PORT = Number(process.env.PORT || '3002')
-const PG_HOST = process.env.PGHOST || '127.0.0.1'
-const PG_PORT = Number(process.env.PGPORT || '5432')
 
 // ---------- 前置检查 ----------
 
@@ -34,27 +32,6 @@ function checkDeps() {
   if (existsSync(resolve(ROOT, 'node_modules'))) return true
   console.error('[dev] ✗ 依赖未安装：请先在仓库根目录执行 npm install')
   process.exit(1)
-}
-
-/** Postgres 探活：连接成功或收到任何响应都算可达（认证失败 = 服务在跑） */
-function checkPostgres() {
-  return new Promise((resolvePing) => {
-    const sock = createConnection({ host: PG_HOST, port: PG_PORT, timeout: 1500 })
-    sock.once('connect', () => {
-      sock.destroy()
-      resolvePing(true)
-    })
-    sock.once('data', () => {
-      // 服务返回错误包（如密码错）也说明进程在监听
-      sock.destroy()
-      resolvePing(true)
-    })
-    sock.once('error', () => resolvePing(false))
-    sock.once('timeout', () => {
-      sock.destroy()
-      resolvePing(false)
-    })
-  })
 }
 
 function checkEnv() {
@@ -115,11 +92,6 @@ async function main() {
   checkNode()
   checkDeps()
   checkEnv()
-  const pgOk = await checkPostgres()
-  if (!pgOk) {
-    console.warn(`[dev] ⚠ Postgres 不可达（${PG_HOST}:${PG_PORT}）：brain 启动时会崩。`)
-    console.warn('        请先启动数据库（docker compose up -d postgres 或本机服务），再重新运行本脚本。')
-  }
 
   process.on('SIGINT', () => shutdown(0))
   process.on('SIGTERM', () => shutdown(0))

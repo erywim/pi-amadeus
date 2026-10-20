@@ -43,7 +43,7 @@ if (cfg.feishu.enabled) {
 serve({ fetch: app.fetch, port: cfg.port }, (info) => {
   console.log(`[brain] pi-amadeus 大脑服务已启动: http://localhost:${info.port}`)
   console.log(`[brain] LLM: ${cfg.llm.model} @ ${cfg.llm.baseUrl}`)
-  console.log(`[brain] Postgres: ${cfg.db.host}:${cfg.db.port}/${cfg.db.database}`)
+  console.log(`[brain] SQLite: ${cfg.db.path}`)
   console.log(`[brain] 飞书: ${cfg.feishu.enabled ? '启用' : '停用'}`)
 })
 

@@ -1,7 +1,7 @@
 /**
  * 用户级 AI 配置（沿用原版 InputData 配置模型的字段语义，
- * 修正其 localStorage / Postgres / 进程内 dict 三处重复存储的缺陷——
- * v1 以服务端 Postgres `user_configs` 表为单一来源）。
+ * 修正其 localStorage / 数据库 / 进程内 dict 三处重复存储的缺陷——
+ * v1 以服务端 SQLite `user_configs` 表为单一来源）。
  */
 
 export interface LlmProviderConfig {

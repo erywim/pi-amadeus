@@ -4,7 +4,7 @@ import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import { defaultUserConfig } from '../conversation.ts'
 
-/** 用户级 AI 配置：Postgres user_configs 单一来源；未配置时回落 .env 默认 */
+/** 用户级 AI 配置：SQLite user_configs 单一来源；未配置时回落 .env 默认 */
 
 /** 掩码密钥：长度 ≤8 时整体打码，否则只露头尾各 4 位（响应永不回传完整密钥） */
 function maskKey(key: string): string {

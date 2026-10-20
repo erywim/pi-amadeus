@@ -20,7 +20,7 @@
 | 7 | 视觉输入 | ✅ | 摄像头帧附加 LLM 请求 |
 | 8 | 声音克隆 | ❌ | 改用 Audio Fish 预置声音 |
 | 9 | 测试 | ❌ | v1 不写（pi 基座自身测试不受影响） |
-| 10 | 存储 | ✅ | PostgreSQL |
+| 10 | 存储 | ✅ | SQLite（单文件，无需数据库服务） |
 | 11 | 桌宠模式 | ✅ | 透明置顶窗口浮在桌面，托盘切换（交互参考 XnneHangLab） |
 
 ## 3. 架构约束
@@ -28,7 +28,7 @@
 - **基座**：LLM 接入统一走 pi-ai（多供应商、流式），对话编排基于 pi 能力。pi 只做基座，一般不改。
 - **参考原则**：amadeus-system-new 只作为功能规格参考（功能点、数据流、跨端契约），实现全部重写。**使用相同的开源库（fastrtc、pixi-live2d-display 等）允许；照搬其业务代码与架构禁止。**
 - **语言**：TS（前端 + 对话大脑服务）+ Python（仅媒体桥）。
-- **存储**：PostgreSQL。不使用 pi coding-agent 的 JSONL `SessionManager`；pi-amadeus 自建 schema，对话编排层保持内存态、由服务层持久化。
+- **存储**：SQLite 单文件（Node 内置 `node:sqlite`，默认 `services/brain/data/amadeus.db`，可用 `DB_PATH` 覆盖）。不需要安装数据库服务；不使用 pi coding-agent 的 JSONL `SessionManager`；pi-amadeus 自建 schema，对话编排层保持内存态、由服务层持久化。
 
 ## 4. 总体拓扑（建议）
 
@@ -44,7 +44,7 @@
 │ 对话大脑服务（Node/TS，pi 基座）                      │
 │  · pi-ai 多供应商 LLM + 流式                          │
 │  · 人格 prompt 构建 + 双语言输出解析                   │
-│  · 会话编排 + PostgreSQL 持久化                       │
+│  · 会话编排 + SQLite 持久化                           │
 │  · 飞书机器人（与桌面共享同一对话服务）                 │
 │  · TTS 调用（Audio Fish）                            │
 └───────────────┬─────────────────────────────────────┘
@@ -56,7 +56,7 @@
 │  · TTS 音频回注 WebRTC 流                             │
 └───────────────┬─────────────────────────────────────┘
                 │
-          PostgreSQL 16
+      SQLite 文件（data/amadeus.db）
 ```
 
 职责划分原则（相对原版的改进）：**Python 只负责媒体进出，一切 AI 决策与对话逻辑都在 TS 大脑**——与 pi 基座同栈、单点演进。原版 Python 用 langchain 当大脑，v1 由 pi-ai 取代。
@@ -113,10 +113,11 @@
 - 语音对话时作为 image content 块附加到 LLM 请求（pi-ai Message 原生支持 image content）。
 - 文本聊天模式不附加。
 
-### 5.7 PostgreSQL 存储
+### 5.7 SQLite 存储
 
-- 表：`sessions`（id / user / channel / title / 时间）、`messages`（role / content / `tts_text`（语音回合日文，可空）/ 时间）、`users`（渠道用户绑定，飞书）、`user_configs`（用户级配置）。
-- **配置单一来源**：以服务器 Postgres 为准（修正原版 localStorage / Postgres / 进程内 dict 三处重复存储的问题）。
+- 单文件数据库，默认 `services/brain/data/amadeus.db`（`DB_PATH` 可覆盖）；brain 启动时自动建库建表，无需安装数据库服务。
+- 表：`sessions`（id / user / channel / title / 时间）、`messages`（role / content / `tts_text`（语音回合日文，可空）/ 时间）、`users`（渠道用户绑定，飞书）、`user_configs`（用户级配置，JSON 文本）。
+- **配置单一来源**：以服务端 SQLite 为准（修正原版 localStorage / 数据库 / 进程内 dict 三处重复存储的问题）。
 - v1 无向量检索（Milvus / etcd / MinIO 全部不需要）。
 
 ### 5.8 声音（Audio Fish）
@@ -151,7 +152,7 @@
 | 里程碑 | 内容 |
 |--------|------|
 | M1 | 项目骨架 + **界面**：文本聊天 UI（静态壳）、Live2D 场景壳、路由 / 主题 |
-| M2 | 文本聊天全链路：SSE + 会话管理 + Postgres + 自动标题 |
+| M2 | 文本聊天全链路：SSE + 会话管理 + SQLite + 自动标题 |
 | M3 | 人格 + 双语言流式：先文本模式（仅中文）验证，再做语音双语言格式 |
 | M4 | 语音链路：WebRTC / STT / Audio Fish TTS + Live2D 联动（情绪 / 口型） |
 | M5 | 飞书渠道 + 视觉输入 |

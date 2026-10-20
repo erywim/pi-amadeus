@@ -151,6 +151,9 @@ release/
 # 临时/调试产物（E2E 测试音频、视觉调试 payload 等）
 *.tmp-*
 
+# brain 的 SQLite 数据库（含 -wal / -shm）
+services/brain/data/
+
 # OS / 编辑器杂项
 .DS_Store
 Thumbs.db
