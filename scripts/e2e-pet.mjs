@@ -317,11 +317,36 @@ try {
 
     f = await facePoint()
     await hoverAt(f)
+    // 先等待机小表演演完（六张情绪脸归零），不把待机表演误当成点按反应
+    const faceIds = `['Param3','Param4','Param5','Param6','Param7','Param8']`
+    await waitFor(
+      pet,
+      `Object.values(window.__live2d.debugParams(${faceIds})).every((v) => Math.abs(v) < 0.05)`,
+      8000,
+      '待机表情归零'
+    )
     const motionBefore = await evalJs(pet, `window.__live2d.isMotionPlaying()`)
     await mouse('mousePressed', f.x, f.y)
     await mouse('mouseReleased', f.x, f.y)
     const tapped = await waitFor(pet, `window.__live2d.isMotionPlaying()`, 2000, '点按反应').catch(() => false)
-    report('点按 → 播放反应手势', motionBefore === false && tapped === true)
+    // 点按是「表情 × 动作」的组合：动作在演的同时有一张情绪脸
+    const comboFace = await waitFor(
+      pet,
+      `(() => { const p = window.__live2d.debugParams(${faceIds}); const on = Object.keys(p).filter((k) => p[k] > 0.2); return on.length ? on.join('+') : null })()`,
+      2000,
+      '点按表情组合'
+    ).catch(() => null)
+    report('点按 → 动作 × 表情组合', motionBefore === false && tapped === true && !!comboFace, comboFace ?? '无表情')
+    // 表演结束（holdMs）后表情回落到当前情绪
+    report(
+      '点按表演结束 → 表情回落',
+      !!(await waitFor(
+        pet,
+        `Object.values(window.__live2d.debugParams(${faceIds})).every((v) => Math.abs(v) < 0.05)`,
+        5000,
+        '表情回落'
+      ).catch(() => false))
+    )
     const p2 = await placement()
     report('点按不移动角色', p2.x === p1.x && p2.y === p1.y)
 
@@ -483,9 +508,40 @@ try {
     pet4.close()
   }
 
-  console.log('\n=== 9. 桌宠内的退出入口 ===')
+  console.log('\n=== 9. 待机表演与桌宠内的退出入口 ===')
   const pet5 = await enterPet(main)
   try {
+    // 表演池（Vite dev 直接 import 模块）：害羞只在戳一戳出现，不进待机池
+    const pools = await evalJs(
+      pet5,
+      `import('/src/features/live2d/lib/performances.ts').then((m) => ({ idle: m.IDLE_PERFORMANCES.map((p) => p.emotion), poke: m.POKE_PERFORMANCES.map((p) => p.emotion) }))`
+    )
+    report(
+      '害羞只在戳一戳池、不在待机池',
+      !pools.idle.includes('shy') && pools.poke.includes('shy'),
+      JSON.stringify(pools)
+    )
+
+    // 待机表演（调度器 15-30s 的随机触发不适合 e2e 里等，直接调同一入口）
+    const faces = `['Param3','Param4','Param5','Param6','Param7','Param8']`
+    await evalJs(pet5, `window.__live2d.playIdlePerformance(); true`)
+    const idleFace = await waitFor(
+      pet5,
+      `(() => { const p = window.__live2d.debugParams(${faces}); const on = Object.keys(p).filter((k) => p[k] > 0.2); return on.length ? on.join('+') : null })()`,
+      3000,
+      '待机表演表情'
+    ).catch(() => null)
+    report('待机表演 = 动作 × 表情', !!idleFace, idleFace ?? '无表情')
+    report(
+      '待机表演结束 → 表情回落',
+      !!(await waitFor(
+        pet5,
+        `Object.values(window.__live2d.debugParams(${faces})).every((v) => Math.abs(v) < 0.05)`,
+        6000,
+        '待机表演回落'
+      ).catch(() => false))
+    )
+
     // 桌宠窗口自己的出口：右键菜单 + 对话框底栏按钮
     report('桌宠提供右键菜单接口', await evalJs(pet5, `typeof window.api.pet.openMenu === 'function'`))
     await evalJs(

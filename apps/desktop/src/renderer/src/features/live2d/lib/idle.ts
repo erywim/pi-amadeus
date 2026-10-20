@@ -7,7 +7,7 @@ const rand = (min: number, max: number): number => min + Math.random() * (max - 
  * - 眨眼：2-6s 随机间隔（缓动动画在引擎的程序层）
  * - 注视：仅待机时游移，30% 概率看向光标位置
  * - 动作：按回合状态分档——说话 8-14s（表情程序手势；模型自带动作会抢口/眼参数，
- *   说话期间不播）/ 思考暂停 / 待机 15-30s（中性表情用模型自带随机动作，其余用表情手势）
+ *   说话期间不播）/ 思考暂停 / 待机 15-30s（动作 × 表情的小表演，见 live2d-engine.playIdlePerformance）
  * 呼吸/physics 由框架自动驱动，这里不动。
  */
 export class IdleScheduler {
@@ -83,7 +83,8 @@ export class IdleScheduler {
       return
     }
     this.after(rand(15000, 30000), () => {
-      this.engine.playIdleGesture()
+      // 待机表演都是"动作 × 表情"的组合，不再只播动作
+      this.engine.playIdlePerformance()
       this.scheduleMotion()
     })
   }

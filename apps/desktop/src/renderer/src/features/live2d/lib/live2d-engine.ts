@@ -20,6 +20,7 @@ import {
 import { DRAWABLES } from './model-params'
 import { MotionLayer } from './motion-layer'
 import { OverlayLayer } from './overlays'
+import { IDLE_PERFORMANCES, randomPerformance, type Performance } from './performances'
 import { ProceduralLayer } from './procedural-layer'
 
 // 模块级注册一次：此后 Live2DModel 的每帧 update 由 PIXI.Ticker.shared 驱动。
@@ -129,6 +130,8 @@ export class Live2DEngine {
   private fx: DrawableFx | null = null
   private overlays: OverlayLayer | null = null
   private entryTimer: ReturnType<typeof setTimeout> | null = null
+  /** 小表演（动作 × 表情）的表情回落定时器；非空表示正在表演 */
+  private performanceTimer: ReturnType<typeof setTimeout> | null = null
   private elapsed = 0
   // 光标：归一化 -1..1（窗口中心原点）+ 是否在窗口内
   private cursorX = 0
@@ -213,7 +216,11 @@ export class Live2DEngine {
     PIXI.Ticker.shared.add(this.tick)
     this.unsubscribe = useLive2dStore.subscribe((state, prev) => {
       if (this.destroyed || !this.model) return
-      if (state.emotion !== prev.emotion) this.applyEmotion(state.emotion, true)
+      if (state.emotion !== prev.emotion) {
+        // 真实情绪（LLM / 预览）优先：先撤掉待机或戳一戳的小表演
+        this.clearPerformance()
+        this.applyEmotion(state.emotion, true)
+      }
       if (state.gesture && state.gesture !== prev.gesture) this.playGesture(state.gesture.name)
       if (state.avatar !== prev.avatar) this.applyTransform()
     })
@@ -239,9 +246,12 @@ export class Live2DEngine {
     this.elapsed += dt
 
     this.state = this.computeState()
-    // 说话沿：停掉在手的模型自带动作——动作曲线会拥有口/眼参数并盖住语音口型与眨眼
+    // 说话沿：结束在手的待机小表演，停掉模型自带动作——动作曲线会拥有口/眼参数并盖住语音口型与眨眼
     // （程序层从动作现值重播种，平滑接续，无跳变）
-    if (this.state.speaking && !this.wasSpeaking && this.motionLayer?.isPlaying) this.motionLayer.stop()
+    if (this.state.speaking && !this.wasSpeaking) {
+      this.endPerformance()
+      if (this.motionLayer?.isPlaying) this.motionLayer.stop()
+    }
     this.wasSpeaking = this.state.speaking
     const gesture = this.gestures.update(dt)
     procedural.update(
@@ -364,7 +374,7 @@ export class Live2DEngine {
 
   /** 说话时的手势：一律播本表情的程序手势。
    *  模型自带动作会拥有口/眼参数、在渲染时盖住语音口型与眨眼（程序层在 tick 的写入到不了绘制），
-   *  所以 random1-5 只在待机时用（见 playIdleGesture），说话期间不播 */
+   *  所以 random1-5 只在待机时用（见 playIdlePerformance），说话期间不播 */
   playTalkingGesture(): void {
     const expr = this.procedural?.expression
     if (!expr) return
@@ -372,8 +382,25 @@ export class Live2DEngine {
     this.playGestureName(pool[Math.floor(Math.random() * pool.length)]!)
   }
 
-  /** 待机动作：低优先级随机动作或本表情的待机手势 */
-  playIdleGesture(): void {
+  /**
+   * 待机表演：动作 × 表情的组合（桌宠与陪伴页共用的待机调度从这里取）。
+   * 中性情绪下随机挑一段小表演——模型自带动作或程序手势，都配一张脸；
+   * 已有真实情绪（LLM）时按该情绪的习惯走，不抢戏。
+   */
+  playIdlePerformance(): void {
+    // 已经在表演中：保持当前组合演完，不叠一段新的（叠上去会同时换脸换动作，像抽搐）
+    if (!this.procedural || this.performanceTimer) return
+    // 有真实情绪（LLM / 预览）时：待机走该情绪自己的手势，不让随机小表演覆盖它
+    if (useLive2dStore.getState().emotion !== 'neutral') {
+      this.playIdleGesture()
+      return
+    }
+    // 中性 → 表演中：随机挑一段「表情 × 动作」
+    this.startPerformance(randomPerformance(IDLE_PERFORMANCES))
+  }
+
+  /** 按当前情绪的待机池播手势（有真实情绪时的原待机行为） */
+  private playIdleGesture(): void {
     const expr = this.procedural?.expression
     if (!expr) return
     if (expr.randomMotions && (expr.idle.length === 0 || Math.random() < 0.5)) {
@@ -382,6 +409,46 @@ export class Live2DEngine {
     }
     if (expr.idle.length === 0 || this.gestures.isPlaying()) return
     this.playGestureName(expr.idle[Math.floor(Math.random() * expr.idle.length)]!)
+  }
+
+  /**
+   * 一段小表演：先换表情再播动作——换表情会停掉在手的模型自带动作，顺序反过来动作会被吃掉。
+   * 动作演完（holdMs）后表情回落到 store 里的当前情绪。
+   */
+  private startPerformance(perf: Performance): void {
+    // 上一段表演 / 待机 → 新表演：先撤掉旧的回落定时器，否则旧定时器会把新表情提前打回
+    this.clearPerformance()
+    this.applyResolved(resolveExpression(perf.emotion), false)
+    if (perf.gesture) this.playGestureName(perf.gesture)
+    else void this.motionLayer?.play(this.randomGroup(), 0, MotionPriority.IDLE, 1)
+    this.performanceTimer = setTimeout(() => {
+      // 表演中 → 回落到 store 的当前情绪（期间没有新的真实情绪，否则订阅回调已提前撤掉定时器）
+      this.performanceTimer = null
+      if (!this.destroyed) this.applyEmotion(useLive2dStore.getState().emotion, false)
+    }, perf.holdMs)
+  }
+
+  /** 戳一戳 / 预览：演一段表情 × 动作；回合进行中不打断，返回是否真的演了 */
+  perform(perf: Performance): boolean {
+    if (this.destroyed || !this.procedural) return false
+    // 回合中（语音回合 / 思考 / 说话）不切表情：说话口型与情绪由回合状态接管
+    if (this.state.busy || this.state.speaking) return false
+    this.startPerformance(perf)
+    return true
+  }
+
+  /** 提前结束小表演（开始说话等打断场景）：表演中 → 当前情绪 */
+  private endPerformance(): void {
+    if (!this.performanceTimer) return
+    this.clearPerformance()
+    if (!this.destroyed) this.applyEmotion(useLive2dStore.getState().emotion, false)
+  }
+
+  private clearPerformance(): void {
+    if (this.performanceTimer) {
+      clearTimeout(this.performanceTimer)
+      this.performanceTimer = null
+    }
   }
 
   isMotionPlaying(): boolean {
@@ -612,6 +679,7 @@ export class Live2DEngine {
       clearTimeout(this.entryTimer)
       this.entryTimer = null
     }
+    this.clearPerformance()
     window.removeEventListener('pointermove', this.onPointerMove)
     window.removeEventListener('blur', this.onPointerLeave)
     document.removeEventListener('mouseleave', this.onPointerLeave)
