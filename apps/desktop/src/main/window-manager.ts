@@ -1,5 +1,6 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, screen, session, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, Menu, screen, session, shell, type WebContents } from 'electron'
+import { buildModeMenuItems } from './menus'
 import { PetPointer } from './pet-pointer'
 
 export type AppMode = 'window' | 'pet'
@@ -107,6 +108,16 @@ export class WindowManager {
     this.petPointer?.debugOverride(point)
   }
 
+  /**
+   * 桌宠右键菜单：桌宠窗口没有可见的边框，这是它自己的出口（回到窗口模式 / 鼠标穿透）。
+   * 只认桌宠窗口自己的 webContents，与托盘同一套菜单项。
+   */
+  showPetContextMenu(sender: WebContents): void {
+    const pet = this.pet
+    if (!pet || pet.isDestroyed() || sender !== pet.webContents) return
+    Menu.buildFromTemplate(buildModeMenuItems(this)).popup({ window: pet })
+  }
+
   createMainWindow(): BrowserWindow {
     const win = new BrowserWindow({
       width: 1280,
@@ -173,6 +184,7 @@ export class WindowManager {
     const pet = this.pet
     if (!pet || sender !== pet.webContents || this.petShown) return
     this.clearReadyTimer()
+    // 加载中 → 已显示（每进一次桌宠只转一次）：先隐藏主窗口再显示桌宠，切换无闪烁
     this.petShown = true
     this.hideMainForPet()
     // macOS：所有桌面空间可见、浮在全屏应用之上。副作用：桌宠期间 Dock 图标隐藏（入口在托盘）
@@ -205,6 +217,7 @@ export class WindowManager {
   }
 
   private enterPetMode(): void {
+    // window → pet：先记模式再建窗口；渲染层首帧画完（pet:ready）后才显示并隐藏主窗口
     this.mode = 'pet'
     this.pet = this.createPetWindow()
     this.petPointer = new PetPointer(this.pet)
@@ -212,6 +225,7 @@ export class WindowManager {
   }
 
   private exitPetMode(): void {
+    // pet → window：先撤桌宠（停光标轮询、清就绪定时器），再恢复主窗口
     this.mode = 'window'
     this.clearReadyTimer()
     const pet = this.pet

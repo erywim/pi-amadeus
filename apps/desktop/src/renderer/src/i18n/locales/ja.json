@@ -98,6 +98,7 @@
   },
   "pet": {
     "dialog": {
+      "backToWindow": "ウィンドウモードに戻る",
       "closeLabel": "会話を閉じる"
     }
   },

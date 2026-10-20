@@ -5,6 +5,7 @@ import trayColor2x from '../../resources/tray@2x.png?asset'
 import trayTemplate from '../../resources/trayTemplate.png?asset'
 import trayTemplate2x from '../../resources/trayTemplate@2x.png?asset'
 import { menuLabels } from './labels'
+import { buildModeMenuItems } from './menus'
 import type { WindowManager } from './window-manager'
 
 const isMac = process.platform === 'darwin'
@@ -30,23 +31,8 @@ export class AppTray {
   refresh(): void {
     if (!this.tray) return
     const labels = menuLabels()
-    const mode = this.windows.getMode()
     this.items = [
-      { label: labels.windowMode, type: 'radio', checked: mode === 'window', click: () => this.windows.setMode('window') },
-      { label: labels.petMode, type: 'radio', checked: mode === 'pet', click: () => this.windows.setMode('pet') },
-      { type: 'separator' },
-      // 强制穿透后角色点不到、右键菜单也出不来，只能从托盘关回来
-      ...(mode === 'pet'
-        ? ([
-            {
-              label: labels.passthrough,
-              type: 'checkbox',
-              checked: this.windows.isPassthroughForced(),
-              click: () => this.windows.setPassthroughForced(!this.windows.isPassthroughForced())
-            },
-            { type: 'separator' }
-          ] satisfies MenuItemConstructorOptions[])
-        : []),
+      ...buildModeMenuItems(this.windows),
       { label: labels.show, click: () => this.windows.showCurrent() },
       { label: labels.hide, click: () => this.windows.hideCurrent() },
       { type: 'separator' },

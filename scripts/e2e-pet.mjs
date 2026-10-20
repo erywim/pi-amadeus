@@ -482,6 +482,33 @@ try {
     await exitPet(pet4, main)
     pet4.close()
   }
+
+  console.log('\n=== 9. 桌宠内的退出入口 ===')
+  const pet5 = await enterPet(main)
+  try {
+    // 桌宠窗口自己的出口：右键菜单 + 对话框底栏按钮
+    report('桌宠提供右键菜单接口', await evalJs(pet5, `typeof window.api.pet.openMenu === 'function'`))
+    await evalJs(
+      pet5,
+      `window.__amadeus.live2dSpeechStore.getState().setVoiceActive(true); window.__amadeus.uiStore.getState().setDialogText('在。'); true`
+    )
+    await waitFor(pet5, `!!document.querySelector('[data-pet-interactive][role=dialog]')`, 3000, '对话框出现')
+    const backButton = `button:has(svg.lucide-picture-in-picture-2)`
+    report('对话框有「回到窗口模式」按钮', await evalJs(pet5, `!!document.querySelector('${backButton}')`))
+    // 点下去会销毁发起求值的页面（桌宠窗口）：不等这次求值的返回
+    await evalJs(pet5, `(() => { document.querySelector('${backButton}')?.click(); return true })()`).catch(() => undefined)
+    await waitForPage(isPetUrl, false)
+    await waitFor(main, `window.api.debug.state().then((s) => s.main?.visible)`, 5000, '主窗口恢复可见').catch(
+      () => undefined
+    )
+    const s9 = await debugState(main)
+    report('点按钮 → 回到窗口模式', s9.mode === 'window' && s9.pet === null && s9.main?.visible === true)
+    pet5.close()
+  } finally {
+    await evalJs(main, `window.__amadeus.live2dSpeechStore.getState().setVoiceActive(false); true`).catch(() => undefined)
+    await evalJs(main, `window.api.setMode('window'); true`).catch(() => undefined)
+    await evalJs(main, `window.api.debug.petCursor(null)`).catch(() => undefined)
+  }
 } catch (error) {
   report('执行', false, error instanceof Error ? error.message : String(error))
 } finally {

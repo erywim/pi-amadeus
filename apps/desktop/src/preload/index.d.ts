@@ -17,6 +17,8 @@ export type DesktopApi = {
   pet: {
     /** 首帧已画完，可以显示 */
     ready: () => void
+    /** 在光标处弹出桌宠右键菜单（回到窗口模式 / 鼠标穿透） */
+    openMenu: () => void
     /** 命中检测结果：true=光标在角色/对话框上，关闭鼠标穿透 */
     setInteractive: (interactive: boolean) => void
     /** 主进程轮询的全局光标（窗口内 CSS 像素，可能在窗口外）；返回取消订阅函数 */

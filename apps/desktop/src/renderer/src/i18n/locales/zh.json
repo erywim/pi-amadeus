@@ -98,6 +98,7 @@
   },
   "pet": {
     "dialog": {
+      "backToWindow": "回到窗口模式",
       "closeLabel": "收起对话"
     }
   },

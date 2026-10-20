@@ -19,6 +19,7 @@ const api = {
   onModeChanged: (callback: (mode: AppMode) => void): (() => void) => subscribe('mode:changed', callback),
   pet: {
     ready: (): void => ipcRenderer.send('pet:ready'),
+    openMenu: (): void => ipcRenderer.send('pet:menu'),
     setInteractive: (interactive: boolean): void => ipcRenderer.send('pet:set-interactive', interactive),
     onCursor: (callback: (point: { x: number; y: number }) => void): (() => void) => subscribe('pet:cursor', callback),
     onPassthrough: (callback: (forced: boolean) => void): (() => void) => subscribe('pet:passthrough', callback)

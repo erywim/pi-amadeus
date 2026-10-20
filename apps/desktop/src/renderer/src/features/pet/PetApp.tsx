@@ -71,6 +71,11 @@ export default function PetApp(): React.JSX.Element {
   return (
     <div
       className={cn('relative h-screen w-screen overflow-hidden', dragging ? 'cursor-grabbing' : 'cursor-grab')}
+      onContextMenu={(e) => {
+        // 桌宠窗口没有可见的窗口边框：右键菜单是回到窗口模式的出口
+        e.preventDefault()
+        window.api.pet.openMenu()
+      }}
       {...handlers}
     >
       <Live2DStage placement="free" onReady={handleReady} onError={() => window.api.setMode('window')} />

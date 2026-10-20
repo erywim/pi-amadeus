@@ -22,6 +22,7 @@ export function registerIpcHandlers(windows: WindowManager, onUiLanguage: (lang:
     if (mode === 'window' || mode === 'pet') windows.setMode(mode)
   })
   ipcMain.on('pet:ready', (event) => windows.handlePetReady(event.sender))
+  ipcMain.on('pet:menu', (event) => windows.showPetContextMenu(event.sender))
   ipcMain.on('pet:set-interactive', (event, interactive: unknown) => {
     if (typeof interactive === 'boolean') windows.setPetInteractive(event.sender, interactive)
   })

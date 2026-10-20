@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Mic, Square, Volume2, VolumeX, X } from 'lucide-react'
+import { Mic, PictureInPicture2, Square, Volume2, VolumeX, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import {
@@ -163,6 +163,11 @@ export function PetDialog({ engine, reopenSignal }: PetDialogProps): React.JSX.E
     setClosedTurn(turnSeq)
   }
 
+  /** pet → window：对话框底栏的常驻出口（不必去菜单栏托盘或右键菜单） */
+  function backToWindow(): void {
+    window.api.setMode('window')
+  }
+
   if (!visible) return null
 
   return (
@@ -239,6 +244,9 @@ export function PetDialog({ engine, reopenSignal }: PetDialogProps): React.JSX.E
           onClick={toggleMic}
         >
           <Mic className="size-3.5" strokeWidth={1.8} />
+        </DialogButton>
+        <DialogButton title={t('pet.dialog.backToWindow')} onClick={backToWindow}>
+          <PictureInPicture2 className="size-3.5" strokeWidth={1.8} />
         </DialogButton>
         <DialogButton title={t('pet.dialog.closeLabel')} onClick={close}>
           <X className="size-3.5" strokeWidth={1.8} />
