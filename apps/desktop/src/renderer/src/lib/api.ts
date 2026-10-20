@@ -11,42 +11,43 @@ export const BRAIN_URL: string =
 
 // ---------- 身份 ----------
 
-const USER_ID_KEY = 'amadeus_user_id'
-const USERNAME_KEY = 'amadeus_username'
-
-/** 本机用户身份：localStorage 持久；首次启动按用户名（登录屏输入）建档 */
-export function getLocalUserId(): string | null {
-  return localStorage.getItem(USER_ID_KEY)
+// 登录态
+export interface CurrentUser{
+  userId: string
+  username: string 
 }
 
-export function getLocalUsername(): string {
-  return localStorage.getItem(USERNAME_KEY) ?? 'amadeus-user'
+/**
+ * 当前登录用户
+ * @param userId 
+ * @returns 
+ */
+export async function fetchCurrentUser(): Promise<CurrentUser | null>{
+  const res = await fetch(`${BRAIN_URL}/api/users/current`)
+  if(!res.ok) 
+    throw new Error(`读取登录态失败: Http ${res.status}`)
+
+  const json = (await res.json()) as {user: {id:string;username:string} | null}
+  return json.user ? {userId :json.user.id,username: json.user.username} : null 
 }
 
-export function setLocalUsername(username: string): void {
-  localStorage.setItem(USERNAME_KEY, username)
+/**
+ * 登录，同名沿用旧身份，否则新建
+ * @param userId 
+ * @returns 
+ */
+export async function loginUser(username:string) : Promise<CurrentUser> {
+    const res = await fetch(`${BRAIN_URL}/api/users/login`,{
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username})
+    })
+    if(!res.ok)
+      throw new Error(`登录失败：Http ${res.status}`)
+    return (await res.json()) as CurrentUser
 }
 
-/** 解析（或创建）服务端用户：返回稳定 userId 并落 localStorage */
-export async function resolveUserId(username: string): Promise<string> {
-  const cached = localStorage.getItem(USER_ID_KEY)
-  if (cached) {
-    // 校验缓存身份仍存在于服务端；404 = 数据库被重置（如换库 / 清库），丢弃后重建。
-    // 网络错误照旧抛出，不清缓存（brain 不可达时保留身份是正确的）。
-    const res = await fetch(`${BRAIN_URL}/api/users/${encodeURIComponent(cached)}`)
-    if (res.status !== 404) return cached
-    localStorage.removeItem(USER_ID_KEY)
-  }
-  const res = await fetch(`${BRAIN_URL}/api/users/resolve`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username })
-  })
-  if (!res.ok) throw new Error(`用户建档失败: HTTP ${res.status}`)
-  const json = (await res.json()) as { userId: string }
-  localStorage.setItem(USER_ID_KEY, json.userId)
-  return json.userId
-}
+
 
 // ---------- 会话 / 消息 REST ----------
 

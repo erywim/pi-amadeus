@@ -37,7 +37,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>()((set) => ({
-  loginOpen: true,
+  loginOpen: false,
   username: null,
   configPanelOpen: false,
   configPanelTab: 'avatar',

@@ -23,6 +23,12 @@ export function ConfigPanel(): React.JSX.Element {
   // 摆位按模型各存一份：切模型时滑块显示的是该模型自己的值
   const avatar = useLive2dStore((s) => s.avatars[s.modelId])
   const setAvatar = useLive2dStore((s) => s.setAvatar)
+  // 各模型画布尺寸差一个量级（mao 5800×8400 / 红莉栖 1431×1911），
+  // 缩放滑块的量程跟着模型默认值走，否则 mao 的默认 0.085 会落在滑块量程外
+  const defaultScale = MODEL_PROFILES[modelId].defaultAvatar.scale
+  const scaleMin = defaultScale * 0.1
+  const scaleMax = defaultScale * 2.5
+  const scaleStep = (scaleMax - scaleMin) / 100
   const aiConfig = useSettingsStore((s) => s.aiConfig)
   const keyStatus = useSettingsStore((s) => s.keyStatus)
 
@@ -81,12 +87,14 @@ export function ConfigPanel(): React.JSX.Element {
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <Label>{t('live2d.config.scale')}</Label>
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">{avatar.scale.toFixed(2)}</span>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {avatar.scale < 0.1 ? avatar.scale.toFixed(3) : avatar.scale.toFixed(2)}
+                  </span>
                 </div>
                 <Slider
-                  min={0.2}
-                  max={1}
-                  step={0.01}
+                  min={scaleMin}
+                  max={scaleMax}
+                  step={scaleStep}
                   value={[avatar.scale]}
                   onValueChange={(value) => {
                     const v = value[0]
@@ -100,8 +108,8 @@ export function ConfigPanel(): React.JSX.Element {
                   <span className="font-mono text-xs tabular-nums text-muted-foreground">{avatar.positionX}</span>
                 </div>
                 <Slider
-                  min={-250}
-                  max={250}
+                  min={-1200}
+                  max={1200}
                   step={1}
                   value={[avatar.positionX]}
                   onValueChange={(value) => {
@@ -116,8 +124,8 @@ export function ConfigPanel(): React.JSX.Element {
                   <span className="font-mono text-xs tabular-nums text-muted-foreground">{avatar.positionY}</span>
                 </div>
                 <Slider
-                  min={-350}
-                  max={350}
+                  min={-1200}
+                  max={1200}
                   step={1}
                   value={[avatar.positionY]}
                   onValueChange={(value) => {

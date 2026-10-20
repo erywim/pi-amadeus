@@ -5,7 +5,7 @@ import { DigitalRain } from '@renderer/components/effects/DigitalRain'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
-import { setLocalUsername } from '@renderer/lib/api'
+import { loginUser } from '@renderer/lib/api'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
@@ -13,20 +13,20 @@ import { useUiStore } from '@renderer/stores/uiStore'
 export function LoginOverlay(): React.JSX.Element {
   const { t } = useTranslation()
   const open = useUiStore((s) => s.loginOpen)
-  const closeLogin = useUiStore((s) => s.closeLogin)
-  const setUsername = useUiStore((s) => s.setUsername)
   const [name, setName] = useState('')
 
   if (!open) return <></>
 
-  function submit(e: React.FormEvent): void {
+  async function submit(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     const username = name.trim() || 'Guest'
-    setUsername(username)
-    setLocalUsername(username)
-    // 已有身份则沿用；缓存身份失效（如数据库被重置）时由 resolveUserId 自动重新建档
-    void useSessionStore.getState().init()
-    closeLogin()
+    try {
+      // 登录成功后从服务端恢复身份
+      await loginUser(username)
+      await useSessionStore.getState().init()
+    } catch (error) {
+      console.log('[auth] 登录失败',error)
+    }
   }
 
   return (

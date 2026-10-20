@@ -57,6 +57,10 @@ export interface Db {
     mode: TurnMode
   }): Promise<void>
   countMessages(sessionId: string): Promise<number>
+  // auth: 当前登录用户
+  getCurrentUser(): Promise<{id: string; username : string} | null>
+  setCurrentUser(id:string): Promise<void>
+  clearCurrentUser():Promise<void>
 }
 
 /** 读取一行并收窄为业务类型（node:sqlite 返回宽泛的 SQLOutputValue 记录） */
@@ -148,6 +152,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
             created_at INTEGER NOT NULL
           );
           CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
+
+          CREATE TABLE IF NOT EXISTS app_state (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+          );
         `)
         conn = sqlite
       } catch (error) {
@@ -223,6 +232,29 @@ export function createDb(cfg: BrainConfig['db']): Db {
       return row ? { id: row.id, username: row.username } : null
     },
 
+    async getCurrentUser() {
+      const row = first<{ id: string; username: string }>(
+        getConn(),
+        `SELECT u.id, u.username
+           FROM app_state a
+           JOIN users u ON u.id = a.value
+          WHERE a.key = 'current_user_id'`
+      )
+      return row ? { id: row.id, username: row.username } : null
+    },
+
+    async setCurrentUser(id) {
+      run(
+        getConn(),
+        `INSERT INTO app_state (key, value) VALUES ('current_user_id', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        [id]
+      )
+    },
+  
+    async clearCurrentUser() {
+      run(getConn(), `DELETE FROM app_state WHERE key = 'current_user_id'`)
+    },
     async getUserConfig(userId) {
       const row = first<{ config: string }>(
         getConn(),

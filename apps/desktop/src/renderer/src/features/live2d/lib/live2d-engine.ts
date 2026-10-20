@@ -642,6 +642,54 @@ export class Live2DEngine {
   }
 
   /**
+   * 角色当前可见包围盒（容器坐标，CSS 像素）：陪伴舞台的落地影跟随角色用。
+   * 取可见网格顶点的包围盒，不用 PIXI 的 getBounds（那是整张画布，
+   * 含透明留白，画布底边往往在舞台外）。
+   */
+  getModelBounds(): { x: number; y: number; width: number; height: number } | null {
+    const model = this.model
+    if (!model) return null
+    const internal = model.internalModel as unknown as {
+      coreModel: MeshCore
+      pixelsPerUnit: number
+      originalWidth: number
+      originalHeight: number
+    }
+    const core = internal.coreModel
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    const count = core.getDrawableCount()
+    for (let i = 0; i < count; i++) {
+      if (!core.getDrawableDynamicFlagIsVisible(i) || core.getDrawableOpacity(i) < HIT_MIN_OPACITY) continue
+      const vertices = core.getDrawableVertices(i)
+      // 网格单位（y 向上）→ 模型画布坐标（y 向下，与 hitTest 的逆变换一致）
+      for (let j = 0; j + 1 < vertices.length; j += 2) {
+        const x = vertices[j]! * internal.pixelsPerUnit + internal.originalWidth / 2
+        const y = -vertices[j + 1]! * internal.pixelsPerUnit + internal.originalHeight / 2
+        if (x < minX) minX = x
+        if (x > maxX) maxX = x
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+      }
+    }
+    if (!(maxX > minX) || !(maxY > minY)) return null
+    // 仿射变换下极值落在四角：只变换四个角，避免逐顶点转世界坐标
+    const corners = [
+      model.toGlobal(new PIXI.Point(minX, minY)),
+      model.toGlobal(new PIXI.Point(maxX, minY)),
+      model.toGlobal(new PIXI.Point(minX, maxY)),
+      model.toGlobal(new PIXI.Point(maxX, maxY))
+    ]
+    const xs = corners.map((p) => p.x)
+    const ys = corners.map((p) => p.y)
+    const x = Math.min(...xs)
+    const y = Math.min(...ys)
+    return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y }
+  }
+
+  /**
    * 命中检测：容器坐标（CSS 像素）是否落在角色当前可见的网格上。
    * 逐三角形判断（模型没有 HitArea，用包围盒会把发丝间、身侧的空白也算进来）；
    * 用上一帧的世界变换，歪头/缩放/手势位移都已计入。

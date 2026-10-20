@@ -98,6 +98,7 @@
 
 - Cubism 3 模型，沿用红莉栖 Kurisu 模型资产（属资源非代码，可整体迁移）。资产位置：`amadeus-system-new/public/live2dmodels/`。
 - **形象可切换**（配置面板「形象」页）：默认红莉栖；另收录 Live2D 官方示例模型 Mao Pro / Shizuku（移植自 Open-LLM-VTuber 的 `live2d-models/`），用于调试模型加载、口型与动作。模型切换会重建 Live2D 舞台；摆位（缩放/位移）按模型分别保存。非红莉栖模型没有专属情绪脸与漫画符号，程序层通过参数映射驱动眨眼/口型/姿态。
+- **舞台摆位**：陪伴舞台里按住角色拖动换位置、滚轮以脚底为锚点缩放；位置与缩放按模型分别记在 `live2d_config`，下次进入恢复。拖动/缩放时模型画布每个方向至少三成留在舞台内（拖不出视野），窗口尺寸变小后越界的摆位自动夹回可见范围。
 - Cubism Core 随模型升级到 5.0（`public/live2d/live2dcubismcore.min.js`），以支持 Mao Pro 的 moc3 v5；旧版 moc3（含红莉栖 v4）保持兼容。
 - LLM 情绪分类 → 表情枚举 ↔ `.exp3.json` 一一映射，驱动表情与 motion 动作。
 - 音频驱动口型同步（TTS 音频幅度 → 口型参数）。
@@ -118,8 +119,9 @@
 ### 5.7 SQLite 存储
 
 - 单文件数据库，默认 `services/brain/data/amadeus.db`（`DB_PATH` 可覆盖）；brain 启动时自动建库建表，无需安装数据库服务。
-- 表：`sessions`（id / user / channel / title / 时间）、`messages`（role / content / `tts_text`（语音回合日文，可空）/ 时间）、`users`（渠道用户绑定，飞书）、`user_configs`（用户级配置，JSON 文本）。
+- 表：`sessions`（id / user / channel / title / 时间）、`messages`（role / content / `tts_text`（语音回合日文，可空）/ 时间）、`users`（渠道用户绑定，飞书）、`user_configs`（用户级配置，JSON 文本）、`app_state`（键值状态，当前登录用户）。
 - **配置单一来源**：以服务端 SQLite 为准（修正原版 localStorage / 数据库 / 进程内 dict 三处重复存储的问题）。
+- **登录态单一来源**：桌面端当前登录用户记在 `app_state.current_user_id`；启动时经 `/api/users/current` 恢复，不再写 localStorage。
 - v1 无向量检索（Milvus / etcd / MinIO 全部不需要）。
 
 ### 5.8 声音（Audio Fish）

@@ -3,14 +3,14 @@ import type { Message, Session, StreamState, ToolActivityItem, ToolStatus } from
 import {
   confirmTool,
   deleteSessionApi,
+  fetchCurrentUser,
   fetchMessages,
   fetchSessions,
-  getLocalUsername,
-  resolveUserId,
   startChatTurn
 } from '@renderer/lib/api'
 import { useLive2dStore } from './live2dStore'
 import { useLive2dSpeechStore } from './live2dSpeechStore'
+import { useUiStore } from './uiStore'
 
 /**
  * 回合工作过程日志：一个回合的工具活动快照 + 耗时（Codex 风格折叠卡的数据源）。
@@ -99,15 +99,27 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     stoppedLogs: {},
 
     init: async () => {
-      try {
-        const username = getLocalUsername()
-        // resolveUserId 内部会校验缓存的 userId；数据库重置后自动重新建档
-        const userId = await resolveUserId(username)
-        const sessions = await fetchSessions(userId)
-        set({ userId, sessions, initialized: true })
-      } catch (error) {
-        console.error('[session] 初始化失败：', error)
-        set({ initialized: true })
+      try{
+        const current = await fetchCurrentUser()
+
+        if(!current){
+          //没登陆就不建立号，等登陆框提交后再init
+          useUiStore.getState().setUsername(null)
+          useUiStore.getState().openLogin()
+          set({userId:null,sessions:[],initialized: true})
+          return 
+        }
+
+        //已登录
+        useUiStore.getState().setUsername(current.username)
+        useUiStore.getState().closeLogin()
+        set({userId:current.userId})
+
+        const sessions = await fetchSessions(current.userId)
+        set({sessions,initialized: true})
+      }catch(error){
+        console.error('[session] 初始化失败:', error)
+        set({initialized:true})
       }
     },
 

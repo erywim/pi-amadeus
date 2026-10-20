@@ -14,14 +14,6 @@ export function userRoutes(db: Db): Hono {
     return c.json({ userId: id })
   })
 
-  // 身份校验：桌面端启动时用它确认 localStorage 里缓存的 userId 仍然存在
-  // （数据库被重置后旧 id 会 404，客户端据此重新建档）
-  app.get('/users/:id', async (c) => {
-    const user = await db.getUser(c.req.param('id'))
-    if (!user) return c.json({ error: 'user not found' }, 404)
-    return c.json({ id: user.id, username: user.username })
-  })
-
   // 飞书绑定码：AMADEUS-XXXX，飞书侧发该码完成身份绑定
   app.get('/users/:id/bind-code', async (c) => {
     const user = await db.getUser(c.req.param('id'))
@@ -32,6 +24,32 @@ export function userRoutes(db: Db): Hono {
       await db.setBindCode(user.id, code)
     }
     return c.json({ bindCode: code })
+  })
+
+  
+
+  /*
+  c.req.param('id')    // 请求：路径参数
+  c.req.json()         // 请求：解析 body
+  c.json(value)        // 响应：返回 JSON
+  c.text('hi')         // 响应：返回纯文本
+  c.status(404)        // 响应：设置状态码
+*/
+  app.get('/users/current',async (c) =>{
+    const user = await db.getCurrentUser()
+    return c.json({user})
+  })
+
+  app.post('/users/login',async (c) =>{
+    const body = (await c.req.json().catch(()=> null)) as {username?: unknown} | null
+    const username = typeof body?.username === 'string' ? body.username:''
+    if(!username)
+      return c.json({error:'username 必填'},400)
+
+    const {id} = await db.resolveUser(username)
+    await db.setCurrentUser(id)
+
+    return c.json({userId:id , username}) //当变量名和你想要的字段名相同时，可以只写变量名。
   })
 
   return app
