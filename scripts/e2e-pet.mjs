@@ -13,6 +13,7 @@
  *     pet_config 损坏回落默认位置且现场另存（测完按原始字节还原 pet_config）
  *
  * 前置：桌面端 dev 已启动（CDP 端口默认 9222，可用 CDP_HTTP 覆盖）。
+ * 表情断言基于红莉栖的六张情绪脸：开始前切回 kurisu，结束后还原用户原来的模型选择。
  * 用法：node scripts/e2e-pet.mjs
  * 主进程窗口状态经 dev 专用的 window.api.debug.state() 读取；光标用 debug.petCursor
  * 覆盖坐标驱动，不移动用户的真实鼠标。
@@ -142,11 +143,26 @@ async function exitPet(fromCdp, main) {
 }
 
 let main = null
+/** 用户原来的模型选择：本脚本的情绪脸/命中断言基于红莉栖，测完要还原 */
+let originalModelId = null
 try {
   const mainTarget = (await pages()).find((p) => !isPetUrl(p.url))
   if (!mainTarget) throw new Error(`${CDP_HTTP} 上没有主窗口页面（桌面端 dev 未启动？）`)
   main = await connect(mainTarget.webSocketDebuggerUrl)
   await waitFor(main, `typeof window.api?.debug?.state === 'function'`, 10000, 'dev 调试接口')
+
+  // 六张情绪脸的断言只对红莉栖成立：先切回 kurisu（之后进陪伴页会按这个选择加载）
+  originalModelId = await evalJs(main, `window.__amadeus.live2dStore.getState().modelId`)
+  if (originalModelId !== 'kurisu') {
+    await evalJs(main, `window.__amadeus.live2dStore.getState().setModelId('kurisu'); true`)
+    // 已在陪伴页时等于就地重建舞台：等新引擎就绪，避免拿旧引擎/加载态进入桌宠
+    await waitFor(
+      main,
+      `window.__live2d?.getModelProfileId?.() === 'kurisu' || location.pathname !== '/companion'`,
+      45000,
+      '切回红莉栖'
+    )
+  }
 
   // 干净起点：窗口模式 + 陪伴页
   if ((await evalJs(main, 'window.api.getMode()')) !== 'window') {
@@ -352,7 +368,10 @@ try {
     const p1 = await placement()
     report('拖动后角色跟随指针', Math.round(p1.x - p0.x) === -150 && Math.round(p1.y - p0.y) === -50, `dx=${Math.round(p1.x - p0.x)} dy=${Math.round(p1.y - p0.y)}`)
     report('松手后光标在空白处 → 恢复穿透', !!(await waitFor(main, `window.api.debug.state().then((s) => !s.petCapturing)`, 3000, '松手穿透').catch(() => false)))
-    const stored = await evalJs(pet, `JSON.parse(localStorage.getItem('pet_config') ?? 'null')?.state?.placement ?? null`)
+    const stored = await evalJs(
+      pet,
+      `(() => { const m = window.__amadeus.live2dStore.getState().modelId; return JSON.parse(localStorage.getItem('pet_config') ?? 'null')?.state?.placements?.[m] ?? null })()`
+    )
     report('松手后记住位置（相对窗口的比例）', !!stored && Math.abs(stored.fx * o.width - p1.x) < 1 && Math.abs(stored.fy * o.height - p1.y) < 1, JSON.stringify(stored))
 
     f = await facePoint()
@@ -418,7 +437,10 @@ try {
     const footAfter = pAfter.y + (model.height * pAfter.scale) / 2
     report('滚轮在角色上 → 放大', pAfter.scale > pBefore.scale * 1.1, `${pBefore.scale.toFixed(3)} → ${pAfter.scale.toFixed(3)}`)
     report('缩放以脚底为锚点', Math.abs(footAfter - footBefore) < 1, `${footBefore.toFixed(1)} → ${footAfter.toFixed(1)}`)
-    const storedScale = await evalJs(pet, `JSON.parse(localStorage.getItem('pet_config') ?? 'null')?.state?.placement?.scale ?? null`)
+    const storedScale = await evalJs(
+      pet,
+      `(() => { const m = window.__amadeus.live2dStore.getState().modelId; return JSON.parse(localStorage.getItem('pet_config') ?? 'null')?.state?.placements?.[m]?.scale ?? null })()`
+    )
     report(
       '尺寸写进 pet_config（与位置一起记忆）',
       typeof storedScale === 'number' && Math.abs(storedScale - pAfter.scale) < 1e-6,
@@ -635,9 +657,15 @@ try {
 } catch (error) {
   report('执行', false, error instanceof Error ? error.message : String(error))
 } finally {
-  // 不留尾巴：无论成败都回到窗口模式
+  // 不留尾巴：无论成败都回到窗口模式，并把模型选择还原成用户原来的
   if (main) {
     await evalJs(main, `window.__amadeus?.uiStore.getState().setMicActive(false); window.api.setMode('window'); true`).catch(() => undefined)
+    if (originalModelId && originalModelId !== 'kurisu') {
+      await evalJs(
+        main,
+        `window.__amadeus.live2dStore.getState().setModelId(${JSON.stringify(originalModelId)}); true`
+      ).catch(() => undefined)
+    }
     main.close()
   }
 }

@@ -4,6 +4,7 @@ import { cn } from '@renderer/lib/utils'
 import { Live2DStage } from '@renderer/features/live2d/Live2DStage'
 import type { Live2DEngine, Placement } from '@renderer/features/live2d/lib/live2d-engine'
 import { poke } from '@renderer/features/live2d/poke'
+import { useLive2dStore } from '@renderer/stores/live2dStore'
 import { usePetStore } from '@renderer/stores/petStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import {
@@ -35,6 +36,7 @@ export default function PetApp(): React.JSX.Element {
   const [engine, setEngine] = useState<Live2DEngine | null>(null)
   const [dialogReopen, setDialogReopen] = useState(0)
   const { hold, forced } = usePetPassthrough(engine)
+  const modelId = useLive2dStore((s) => s.modelId)
   const saveStoredPlacement = usePetStore((s) => s.setPlacement)
 
   // 桌宠窗口是独立的渲染层，语音回合接着最新会话继续（与陪伴页的默认选中一致），
@@ -60,7 +62,7 @@ export default function PetApp(): React.JSX.Element {
       poke(engine)
       setDialogReopen((n) => n + 1)
     },
-    onDragEnd: (p) => saveStoredPlacement(toStored(p, viewSize()))
+    onDragEnd: (p) => saveStoredPlacement(modelId, toStored(p, viewSize()))
   })
 
   useEffect(() => {
@@ -84,14 +86,14 @@ export default function PetApp(): React.JSX.Element {
     // 缩放中 → 新尺寸：以脚底为锚点，再按窗口边界收回
     const next = clamp(scaleAroundFeet(placement, size, nextScale))
     engine.setPlacement(next)
-    saveStoredPlacement(toStored(next, view))
+    saveStoredPlacement(modelId, toStored(next, view))
   }
 
   function handleReady(ready: Live2DEngine): void {
     const size = ready.getModelSize()
     if (size) {
       const view = viewSize()
-      const stored = usePetStore.getState().placement
+      const stored = usePetStore.getState().placements[modelId] ?? null
       const restored = stored ? fromStored(stored, view) : null
       ready.setPlacement(clampPlacement(restored ?? defaultPlacement(view, size), view, size))
     }
