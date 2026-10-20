@@ -6,12 +6,23 @@ import type { Live2DEngine, Placement } from '@renderer/features/live2d/lib/live
 import { poke } from '@renderer/features/live2d/poke'
 import { usePetStore } from '@renderer/stores/petStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
-import { clampPlacement, defaultPlacement, fromStored, toStored, type Size } from './placement'
+import {
+  clampPlacement,
+  defaultPlacement,
+  fromStored,
+  HEIGHT_MAX_RATIO,
+  HEIGHT_MIN_RATIO,
+  scaleAroundFeet,
+  toStored,
+  type Size
+} from './placement'
 import { PetDialog } from './PetDialog'
 import { usePetDrag } from './usePetDrag'
 import { usePetPassthrough } from './usePetPassthrough'
 
 const viewSize = (): Size => ({ width: window.innerWidth, height: window.innerHeight })
+/** 滚轮缩放的灵敏度（deltaY 每 100 约 16%） */
+const WHEEL_SCALE_SPEED = 0.0015
 
 /**
  * 桌宠窗口根组件（?window=pet）：铺满显示器工作区的透明窗口，只画角色。
@@ -56,6 +67,25 @@ export default function PetApp(): React.JSX.Element {
     document.body.classList.add('theme-amadeus')
   }, [])
 
+  /**
+   * 滚轮在角色身上：按滚轮方向缩放，脚底位置不变；改完立刻存进 pet_config，
+   * 下次进入桌宠与位置一起恢复。对话框上滚动不缩放。
+   */
+  function handleWheel(e: React.WheelEvent<HTMLDivElement>): void {
+    const size = engine?.getModelSize()
+    const placement = engine?.getPlacement()
+    if (!engine || !size || !placement) return
+    if (!engine.hitTest(e.clientX, e.clientY)) return
+    const view = viewSize()
+    const minScale = (view.height * HEIGHT_MIN_RATIO) / size.height
+    const maxScale = (view.height * HEIGHT_MAX_RATIO) / size.height
+    const nextScale = Math.min(Math.max(placement.scale * Math.exp(-e.deltaY * WHEEL_SCALE_SPEED), minScale), maxScale)
+    // 缩放中 → 新尺寸：以脚底为锚点，再按窗口边界收回
+    const next = clamp(scaleAroundFeet(placement, size, nextScale))
+    engine.setPlacement(next)
+    saveStoredPlacement(toStored(next, view))
+  }
+
   function handleReady(ready: Live2DEngine): void {
     const size = ready.getModelSize()
     if (size) {
@@ -76,6 +106,7 @@ export default function PetApp(): React.JSX.Element {
         e.preventDefault()
         window.api.pet.openMenu()
       }}
+      onWheel={handleWheel}
       {...handlers}
     >
       <Live2DStage placement="free" onReady={handleReady} onError={() => window.api.setMode('window')} />

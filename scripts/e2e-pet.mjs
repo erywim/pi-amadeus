@@ -362,12 +362,39 @@ try {
     const h = size.height * pc.scale
     report('拖出边界被限制', pc.x <= o.width - w * 0.3 + w / 2 + 0.5 && pc.y <= o.height - h * 0.3 + h / 2 + 0.5, `x=${Math.round(pc.x)} y=${Math.round(pc.y)}`)
 
+    // 滚轮在角色身上缩放：脚底不动，尺寸与位置一起写进 pet_config
+    // 先把角色放回窗口中央——上一节把它拖到了边界外，脸可能不在窗口内，滚轮就点不到她
+    await evalJs(
+      pet,
+      `(() => { const p = window.__live2d.getPlacement(); window.__live2d.setPlacement({ x: innerWidth / 2, y: innerHeight / 2, scale: p.scale }); return true })()`
+    )
+    const wf = await facePoint()
+    const model = await evalJs(pet, `window.__live2d.getModelSize()`)
+    const pBefore = await placement()
+    const footBefore = pBefore.y + (model.height * pBefore.scale) / 2
+    await pet.call('Input.dispatchMouseEvent', { type: 'mouseWheel', x: wf.x, y: wf.y, deltaX: 0, deltaY: -240 })
+    await sleep(250)
+    const pAfter = await placement()
+    const footAfter = pAfter.y + (model.height * pAfter.scale) / 2
+    report('滚轮在角色上 → 放大', pAfter.scale > pBefore.scale * 1.1, `${pBefore.scale.toFixed(3)} → ${pAfter.scale.toFixed(3)}`)
+    report('缩放以脚底为锚点', Math.abs(footAfter - footBefore) < 1, `${footBefore.toFixed(1)} → ${footAfter.toFixed(1)}`)
+    const storedScale = await evalJs(pet, `JSON.parse(localStorage.getItem('pet_config') ?? 'null')?.state?.placement?.scale ?? null`)
+    report(
+      '尺寸写进 pet_config（与位置一起记忆）',
+      typeof storedScale === 'number' && Math.abs(storedScale - pAfter.scale) < 1e-6,
+      String(storedScale)
+    )
+
     await evalJs(main, `window.api.debug.petCursor(null)`)
     await exitPet(pet, main)
     pet.close()
     pet = await enterPet(main)
     const pr = await placement()
-    report('重进桌宠恢复上次位置', Math.abs(pr.x - pc.x) < 1 && Math.abs(pr.y - pc.y) < 1, `(${Math.round(pr.x)}, ${Math.round(pr.y)})`)
+    report(
+      '重进桌宠恢复上次位置与大小',
+      Math.abs(pr.x - pAfter.x) < 1 && Math.abs(pr.y - pAfter.y) < 1 && Math.abs(pr.scale - pAfter.scale) < 1e-6,
+      `(${Math.round(pr.x)}, ${Math.round(pr.y)}) scale=${pr.scale.toFixed(3)}`
+    )
     await exitPet(pet, main)
     pet.close()
 
