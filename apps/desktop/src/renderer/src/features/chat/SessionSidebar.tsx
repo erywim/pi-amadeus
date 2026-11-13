@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Plus, Search, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import { DAY_GROUP_ORDER, dayGroupOf, type Session } from '@pi-amadeus/shared'
@@ -40,6 +41,7 @@ function SessionItem({
   return (
     <div
       onClick={onSelect}
+      data-session-id={session.id}
       className={cn(
         'group w-full cursor-pointer rounded-[10px] px-3 py-2.5 text-ink-2 transition-colors',
         active ? 'bg-surface shadow-[inset_0_0_0_1px_var(--border)]' : 'hover:bg-surface-soft'
@@ -99,10 +101,31 @@ export function SessionSidebar(): React.JSX.Element {
   const streamSessionId = useSessionStore((s) => s.stream.sessionId)
   const username = useUiStore((s) => s.username)
   const worldLine = useDivergenceStore((s) => s.value)
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // Cmd/Ctrl+K 聚焦会话搜索（常见助手的全局搜索习惯键位）
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent): void {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchRef.current?.focus()
+        searchRef.current?.select()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  // 会话搜索只按标题过滤（消息正文未全部加载，逐条拉取会把搜索变成 N 次请求）
+  const normalizedQuery = query.trim().toLowerCase()
+  const visibleSessions = normalizedQuery
+    ? sessions.filter((s) => (s.title || '').toLowerCase().includes(normalizedQuery))
+    : sessions
 
   const groups = DAY_GROUP_ORDER.map((group) => ({
     group,
-    sessions: sessions
+    sessions: visibleSessions
       .filter((s) => dayGroupOf(s.updatedAt) === group)
       .sort((a, b) => b.updatedAt - a.updatedAt)
   })).filter((g) => g.sessions.length > 0)
@@ -113,7 +136,7 @@ export function SessionSidebar(): React.JSX.Element {
   }
 
   return (
-    <aside className="grid w-[268px] shrink-0 grid-rows-[auto_auto_minmax(0,1fr)_auto] border-r border-border bg-background">
+    <aside className="grid w-[268px] shrink-0 grid-rows-[auto_auto_auto_minmax(0,1fr)_auto] border-r border-border bg-background">
       <div className="px-4 pb-2 pt-4">
         <button
           type="button"
@@ -123,6 +146,34 @@ export function SessionSidebar(): React.JSX.Element {
           <Plus className="size-4 text-muted-foreground" strokeWidth={2} />
           {t('codex.newTask')}
         </button>
+      </div>
+      <div className="px-4 pb-1 pt-1">
+        <div className="flex items-center gap-1.5 rounded-[10px] border border-border bg-surface px-2.5 py-1.5 transition-colors focus-within:border-primary">
+          <Search className="size-3.5 shrink-0 text-muted-foreground" />
+          <input
+            ref={searchRef}
+            data-testid="session-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setQuery('')
+            }}
+            placeholder={t('chat.searchSessions')}
+            aria-label={t('chat.searchSessions')}
+            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery('')}
+              aria-label={t('chat.clearSearch')}
+              title={t('chat.clearSearch')}
+              className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="px-4 pb-1 pt-3 text-[12.5px] tracking-[0.04em] text-muted-foreground">
         {t('codex.sessionsLabel')}
@@ -150,6 +201,11 @@ export function SessionSidebar(): React.JSX.Element {
         {sessions.length === 0 && (
           <p className="px-3 py-8 text-center text-xs leading-relaxed text-muted-foreground">
             {t('chat.empty')}
+          </p>
+        )}
+        {sessions.length > 0 && visibleSessions.length === 0 && (
+          <p className="px-3 py-8 text-center text-xs leading-relaxed text-muted-foreground">
+            {t('chat.searchEmpty')}
           </p>
         )}
       </div>

@@ -1,7 +1,60 @@
 import * as React from 'react'
+import { Check, Copy } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
+import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
+import { copyText } from '@renderer/lib/clipboard'
+
+/** 代码块：语言标签 + 一键复制（复制内容取自原始文本，不含 DOM 装饰） */
+function CodeBlock({
+  lang,
+  code,
+  children
+}: {
+  lang: string
+  code: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  const { t } = useTranslation()
+  const [copied, setCopied] = React.useState(false)
+
+  async function handleCopy(): Promise<void> {
+    try {
+      await copyText(code)
+      setCopied(true)
+      toast.success(t('chat.copied'))
+      // 复制反馈 1.5s 后复位，避免按钮一直停在「已复制」
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error(t('chat.copyFailed'))
+    }
+  }
+
+  return (
+    // 代码块固定深色：浅色主题下半透明黑会叠成中灰，终端绿几乎不可读
+    <div className="my-3 overflow-hidden rounded-md border border-border bg-[#0b0f14]">
+      <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-3 py-1.5">
+        <span className="font-mono text-[11px] uppercase tracking-wider text-white/50">{lang}</span>
+        <button
+          type="button"
+          data-testid="copy-code"
+          onClick={() => void handleCopy()}
+          title={copied ? t('chat.copied') : t('chat.copyCode')}
+          aria-label={t('chat.copyCode')}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] text-white/60 transition-colors hover:bg-white/10 hover:text-white/90"
+        >
+          {copied ? <Check className="size-3 text-mint" /> : <Copy className="size-3" />}
+          <span>{copied ? t('chat.copied') : t('chat.copyCode')}</span>
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-3">
+        <code className="font-mono text-[13px] leading-relaxed text-terminal-green">{children}</code>
+      </pre>
+    </div>
+  )
+}
 
 /**
  * 聊天 markdown 渲染管线：GFM + sanitize（LLM 输出不可信，必须消毒），
@@ -59,14 +112,9 @@ const components: Components = {
     }
     const lang = (className ?? '').replace('language-', '') || 'code'
     return (
-      <div className="my-3 overflow-hidden rounded-md border border-border bg-black/40">
-        <div className="border-b border-border bg-muted/40 px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-          {lang}
-        </div>
-        <pre className="overflow-x-auto p-3">
-          <code className="font-mono text-[13px] leading-relaxed text-terminal-green">{children}</code>
-        </pre>
-      </div>
+      <CodeBlock lang={lang} code={String(children)}>
+        {children}
+      </CodeBlock>
     )
   },
   // pre 透传：块级代码的结构由上面的 code 组件接管

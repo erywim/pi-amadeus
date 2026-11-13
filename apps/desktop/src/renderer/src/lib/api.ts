@@ -72,6 +72,16 @@ export async function deleteSessionApi(sessionId: string): Promise<void> {
   if (!res.ok) throw new Error(`会话删除失败: HTTP ${res.status}`)
 }
 
+export async function renameSessionApi(sessionId: string, title: string, userId: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    // 带上 userId：未落库的空会话由服务端按当前身份补建（首条消息才懒创建）
+    body: JSON.stringify({ title, userId })
+  })
+  if (!res.ok) throw new Error(`会话重命名失败: HTTP ${res.status}`)
+}
+
 // ---------- 用户配置（服务端 SQLite 单一来源） ----------
 
 export type ApiKeyStatus = 'default' | 'custom' | 'none'
@@ -117,7 +127,7 @@ interface TurnBody {
  * 按 error 事件通知（否则 streaming/pendingUser 等状态卡死）。
  */
 function runTurn(
-  endpoint: '/api/chat' | '/api/voice',
+  endpoint: '/api/chat' | '/api/chat/regenerate' | '/api/voice',
   body: TurnBody,
   onEvent: (event: SseEvent) => void
 ): AbortController {
@@ -182,6 +192,17 @@ export function startChatTurn(
   onEvent: (event: SseEvent) => void
 ): AbortController {
   return runTurn('/api/chat', body, onEvent)
+}
+
+/**
+ * 重新生成最后一条回复：服务端定位会话末尾的用户消息并替换旧助手回复。
+ * 不携带 content——重新生成的是已有的那条提问，不是新问题。
+ */
+export function startRegenerate(
+  body: { userId: string; sessionId: string },
+  onEvent: (event: SseEvent) => void
+): AbortController {
+  return runTurn('/api/chat/regenerate', body, onEvent)
 }
 
 /** 语音回合（双语言 + TTS 音频） */

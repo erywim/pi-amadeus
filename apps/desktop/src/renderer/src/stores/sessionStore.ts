@@ -1,12 +1,14 @@
 import { create } from 'zustand'
-import type { Message, Session, StreamState, ToolActivityItem, ToolStatus } from '@pi-amadeus/shared'
+import type { Message, Session, SseEvent, StreamState, ToolActivityItem, ToolStatus } from '@pi-amadeus/shared'
 import {
   confirmTool,
   deleteSessionApi,
   fetchCurrentUser,
   fetchMessages,
   fetchSessions,
-  startChatTurn
+  renameSessionApi,
+  startChatTurn,
+  startRegenerate
 } from '@renderer/lib/api'
 import { useLive2dStore } from './live2dStore'
 import { useLive2dSpeechStore } from './live2dSpeechStore'
@@ -49,6 +51,12 @@ interface SessionState {
   workLogs: Record<string, TurnWorkLog>
   /** sessionId → 上一次手动停止的回合快照（展示在消息列尾部） */
   stoppedLogs: Record<string, TurnWorkLog>
+  /**
+   * sessionId → 最近一次回合失败的错误信息。
+   * 失败要留在消息列里让用户看见（含重试入口），不能只打 console；
+   * 下一次发起回合或手动关闭时清掉。
+   */
+  turnErrors: Record<string, string>
 
   init: () => Promise<void>
   refreshSessions: () => Promise<void>
@@ -59,9 +67,14 @@ interface SessionState {
   ensureActiveSession: () => string
   deleteSession: (id: string) => void
   sendMessage: (text: string) => void
+  /** 重新生成最后一条回复（会话末尾是用户消息时等于重试失败的回合） */
+  regenerate: () => void
   stopStreaming: () => void
   /** bash 确认卡应答（允许/拒绝） */
   respondToolConfirm: (approved: boolean) => void
+  /** 手动重命名（乐观更新；失败回滚并抛出，由调用方提示） */
+  renameSession: (id: string, title: string) => Promise<void>
+  dismissTurnError: (sessionId: string) => void
 }
 
 export const useSessionStore = create<SessionState>()((set, get) => {
@@ -88,6 +101,145 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     set({ stream: { streaming: false, tools: [] } })
   }
 
+  /**
+   * 回合 SSE 事件 → store 状态。普通发送与重新生成共用同一套消费逻辑：
+   * replaceLast=true（重新生成）时，done 用新回复替换消息列末尾的旧助手消息；
+   * false（普通回合）时追加。错误一律落到 turnErrors，由消息列的错误卡展示。
+   */
+  function handleTurnEvent(sessionId: string, event: SseEvent, replaceLast: boolean): void {
+    const draft = get().stream.draft
+    switch (event.type) {
+      case 'delta':
+        if (!draft) return
+        // 说话打点：驱动引擎 speaking 状态（手势/点头），时间戳单调合并
+        useLive2dSpeechStore.getState().markSpeaking()
+        set((s) => ({
+          stream: {
+            ...s.stream,
+            streaming: true,
+            draft: { ...draft, content: draft.content + event.delta }
+          }
+        }))
+        return
+      case 'tool_start':
+        set((s) => ({
+          stream: {
+            ...s.stream,
+            turnId: event.turnId,
+            tools: [
+              ...s.stream.tools.filter((t) => t.toolCallId !== event.toolCallId),
+              {
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                args: event.args,
+                status: 'running'
+              }
+            ]
+          }
+        }))
+        return
+      case 'tool_update':
+        set((s) => ({
+          stream: {
+            ...s.stream,
+            tools: s.stream.tools.map((t) =>
+              t.toolCallId === event.toolCallId ? { ...t, summary: event.partial } : t
+            )
+          }
+        }))
+        return
+      case 'tool_end': {
+        const denied = (event.details as { deniedReason?: string } | undefined)?.deniedReason
+        let status: ToolStatus = event.isError ? 'error' : 'success'
+        if (denied === 'blocked') status = 'blocked'
+        else if (denied === 'user_denied') status = 'denied'
+        else if (denied === 'timeout') status = 'timeout'
+        set((s) => ({
+          stream: {
+            ...s.stream,
+            tools: s.stream.tools.map((t) =>
+              t.toolCallId === event.toolCallId
+                ? { ...t, status, summary: event.result || undefined, details: event.details }
+                : t
+            )
+          }
+        }))
+        return
+      }
+      case 'tool_confirm':
+        set((s) => ({
+          stream: {
+            ...s.stream,
+            turnId: event.turnId,
+            pendingConfirm: {
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              args: event.args,
+              expiresAt: event.expiresAt
+            }
+          }
+        }))
+        return
+      case 'emotion':
+        useLive2dStore.getState().setEmotion(event.emotion)
+        return
+      case 'gesture':
+        useLive2dStore.getState().playGesture(event.gesture)
+        return
+      case 'done': {
+        const finalDraft = get().stream.draft
+        if (!finalDraft) return
+        const assistantMessage: Message = {
+          id: event.messageId,
+          sessionId,
+          role: 'assistant',
+          content: finalDraft.content,
+          ttsText: null,
+          mode: 'text',
+          createdAt: Date.now()
+        }
+        set((s) => {
+          const prev = s.messages[sessionId] ?? []
+          // 重新生成：服务端已替换旧回复，本地同步摘掉末尾那条旧助手消息，
+          // 否则界面会留下「旧回答 + 新回答」两条
+          const base = replaceLast && prev.at(-1)?.role === 'assistant' ? prev.slice(0, -1) : prev
+          return {
+            messages: {
+              ...s.messages,
+              [sessionId]: [...base, assistantMessage]
+            },
+            stream: { streaming: false, tools: [] },
+            // 回合正常结束：工具活动快照归档到该条 assistant 消息（工作卡可展开回看）
+            workLogs: s.stream.tools.length
+              ? {
+                  ...s.workLogs,
+                  [event.messageId]: {
+                    tools: s.stream.tools,
+                    durationMs: turnStartedAt > 0 ? Date.now() - turnStartedAt : 0,
+                    stopped: false
+                  }
+                }
+              : s.workLogs
+          }
+        })
+        turnStartedAt = 0
+        abortTurn = null
+        // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
+        void get().refreshSessions()
+        return
+      }
+      case 'error':
+        console.warn('[session] 回合出错：', event.message)
+        // 失败先落错误信息再清流：错误卡挂在产生它的会话上，切走再回来仍在
+        set((s) => ({ turnErrors: { ...s.turnErrors, [sessionId]: event.message } }))
+        endStream()
+        return
+      case 'audio':
+      case 'transcript':
+        return
+    }
+  }
+
   return {
     sessions: [],
     messages: {},
@@ -97,6 +249,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     initialized: false,
     workLogs: {},
     stoppedLogs: {},
+    turnErrors: {},
 
     init: async () => {
       try{
@@ -107,7 +260,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           useUiStore.getState().setUsername(null)
           useUiStore.getState().openLogin()
           set({userId:null,sessions:[],initialized: true})
-          return 
+          return
         }
 
         //已登录
@@ -192,6 +345,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         delete messages[id]
         const stoppedLogs = { ...s.stoppedLogs }
         delete stoppedLogs[id]
+        const turnErrors = { ...s.turnErrors }
+        delete turnErrors[id]
         const workLogs = { ...s.workLogs }
         for (const messageId of removedMessageIds) {
           delete workLogs[messageId]
@@ -201,6 +356,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           messages,
           stoppedLogs,
           workLogs,
+          turnErrors,
           activeSessionId: s.activeSessionId === id ? null : s.activeSessionId
         }
       })
@@ -227,9 +383,11 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       turnStartedAt = Date.now()
 
       set((s) => {
-        // 新回合开始：清掉上一回合的停止快照
+        // 新回合开始：清掉上一回合的停止快照与错误卡
         const stoppedLogs = { ...s.stoppedLogs }
         delete stoppedLogs[sessionId]
+        const turnErrors = { ...s.turnErrors }
+        delete turnErrors[sessionId]
         return {
           messages: {
             ...s.messages,
@@ -237,135 +395,37 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           },
           sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
           stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
-          stoppedLogs
+          stoppedLogs,
+          turnErrors
         }
       })
 
       abortTurn = startChatTurn({ userId, sessionId, content: trimmed }, (event) => {
-        const state = get()
-        const draft = state.stream.draft
-        switch (event.type) {
-          case 'delta':
-            if (!draft) return
-            // 说话打点：驱动引擎 speaking 状态（手势/点头），时间戳单调合并
-            useLive2dSpeechStore.getState().markSpeaking()
-            set((s) => ({
-              stream: {
-                ...s.stream,
-                streaming: true,
-                draft: { ...draft, content: draft.content + event.delta }
-              }
-            }))
-            return
-          case 'tool_start':
-            set((s) => ({
-              stream: {
-                ...s.stream,
-                turnId: event.turnId,
-                tools: [
-                  ...s.stream.tools.filter((t) => t.toolCallId !== event.toolCallId),
-                  {
-                    toolCallId: event.toolCallId,
-                    toolName: event.toolName,
-                    args: event.args,
-                    status: 'running'
-                  }
-                ]
-              }
-            }))
-            return
-          case 'tool_update':
-            set((s) => ({
-              stream: {
-                ...s.stream,
-                tools: s.stream.tools.map((t) =>
-                  t.toolCallId === event.toolCallId ? { ...t, summary: event.partial } : t
-                )
-              }
-            }))
-            return
-          case 'tool_end': {
-            const denied = (event.details as { deniedReason?: string } | undefined)?.deniedReason
-            let status: ToolStatus = event.isError ? 'error' : 'success'
-            if (denied === 'blocked') status = 'blocked'
-            else if (denied === 'user_denied') status = 'denied'
-            else if (denied === 'timeout') status = 'timeout'
-            set((s) => ({
-              stream: {
-                ...s.stream,
-                tools: s.stream.tools.map((t) =>
-                  t.toolCallId === event.toolCallId
-                    ? { ...t, status, summary: event.result || undefined, details: event.details }
-                    : t
-                )
-              }
-            }))
-            return
-          }
-          case 'tool_confirm':
-            set((s) => ({
-              stream: {
-                ...s.stream,
-                turnId: event.turnId,
-                pendingConfirm: {
-                  toolCallId: event.toolCallId,
-                  toolName: event.toolName,
-                  args: event.args,
-                  expiresAt: event.expiresAt
-                }
-              }
-            }))
-            return
-          case 'emotion':
-            useLive2dStore.getState().setEmotion(event.emotion)
-            return
-          case 'gesture':
-            useLive2dStore.getState().playGesture(event.gesture)
-            return
-          case 'done': {
-            const finalDraft = get().stream.draft
-            if (!finalDraft) return
-            const assistantMessage: Message = {
-              id: event.messageId,
-              sessionId,
-              role: 'assistant',
-              content: finalDraft.content,
-              ttsText: null,
-              mode: 'text',
-              createdAt: Date.now()
-            }
-            set((s) => ({
-              messages: {
-                ...s.messages,
-                [sessionId]: [...(s.messages[sessionId] ?? []), assistantMessage]
-              },
-              stream: { streaming: false, tools: [] },
-              // 回合正常结束：工具活动快照归档到该条 assistant 消息（工作卡可展开回看）
-              workLogs: s.stream.tools.length
-                ? {
-                    ...s.workLogs,
-                    [event.messageId]: {
-                      tools: s.stream.tools,
-                      durationMs: turnStartedAt > 0 ? Date.now() - turnStartedAt : 0,
-                      stopped: false
-                    }
-                  }
-                : s.workLogs
-            }))
-            turnStartedAt = 0
-            abortTurn = null
-            // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
-            void get().refreshSessions()
-            return
-          }
-          case 'error':
-            console.warn('[session] 回合出错：', event.message)
-            endStream()
-            return
-          case 'audio':
-          case 'transcript':
-            return
+        handleTurnEvent(sessionId, event, false)
+      })
+    },
+
+    regenerate: () => {
+      const { activeSessionId, stream, userId } = get()
+      if (stream.streaming || !activeSessionId || !userId) return
+
+      const sessionId = activeSessionId
+      const draftId = `local-${Date.now()}-a`
+      turnStartedAt = Date.now()
+
+      // 重新生成不清消息列：新回复流出前旧回复仍在（服务端成功落库后才替换），
+      // 失败时用户不会丢掉上一版答案；错误卡此时让位给新的流式内容
+      set((s) => {
+        const turnErrors = { ...s.turnErrors }
+        delete turnErrors[sessionId]
+        return {
+          stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
+          turnErrors
         }
+      })
+
+      abortTurn = startRegenerate({ userId, sessionId }, (event) => {
+        handleTurnEvent(sessionId, event, true)
       })
     },
 
@@ -388,6 +448,35 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         if (get().stream.streaming && !get().stream.pendingConfirm) {
           set((s) => ({ stream: { ...s.stream, pendingConfirm: confirm } }))
         }
+      })
+    },
+
+    renameSession: async (id, title) => {
+      const trimmed = title.trim()
+      if (!trimmed) return
+      const { userId } = get()
+      if (!userId) return
+      const prevTitle = get().sessions.find((x) => x.id === id)?.title ?? ''
+      if (trimmed === prevTitle) return
+      // 乐观更新：先上屏再落库；失败回滚到原标题，界面不能停留在服务端没接受的名字上
+      set((s) => ({
+        sessions: s.sessions.map((x) => (x.id === id ? { ...x, title: trimmed } : x))
+      }))
+      try {
+        await renameSessionApi(id, trimmed, userId)
+      } catch (error) {
+        set((s) => ({
+          sessions: s.sessions.map((x) => (x.id === id ? { ...x, title: prevTitle } : x))
+        }))
+        throw error
+      }
+    },
+
+    dismissTurnError: (sessionId) => {
+      set((s) => {
+        const turnErrors = { ...s.turnErrors }
+        delete turnErrors[sessionId]
+        return { turnErrors }
       })
     }
   }

@@ -31,6 +31,10 @@ export interface AgentTurnOptions {
   /** LLM 采样参数（缺省不传 = 供应商默认） */
   temperature?: number
   maxTokens?: number
+  /** 是否把本次用户消息写入会话（重新生成传 false，历史里已有那条消息） */
+  appendUserMessage?: boolean
+  /** 重新生成时要排除的历史消息 id（旧助手回答） */
+  omitMessageId?: string
 }
 
 export interface AgentTurnResult {
@@ -70,7 +74,9 @@ export async function* runAgentTurn(
     sessionId: opts.sessionId,
     channel: opts.channel,
     mode: opts.mode,
-    content: opts.content
+    content: opts.content,
+    appendUserMessage: opts.appendUserMessage,
+    omitMessageId: opts.omitMessageId
   })
   if (opts.signal?.aborted) return { full: '', target: prepared.target }
 

@@ -56,6 +56,13 @@ export interface TurnContext {
   content: string
   /** 语音模式附加的视觉帧（仅本次 LLM 请求，不落库） */
   frames?: string[]
+  /**
+   * 是否把本次用户消息写入会话。缺省 true（普通回合）；
+   * 重新生成时传 false——历史里已经有那条用户消息，再写一遍会重复两问一答。
+   */
+  appendUserMessage?: boolean
+  /** 重新生成时要排除的历史消息 id（旧助手回答不进入上下文，成功后才被替换） */
+  omitMessageId?: string
 }
 
 export interface PreparedTurn {
@@ -70,22 +77,31 @@ export interface PreparedTurn {
 /** 会话上下文准备：懒建会话行、保存用户消息、组装 LLM 上下文 */
 export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   const { cfg, db, userId, sessionId, channel, mode, content, frames } = ctx
+  const appendUserMessage = ctx.appendUserMessage !== false
   await db.touchSession({ id: sessionId, userId, channel })
 
   // 先读历史再落库本次用户消息：避免当前消息在 LLM 上下文里出现两次
   // （一次纯文本历史、一次带视觉帧）
-  const [storedConfig, historyRows] = await Promise.all([
+  const [storedConfig, allHistoryRows] = await Promise.all([
     db.getUserConfig(userId),
     db.listMessages(sessionId, 40)
   ])
 
-  await db.appendMessage({
-    id: randomUUID(),
-    sessionId,
-    role: 'user',
-    content,
-    mode
-  })
+  // 重新生成：旧助手回答既不进上下文、也不删——等新回答成功落库时再替换，
+  // 生成失败时旧回答仍在，用户不会因为一次失败丢掉上一版回复。
+  const historyRows = ctx.omitMessageId
+    ? allHistoryRows.filter((row) => row.id !== ctx.omitMessageId)
+    : allHistoryRows
+
+  if (appendUserMessage) {
+    await db.appendMessage({
+      id: randomUUID(),
+      sessionId,
+      role: 'user',
+      content,
+      mode
+    })
+  }
 
   const target = await resolveTarget(cfg, db, userId)
   const systemPrompt = buildSystemPrompt(storedConfig?.systemPrompt, mode)
@@ -100,17 +116,24 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     console.warn(`[voice] 模型 ${target.model} 不支持图像输入，跳过 ${frames.length} 帧视觉输入`)
   }
   const attachFrames = hasFrames && target.vision
-  const userMessage = attachFrames
-    ? {
-        role: 'user' as const,
-        content: [
-          { type: 'text' as const, text: content },
-          ...frames.map((f) => ({ type: 'image' as const, data: f, mimeType: 'image/jpeg' as const }))
-        ],
-        timestamp: Date.now()
-      }
-    : { role: 'user' as const, content, timestamp: Date.now() }
-  messages.push(userMessage)
+
+  if (appendUserMessage) {
+    const userMessage = attachFrames
+      ? {
+          role: 'user' as const,
+          content: [
+            { type: 'text' as const, text: content },
+            ...frames.map((f) => ({ type: 'image' as const, data: f, mimeType: 'image/jpeg' as const }))
+          ],
+          timestamp: Date.now()
+        }
+      : { role: 'user' as const, content, timestamp: Date.now() }
+    messages.push(userMessage)
+  } else if (historyRows.at(-1)?.role !== 'user') {
+    // 不追加时上下文必须以本次用户消息收尾：否则 agent.prompt(content) 会把它
+    // 再塞一次，模型看到重复提问（重新生成的定位逻辑保证末尾是用户消息）
+    throw new Error('重新生成失败：会话末尾没有用户消息')
+  }
 
   return { target, systemPrompt, messages, userConfig: storedConfig }
 }
@@ -127,10 +150,14 @@ export async function finishTurn(
     ttsText: string | null
     target: LlmTarget
     userText: string
+    /** 重新生成：新回答落库前替换掉的旧助手消息 id（生成失败时旧消息保留） */
+    replaceMessageId?: string
   }
 ): Promise<string> {
   const assistantId = randomUUID()
   const countBefore = await db.countMessages(input.sessionId)
+  // 先删旧回答再写新回答：两步之间不对外暴露，读取方看到的始终是一条完整回答
+  if (input.replaceMessageId) await db.deleteMessage(input.replaceMessageId)
   await db.appendMessage({
     id: assistantId,
     sessionId: input.sessionId,

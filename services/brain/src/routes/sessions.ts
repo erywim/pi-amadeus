@@ -26,6 +26,32 @@ export function sessionRoutes(db: Db): Hono {
     return c.json({ messages: rows })
   })
 
+  // 手动重命名：只改标题，不刷新 updated_at（否则重命名会把旧会话顶到列表最前）
+  app.patch('/sessions/:id', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as
+      | { title?: unknown; userId?: unknown; channel?: unknown }
+      | null
+    const title = typeof body?.title === 'string' ? body.title.trim() : ''
+    const userId = typeof body?.userId === 'string' ? body.userId : ''
+    if (!title) return c.json({ error: 'title 必填' }, 400)
+    if (title.length > 80) return c.json({ error: 'title 最多 80 字' }, 400)
+    const id = c.req.param('id')
+    const session = await db.getSession(id)
+    if (session) {
+      // 有 userId 时校验归属：不能改别人的会话标题
+      if (userId && session.userId !== userId) return c.json({ error: '无权修改该会话' }, 403)
+      await db.renameSession(id, title)
+      return c.json({ ok: true, title })
+    }
+    // 新会话是懒创建的（首条消息才落库）：空会话重命名时按当前身份补建，
+    // 否则用户给刚开的会话改名会得到一个没头没脑的 404
+    if (!userId || !(await db.getUser(userId))) return c.json({ error: '会话不存在' }, 404)
+    const channel = body?.channel === 'feishu' ? 'feishu' : 'desktop'
+    await db.touchSession({ id, userId, channel })
+    await db.renameSession(id, title)
+    return c.json({ ok: true, title })
+  })
+
   app.delete('/sessions/:id', async (c) => {
     await db.deleteSession(c.req.param('id'))
     return c.json({ ok: true })

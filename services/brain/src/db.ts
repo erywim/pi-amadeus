@@ -46,8 +46,13 @@ export interface Db {
   touchSession(input: { id: string; userId: string; channel: Channel }): Promise<void>
   deleteSession(id: string): Promise<void>
   setSessionTitle(id: string, title: string): Promise<void>
+  /** 用户手动重命名：只改标题，不动 updated_at（重命名不是一次活动，不该把会话顶到最前） */
+  renameSession(id: string, title: string): Promise<void>
   // messages
   listMessages(sessionId: string, limit?: number): Promise<MessageRow[]>
+  /** 会话最后一条消息（重新生成时定位用户消息与待替换的助手回复） */
+  getLastMessage(sessionId: string): Promise<MessageRow | null>
+  deleteMessage(id: string): Promise<void>
   appendMessage(input: {
     id: string
     sessionId: string
@@ -352,6 +357,10 @@ export function createDb(cfg: BrainConfig['db']): Db {
       run(getConn(), 'UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?', [title, Date.now(), id])
     },
 
+    async renameSession(id, title) {
+      run(getConn(), 'UPDATE sessions SET title = ? WHERE id = ?', [title, id])
+    },
+
     async listMessages(sessionId, limit = 200) {
       const rows = all<{
         id: string
@@ -385,6 +394,40 @@ export function createDb(cfg: BrainConfig['db']): Db {
           createdAt: Number(row.created_ms)
         })
       )
+    },
+
+    async getLastMessage(sessionId) {
+      const row = first<{
+        id: string
+        session_id: string
+        role: 'user' | 'assistant'
+        content: string
+        tts_text: string | null
+        mode: TurnMode
+        created_ms: number
+      }>(
+        getConn(),
+        `SELECT id, session_id, role, content, tts_text, mode, created_at AS created_ms
+         FROM messages
+         WHERE session_id = ?
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT 1`,
+        [sessionId]
+      )
+      if (!row) return null
+      return {
+        id: row.id,
+        sessionId: row.session_id,
+        role: row.role,
+        content: row.content,
+        ttsText: row.tts_text ?? null,
+        mode: row.mode,
+        createdAt: Number(row.created_ms)
+      }
+    },
+
+    async deleteMessage(id) {
+      run(getConn(), 'DELETE FROM messages WHERE id = ?', [id])
     },
 
     async appendMessage(input) {
