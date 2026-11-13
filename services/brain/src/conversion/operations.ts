@@ -12,11 +12,11 @@ import { zipSync } from 'fflate'
 import { externalConversion, ExternalConversionError } from './external.ts'
 
 export class ConversionFailure extends Error {
-  readonly code: 'invalid-input' | 'resource-limit' | 'unsupported-format' | 'conversion-failed'
+  readonly code: 'invalid-input' | 'resource-limit' | 'unsupported-format' | 'conversion-failed' | 'cancelled'
 
   constructor(
     message: string,
-    code: 'invalid-input' | 'resource-limit' | 'unsupported-format' | 'conversion-failed'
+    code: 'invalid-input' | 'resource-limit' | 'unsupported-format' | 'conversion-failed' | 'cancelled'
   ) {
     super(message)
     this.name = 'ConversionFailure'
@@ -31,6 +31,7 @@ export interface ConversionOutput {
 }
 
 const IMAGE_FORMATS = new Set<ConversionFormat>(CONVERSION_FORMATS.image)
+const IMAGE_OUTPUTS = new Set<ConversionFormat>(['png', 'jpg', 'webp', 'avif', 'tiff', 'gif'])
 const OFFICEPARSER_INPUTS = new Set<ConversionFormat>([
   'docx',
   'pptx',
@@ -81,13 +82,30 @@ const MIME_TYPES: Partial<Record<ConversionFormat, string>> = {
   avif: 'image/avif',
   tiff: 'image/tiff',
   gif: 'image/gif',
-  bmp: 'image/bmp',
   svg: 'image/svg+xml',
-  ico: 'image/x-icon',
   pdf: 'application/pdf',
   epub: 'application/epub+zip',
   mobi: 'application/x-mobipocket-ebook',
   zip: 'application/zip',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  odt: 'application/vnd.oasis.opendocument.text',
+  rtf: 'application/rtf',
+  wps: 'application/vnd.ms-works',
+  wpt: 'application/vnd.ms-works',
+  wpd: 'application/vnd.wordperfect',
+  ofd: 'application/ofd',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+  ods: 'application/vnd.oasis.opendocument.spreadsheet',
+  et: 'application/vnd.ms-works',
+  ett: 'application/vnd.ms-works',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  odp: 'application/vnd.oasis.opendocument.presentation',
+  dps: 'application/vnd.ms-powerpoint',
+  dpt: 'application/vnd.ms-powerpoint',
   json: 'application/json; charset=utf-8',
   xml: 'application/xml; charset=utf-8',
   html: 'text/html; charset=utf-8',
@@ -152,7 +170,8 @@ async function sharpOf(): Promise<typeof import('sharp').default> {
 
 export function outputName(name: string, format: ConversionFormat): string {
   const base = name.split(/[\\/]/).pop()?.replace(/\.[^.]*$/, '') || 'converted'
-  return `${base}.${format}`
+  const extension = format === 'jpg' ? 'jpg' : format
+  return `${base}.${extension}`
 }
 
 export async function convertImage(
@@ -163,7 +182,7 @@ export async function convertImage(
 ): Promise<ConversionOutput> {
   checkInputSize(bytes)
   const source = conversionExtension(sourceName)
-  if (!IMAGE_FORMATS.has(source) || !IMAGE_FORMATS.has(target)) {
+  if (!IMAGE_FORMATS.has(source) || !IMAGE_OUTPUTS.has(target)) {
     throw new ConversionFailure('仅支持常见图片格式之间的转换', 'unsupported-format')
   }
   const sharp = await sharpOf()
@@ -315,7 +334,7 @@ export async function convertOfficeDocument(
   if (!OFFICEPARSER_INPUTS.has(source) || !OFFICEPARSER_OUTPUTS.has(target)) {
     throw new ConversionFailure('该文件格式或目标格式未纳入文档转换引擎', 'unsupported-format')
   }
-  if (signal?.aborted) throw new ConversionFailure('转换已取消', 'conversion-failed')
+  if (signal?.aborted) throw new ConversionFailure('转换已取消', 'cancelled')
   try {
     const { OfficeConverter } = await import('officeparser')
     const destination = target === 'txt' ? 'text' : target
@@ -332,11 +351,14 @@ export async function convertOfficeDocument(
       },
       generatorConfig: target === 'pdf' ? { pdfConfig: { engine: 'native' } } : undefined
     })
-    if (signal?.aborted) throw new ConversionFailure('转换已取消', 'conversion-failed')
+    if (signal?.aborted) throw new ConversionFailure('转换已取消', 'cancelled')
     const value = typeof result.value === 'string' ? new TextEncoder().encode(result.value) : new Uint8Array(result.value)
     return { bytes: ensureOutputSize(value), format: target, mimeType: mimeTypeOf(target) }
   } catch (error) {
     if (error instanceof ConversionFailure) throw error
+    if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
+      throw new ConversionFailure('转换已取消', 'cancelled')
+    }
     throw new ConversionFailure(error instanceof Error ? error.message : String(error), 'conversion-failed')
   }
 }
@@ -353,8 +375,26 @@ export async function convertFile(
   const source = conversionExtension(sourceName)
   if (!KNOWN_INPUTS.has(source)) throw new ConversionFailure('输入格式不受支持', 'unsupported-format')
   if (!KNOWN_INPUTS.has(target)) throw new ConversionFailure('目标格式不受支持', 'unsupported-format')
-  if (IMAGE_FORMATS.has(source) && IMAGE_FORMATS.has(target)) return convertImage(bytes, sourceName, target, quality)
-  if (TEXT_FORMATS.has(source) && TEXT_FORMATS.has(target)) return convertTextLike(bytes, source, target)
+  if (IMAGE_FORMATS.has(source) && IMAGE_OUTPUTS.has(target)) return convertImage(bytes, sourceName, target, quality)
+  if (IMAGE_FORMATS.has(source) && ['txt', 'md'].includes(target)) {
+    try {
+      const output = await externalConversion(bytes, sourceName, source, target, signal)
+      return { bytes: ensureOutputSize(output), format: target, mimeType: mimeTypeOf(target) }
+    } catch (error) {
+      if (error instanceof ExternalConversionError && error.message === '当前格式组合没有可用的外部转换路径') {
+        throw new ConversionFailure('该输入与目标格式组合不受支持', 'unsupported-format')
+      }
+      throw error
+    }
+  }
+  if (TEXT_FORMATS.has(source) && TEXT_FORMATS.has(target)) {
+    try {
+      return await convertTextLike(bytes, source, target)
+    } catch (error) {
+      if (!(error instanceof ConversionFailure) || error.code !== 'unsupported-format') throw error
+      if (!OFFICEPARSER_INPUTS.has(source) || !OFFICEPARSER_OUTPUTS.has(target)) throw error
+    }
+  }
   if (source === 'pdf' && target === 'pdf') return { bytes, format: target, mimeType: mimeTypeOf(target) }
   try {
     return await convertOfficeDocument(bytes, sourceName, target, signal)

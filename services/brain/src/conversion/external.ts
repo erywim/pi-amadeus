@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import type { ConversionFormat } from '@pi-amadeus/shared'
 
 const COMMAND_TIMEOUT_MS = 120_000
+const PROBE_TIMEOUT_MS = 2_000
 const MAX_EXTERNAL_OUTPUT_BYTES = 512 * 1024 * 1024
 const MAX_DIAGNOSTIC_CHARS = 4_000
 const MEDIA_FORMATS = new Set<ConversionFormat>([
@@ -21,8 +22,19 @@ const OFFICE_EXECUTABLES = process.platform === 'win32' ? ['soffice.exe', 'libre
 async function commandExists(command: string): Promise<boolean> {
   return await new Promise((resolve) => {
     const child = spawn(command, ['--version'], { shell: false, env: childEnvironment(), stdio: 'ignore' })
-    child.once('error', () => resolve(false))
-    child.once('close', (code) => resolve(code === 0))
+    let settled = false
+    const finish = (value: boolean): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    const timer = setTimeout(() => {
+      child.kill()
+      finish(false)
+    }, PROBE_TIMEOUT_MS)
+    child.once('error', () => finish(false))
+    child.once('close', (code) => finish(code === 0))
   })
 }
 
@@ -44,6 +56,7 @@ interface CommandResult {
   stdout: string
   stderr: string
 }
+
 
 function safeExtension(name: string): string {
   const extension = extname(name).toLowerCase()
@@ -119,12 +132,11 @@ async function readOutput(path: string): Promise<Uint8Array> {
   return new Uint8Array(await readFile(path))
 }
 
-async function outputFileOf(dir: string, expectedExtension?: string): Promise<string> {
-  const entries = (await readdir(dir)).filter((entry) => !entry.startsWith('.'))
-  const candidates = expectedExtension ? entries.filter((entry) => entry.toLowerCase().endsWith(expectedExtension)) : entries
-  const name = (candidates.length > 0 ? candidates : entries)[0]
-  if (!name) throw new ExternalConversionError('外部转换引擎未生成结果')
-  const output = resolve(dir, name)
+async function outputFileOf(dir: string, expectedExtensions?: string[]): Promise<string> {
+  const entries = (await readdir(dir)).filter((entry) => !entry.startsWith('.') && entry !== 'input.pdf')
+  const candidates = expectedExtensions ? entries.filter((entry) => expectedExtensions.some((extension) => entry.toLowerCase().endsWith(extension))) : entries
+  if (candidates.length !== 1) throw new ExternalConversionError('外部转换引擎未生成唯一结果')
+  const output = resolve(dir, candidates[0]!)
   const root = `${resolve(dir)}${process.platform === 'win32' ? '\\' : '/'}`
   if (!output.startsWith(root)) throw new ExternalConversionError('外部转换结果路径非法')
   return output
@@ -169,7 +181,7 @@ async function pdfRaster(
     const formatArgs: string[] = target === 'jpg' ? ['-jpeg'] : target === 'tiff' ? ['-tiff'] : ['-png']
     await writeFile(input, bytes)
     await commandResult('pdftoppm', ['-f', '1', '-l', '1', '-singlefile', '-r', '150', ...formatArgs, input, prefix], signal)
-    const output = await outputFileOf(dir, target === 'jpg' ? '.jpg' : `.${target}`)
+    const output = await outputFileOf(dir, target === 'jpg' ? ['.jpg', '.jpeg'] : target === 'tiff' ? ['.tif', '.tiff'] : ['.png'])
     return await readOutput(output)
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined)
@@ -197,7 +209,7 @@ async function libreOfficeConversion(
       ['--headless', `-env:UserInstallation=${profileUrl}`, '--convert-to', target, '--outdir', dir, input],
       signal
     )
-    const output = await outputFileOf(dir, `.${target}`)
+    const output = await outputFileOf(dir, [`.${target}`])
     return await readOutput(output)
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined)
@@ -229,9 +241,10 @@ async function tesseractOcr(bytes: Uint8Array, sourceName: string, signal?: Abor
   const dir = await mkdtemp(join(tmpdir(), 'amadeus-ocr-'))
   try {
     const input = join(dir, `input${safeExtension(sourceName)}`)
+    const output = join(dir, 'ocr.txt')
     await writeFile(input, bytes)
-    const result = await commandResult('tesseract', [input, 'stdout', '-l', 'eng'], signal)
-    return new TextEncoder().encode(result.stdout)
+    await commandResult('tesseract', [input, output.replace(/\.txt$/, ''), '-l', 'eng'], signal)
+    return await readOutput(`${output}`)
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined)
   }
@@ -246,8 +259,12 @@ export async function externalConversion(
 ): Promise<Uint8Array> {
   if (signal?.aborted) throw new ExternalConversionError('转换已取消')
   if (source === 'pdf' && ['png', 'jpg', 'tiff'].includes(target)) return pdfRaster(bytes, target, signal)
+  if (source === 'pdf' && ['txt', 'md'].includes(target)) {
+    const raster = await pdfRaster(bytes, 'png', signal)
+    return tesseractOcr(raster, 'page.png', signal)
+  }
   if (MEDIA_FORMATS.has(source)) return ffmpegConversion(bytes, sourceName, target, signal)
-  if (['png', 'jpg', 'webp', 'tiff', 'gif', 'avif', 'bmp'].includes(source) && ['txt', 'md'].includes(target)) {
+  if (['png', 'jpg', 'webp', 'tiff', 'gif', 'avif', 'svg'].includes(source) && ['txt', 'md'].includes(target)) {
     return tesseractOcr(bytes, sourceName, signal)
   }
   if (OFFICE_FORMATS.has(source)) return libreOfficeConversion(bytes, sourceName, target, signal)

@@ -34,14 +34,31 @@ const MEDIA_INPUTS = new Set<ConversionFormat>([
   ...CONVERSION_FORMATS.video
 ])
 const IMAGE_OUTPUTS = ['png', 'jpg', 'webp', 'avif', 'tiff', 'gif'] as ConversionFormat[]
-const TEXT_OUTPUTS = ['txt', 'md', 'html', 'json', 'csv', 'tsv', 'yaml', 'xml', 'log'] as ConversionFormat[]
-const OFFICE_OUTPUTS = [
+const TEXT_TARGETS: Record<string, ConversionFormat[]> = {
+  txt: ['txt', 'md', 'log'],
+  md: ['txt', 'md', 'html', 'log'],
+  html: ['txt', 'html'],
+  json: ['txt', 'md', 'json', 'yaml', 'log'],
+  csv: ['txt', 'md', 'csv', 'tsv', 'log'],
+  tsv: ['txt', 'md', 'tsv', 'csv', 'log'],
+  log: ['txt', 'md', 'log'],
+  xml: ['txt', 'md', 'xml', 'log'],
+  yaml: ['txt', 'md', 'yaml', 'json', 'log'],
+  tex: ['txt', 'md', 'tex', 'log']
+}
+const OFFICEPARSER_INPUTS = new Set<ConversionFormat>([
+  'docx', 'pptx', 'xlsx', 'odt', 'odp', 'ods', 'odg', 'pdf', 'rtf', 'epub'
+])
+const OFFICEPARSER_OUTPUTS = [
   'txt', 'md', 'html', 'pdf', 'csv', 'rtf', 'epub', 'docx', 'odt', 'xlsx', 'ods', 'pptx', 'odp', 'tex'
 ] as ConversionFormat[]
-const MEDIA_OUTPUTS = [
-  ...CONVERSION_FORMATS.audio,
-  ...CONVERSION_FORMATS.video
-]
+const LIBREOFFICE_INPUTS = new Set<ConversionFormat>([
+  'doc', 'wps', 'wpt', 'wpd', 'ofd', 'xls', 'xlsm', 'et', 'ett', 'ppt', 'dps', 'dpt'
+])
+const LIBREOFFICE_OUTPUTS = [
+  'txt', 'html', 'pdf', 'csv', 'rtf', 'epub', 'docx', 'odt', 'xlsx', 'ods', 'pptx', 'odp'
+] as ConversionFormat[]
+const MEDIA_OUTPUTS = [...CONVERSION_FORMATS.audio, ...CONVERSION_FORMATS.video]
 
 interface UploadedFile {
   bytes: Uint8Array
@@ -51,7 +68,7 @@ interface UploadedFile {
 function errorResponse(error: unknown): { body: ConversionErrorResponse; status: ContentfulStatusCode } {
   if (error instanceof ConversionFailure) {
     const status: ContentfulStatusCode =
-      error.code === 'resource-limit' ? 413 : error.code === 'unsupported-format' ? 415 : error.code === 'invalid-input' ? 422 : 422
+      error.code === 'resource-limit' ? 413 : error.code === 'unsupported-format' ? 415 : error.code === 'invalid-input' ? 422 : 503
     return { body: { error: error.message, code: error.code }, status }
   }
   // 引擎错误不把本地路径、命令行或环境细节回传给桌面端，避免泄露服务端信息。
@@ -109,29 +126,37 @@ function targetsFor(extension: ConversionFormat, capabilities: Awaited<ReturnTyp
     return item?.status === 'ready' || item?.status === 'detected'
   }
   if (IMAGE_INPUTS.has(extension)) {
-    const targets = engine('sharp') ? IMAGE_OUTPUTS : []
-    return { category: 'image', operation: 'convert', targets }
+    const targets = [
+      ...(engine('sharp') ? IMAGE_OUTPUTS : []),
+      ...(engine('tesseract') ? ['txt', 'md' as ConversionFormat] : [])
+    ]
+    return { category: 'image', operation: 'convert', targets: targets as ConversionFormat[] }
   }
   if (TEXT_INPUTS.has(extension)) {
-    const targets = engine('officeparser') || engine('pandoc') ? TEXT_OUTPUTS : []
-    return { category: 'text', operation: 'convert', targets }
+    const targets = [...(TEXT_TARGETS[extension] ?? [])]
+    if (engine('officeparser') && OFFICEPARSER_INPUTS.has(extension)) {
+      targets.push(...OFFICEPARSER_OUTPUTS)
+    }
+    return { category: 'text', operation: 'convert', targets: [...new Set(targets)] as ConversionFormat[] }
   }
   if (MEDIA_INPUTS.has(extension)) {
     return { category: 'media', operation: 'media-convert', targets: engine('ffmpeg') ? MEDIA_OUTPUTS : [] }
   }
   if (extension === 'pdf') {
     const targets = [
-      ...(engine('officeparser') ? OFFICE_OUTPUTS : []),
-      ...(engine('pdftoppm') ? ['png', 'jpg', 'tiff' as ConversionFormat] : [])
+      ...(engine('officeparser') ? OFFICEPARSER_OUTPUTS : []),
+      ...(engine('pdftoppm') ? ['png', 'jpg', 'tiff' as ConversionFormat] : []),
+      ...(engine('tesseract') && engine('pdftoppm') ? ['txt', 'md' as ConversionFormat] : [])
     ]
     return { category: 'document', operation: 'convert', targets: [...new Set(targets)] as ConversionFormat[] }
   }
-  if (OFFICE_INPUTS.has(extension)) {
-    const targets = [
-      ...(engine('officeparser') ? OFFICE_OUTPUTS : []),
-      ...(engine('soffice') || engine('libreoffice') ? OFFICE_OUTPUTS : [])
-    ]
-    return { category: 'document', operation: 'office-convert', targets: [...new Set(targets)] as ConversionFormat[] }
+  if (OFFICEPARSER_INPUTS.has(extension)) {
+    const targets = engine('officeparser') ? OFFICEPARSER_OUTPUTS : []
+    return { category: 'document', operation: 'office-convert', targets }
+  }
+  if (LIBREOFFICE_INPUTS.has(extension)) {
+    const targets = engine('soffice') || engine('libreoffice') ? LIBREOFFICE_OUTPUTS : []
+    return { category: 'document', operation: 'office-convert', targets }
   }
   return { category: 'unknown', operation: 'convert', targets: [] }
 }
@@ -148,7 +173,10 @@ export function conversionRoutes(): Hono {
   app.post('/conversion/targets', async (c) => {
     const body = (await c.req.json().catch(() => null)) as { extension?: unknown } | null
     const extension = typeof body?.extension === 'string' ? conversionExtension(body.extension) : ''
-    if (!extension) return c.json({ error: 'extension 必填', code: 'invalid-input' } satisfies ConversionErrorResponse, 400)
+    const knownExtension = extension && (
+      IMAGE_INPUTS.has(extension) || TEXT_INPUTS.has(extension) || OFFICE_INPUTS.has(extension) || MEDIA_INPUTS.has(extension)
+    )
+    if (!knownExtension) return c.json({ error: '不支持的输入格式', code: 'unsupported-format' } satisfies ConversionErrorResponse, 415)
     const capabilities = await getConversionCapabilities()
     const selected = targetsFor(extension, capabilities)
     const response: ConversionTargetsResponse = {

@@ -11,15 +11,7 @@ export type ConversionFormat =
   | 'avif'
   | 'tiff'
   | 'gif'
-  | 'bmp'
   | 'svg'
-  | 'ico'
-  | 'tga'
-  | 'jp2'
-  | 'jxl'
-  | 'qoi'
-  | 'ppm'
-  | 'raw'
   | 'txt'
   | 'md'
   | 'markdown'
@@ -72,11 +64,6 @@ export type ConversionFormat =
   | 'm4v'
   | 'wmv'
   | 'flv'
-  | 'srt'
-  | 'vtt'
-  | 'ass'
-  | 'ssa'
-
 export type ConversionOperationId =
   | 'convert'
   | 'images-to-pdf'
@@ -181,10 +168,10 @@ export const CONVERSION_LIMITS: ConversionLimits = {
 }
 
 export const CONVERSION_FORMATS = {
-  image: ['png', 'jpg', 'webp', 'avif', 'tiff', 'gif', 'bmp', 'svg', 'ico', 'tga', 'jp2', 'jxl', 'qoi', 'ppm', 'raw'] as ConversionFormat[],
+  image: ['png', 'jpg', 'webp', 'avif', 'tiff', 'gif', 'svg'] as ConversionFormat[],
   text: ['txt', 'md', 'html', 'json', 'csv', 'tsv', 'log', 'xml', 'yaml', 'tex'] as ConversionFormat[],
   office: ['doc', 'docx', 'odt', 'rtf', 'wps', 'wpt', 'wpd', 'ofd', 'odg', 'xls', 'xlsx', 'xlsm', 'ods', 'et', 'ett', 'ppt', 'pptx', 'odp', 'dps', 'dpt'] as ConversionFormat[],
-  document: ['pdf', 'epub', 'mobi'] as ConversionFormat[],
+  document: ['pdf', 'epub'] as ConversionFormat[],
   archive: ['zip'] as ConversionFormat[],
   audio: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'opus', 'wma'] as ConversionFormat[],
   video: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v', 'wmv', 'flv'] as ConversionFormat[]

@@ -25,7 +25,7 @@ interface ResultFile {
 }
 
 type PageOperation = 'convert' | 'images-to-pdf' | 'images-to-zip' | 'merge-pdfs'
-const IMAGE_FORMATS = new Set<ConversionFormat>(['png', 'jpg', 'webp', 'avif', 'tiff', 'gif', 'bmp', 'svg', 'ico', 'tga', 'jp2', 'jxl', 'qoi', 'ppm', 'raw'])
+const IMAGE_FORMATS = new Set<ConversionFormat>(['png', 'jpg', 'webp', 'avif', 'tiff', 'gif', 'svg'])
 const PDF_FORMATS = new Set<ConversionFormat>(['pdf'])
 
 function extensionOf(name: string): ConversionFormat {
