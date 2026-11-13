@@ -133,8 +133,6 @@ export async function* runAgentTurn(
           push: (event) => queue.push(event)
         })
       : undefined
-  if (desktopBridge) registerDesktopBridge(desktopBridge)
-
   const tools = toolsEnabled
     ? buildToolRegistry({
         cfg: opts.cfg,
@@ -144,6 +142,8 @@ export async function* runAgentTurn(
         desktopBridge
       })
     : []
+
+  if (desktopBridge) registerDesktopBridge(desktopBridge)
 
   // skill：文件形式、每回合热加载；启用列表注入 systemPrompt + use_skill 工具。
   // 插件中心关掉的 skill 与文件状态表里的停用取并集，两处入口效果一致
