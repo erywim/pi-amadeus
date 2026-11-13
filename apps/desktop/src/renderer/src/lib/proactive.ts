@@ -3,6 +3,7 @@ import { normalizeEmotion } from '@pi-amadeus/shared'
 import type { ProactiveMessageEvent } from '@pi-amadeus/shared'
 import { BRAIN_URL } from './api'
 import { useCompanionStore } from '@renderer/stores/companionStore'
+import { activeProviderOf, useProviderStore } from '@renderer/stores/providerStore'
 import { useLive2dSpeechStore } from '@renderer/stores/live2dSpeechStore'
 import { useLive2dStore } from '@renderer/stores/live2dStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
@@ -61,12 +62,17 @@ export function bindProactive(): void {
     const active = session.sessions.find((item) => item.id === session.activeSessionId)
     const persistedDesktopSession =
       active && active.channel === 'desktop' && !active.localOnly ? active.id : null
+    const activeProvider = activeProviderOf(useProviderStore.getState().providers)
+    const modelKey = activeProvider
+      ? `${activeProvider.id}|${activeProvider.baseUrl}|${activeProvider.model}`
+      : `builtin|${useSettingsStore.getState().aiConfig.provider.baseUrl}|${useSettingsStore.getState().aiConfig.provider.model}`
     const payload = {
       enabled: useSettingsStore.getState().proactiveEnabled,
       userId: session.userId,
       sessionId: persistedDesktopSession,
       brainUrl: BRAIN_URL,
-      busy: isTurnActive()
+      busy: isTurnActive(),
+      modelKey
     }
     const key = JSON.stringify(payload)
     if (key === lastPayload) return

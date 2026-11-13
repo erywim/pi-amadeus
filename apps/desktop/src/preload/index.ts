@@ -10,6 +10,7 @@ interface ProactiveConfigPatch {
   sessionId?: string | null
   brainUrl?: string
   busy?: boolean
+  modelKey?: string
 }
 
 /** 订阅主进程推送，返回取消订阅函数 */

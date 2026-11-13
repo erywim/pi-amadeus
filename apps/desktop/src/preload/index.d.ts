@@ -10,6 +10,7 @@ export interface ProactiveConfigPatch {
   sessionId?: string | null
   brainUrl?: string
   busy?: boolean
+  modelKey?: string
 }
 
 export type DesktopApi = {

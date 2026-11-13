@@ -37,6 +37,8 @@ export interface ProactiveConfig {
   userId: string | null
   sessionId: string | null
   brainUrl: string
+  /** 非敏感模型身份；模型切换后解除 no_vision 暂停，不包含 API key */
+  modelKey: string
   /** 渲染层上报：麦克风 / 语音回合 / 文本回合进行中，不打断 */
   busy: boolean
 }
@@ -135,6 +137,7 @@ export function parseProactiveConfigPatch(value: unknown): Partial<ProactiveConf
   const patch: Partial<ProactiveConfig> = {}
   if (typeof raw.enabled === 'boolean') patch.enabled = raw.enabled
   if (typeof raw.busy === 'boolean') patch.busy = raw.busy
+  if (typeof raw.modelKey === 'string') patch.modelKey = raw.modelKey.slice(0, 512)
   const optionalString = (key: string, max: number): string | null | undefined => {
     const v = raw[key]
     if (v === null) return null
@@ -164,6 +167,7 @@ export class ProactiveWatcher {
     userId: null,
     sessionId: null,
     brainUrl: 'http://localhost:3002',
+    modelKey: '',
     busy: false
   }
   private timer: ReturnType<typeof setInterval> | null = null
@@ -215,7 +219,11 @@ export class ProactiveWatcher {
       this.nextDueAt = null
     }
     // 模型切换通过 brainUrl 变化时解除 no_vision；同一 URL 下的用户切换也解除。
-    if (prev.userId !== this.config.userId || prev.brainUrl !== this.config.brainUrl) {
+    if (
+      prev.userId !== this.config.userId ||
+      prev.brainUrl !== this.config.brainUrl ||
+      prev.modelKey !== this.config.modelKey
+    ) {
       this.noVisionKey = null
     }
     if (
@@ -223,6 +231,7 @@ export class ProactiveWatcher {
       prev.userId !== this.config.userId ||
       prev.sessionId !== this.config.sessionId ||
       prev.brainUrl !== this.config.brainUrl ||
+      prev.modelKey !== this.config.modelKey ||
       (!prev.busy && this.config.busy)
     ) {
       this.requestAbort?.abort()
