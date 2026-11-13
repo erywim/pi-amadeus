@@ -239,6 +239,10 @@ export interface Db {
   // messages
   /** 当前活跃分支的消息路径（root → active leaf）；可指定 leaf 读取任意分支 */
   listMessages(sessionId: string, limit?: number, leafId?: string): Promise<MessageRow[]>
+  /** 会话的完整消息树（所有分支，按创建时间排序；分支树弹窗用） */
+  listAllMessages(sessionId: string, limit?: number): Promise<MessageRow[]>
+  /** 会话当前活跃叶（分支树标出当前路径用） */
+  getActiveLeafId(sessionId: string): Promise<string | null>
   /** 会话当前活跃分支的最后一条消息（重新生成时定位） */
   getLastMessage(sessionId: string): Promise<MessageRow | null>
   /** 按 id 取单条消息 */
@@ -1219,6 +1223,47 @@ export function createDb(cfg: BrainConfig['db']): Db {
           createdAt: Number(row.created_ms)
         })
       )
+    },
+
+    async listAllMessages(sessionId, limit = 2000) {
+      const rows = all<{
+        id: string
+        session_id: string
+        role: 'user' | 'assistant'
+        content: string
+        tts_text: string | null
+        mode: TurnMode
+        parent_id: string | null
+        created_ms: number
+      }>(
+        getConn(),
+        `SELECT id, session_id, role, content, tts_text, mode, parent_id, created_at AS created_ms
+         FROM messages WHERE session_id = ?
+         ORDER BY created_at ASC, rowid ASC
+         LIMIT ?`,
+        [sessionId, Math.min(5000, Math.max(1, limit))]
+      )
+      const branch = branchInfoFor(sessionId)
+      const media = mediaFor(rows.map((row) => row.id))
+      return rows.map(
+        (row): MessageRow => ({
+          id: row.id,
+          sessionId: row.session_id,
+          role: row.role,
+          content: row.content,
+          ttsText: row.tts_text ?? null,
+          mode: row.mode,
+          parentId: row.parent_id ?? null,
+          branchIndex: branch.get(row.id)?.index ?? 1,
+          branchCount: branch.get(row.id)?.count ?? 1,
+          attachments: media.get(row.id) ?? [],
+          createdAt: Number(row.created_ms)
+        })
+      )
+    },
+
+    async getActiveLeafId(sessionId) {
+      return activeLeafOf(sessionId)
     },
 
     async getLastMessage(sessionId) {

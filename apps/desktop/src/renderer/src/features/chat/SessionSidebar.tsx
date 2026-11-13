@@ -131,20 +131,8 @@ export function SessionSidebar(): React.JSX.Element {
   const [searching, setSearching] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
-  // Cmd/Ctrl+K 聚焦会话搜索（常见助手的全局搜索习惯键位）
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent): void {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        searchRef.current?.focus()
-        searchRef.current?.select()
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
-
   // 标题过滤在本地做；正文搜索交给服务端一次 LIKE 查询（350ms 防抖）
+  // 全局 ⌘K 由命令面板接管（面板里也能搜会话与消息），这里不再抢占快捷键
   const normalizedQuery = query.trim().toLowerCase()
   const visibleSessions = normalizedQuery
     ? sessions.filter((s) => (s.title || '').toLowerCase().includes(normalizedQuery))

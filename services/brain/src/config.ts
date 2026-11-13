@@ -17,6 +17,8 @@ export interface BrainConfig {
   fish: { apiKey: string; voice: string; endpoint: string; model: string; sampleRate: number; proxy: string }
   feishu: { enabled: boolean; appId: string; appSecret: string; domain: 'feishu' | 'lark' }
   tools: { tavilyKey: string; confirmTimeoutMs: number; bashCwd: string }
+  /** 只读工作区浏览（文件树 / Git 状态）的根目录；默认与 bash 工具工作目录一致 */
+  workspace: { root: string }
   /** skill 文件目录（SKILL.md 形式，复用 pi loadSkills 加载） */
   skills: { dir: string }
   /** 消息附件（图片/语音/文件）落盘目录 */
@@ -24,6 +26,7 @@ export interface BrainConfig {
 }
 
 export function loadConfig(): BrainConfig {
+  const bashCwd = resolve(env('BASH_TOOL_CWD', process.cwd()))
   return {
     port: Number(env('PORT', '3002')) || 3002,
     db: {
@@ -58,7 +61,10 @@ export function loadConfig(): BrainConfig {
     tools: {
       tavilyKey: env('TAVILY_API_KEY'),
       confirmTimeoutMs: Number(env('TOOL_CONFIRM_TIMEOUT_MS', '60000')) || 60000,
-      bashCwd: env('BASH_TOOL_CWD', process.cwd())
+      bashCwd
+    },
+    workspace: {
+      root: resolve(env('WORKSPACE_DIR', bashCwd))
     },
     skills: {
       // 默认 services/brain/skills/；目录不存在时 loadSkills 静默跳过

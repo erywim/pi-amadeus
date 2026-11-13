@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { MessageSearchHit, Session } from '@pi-amadeus/shared'
+import type { BranchTreeNode, BranchTreeResponse, MessageSearchHit, Session } from '@pi-amadeus/shared'
 import type { Db } from '../db.ts'
 import { toPublicMessage } from '../media.ts'
 
@@ -46,6 +46,58 @@ export function sessionRoutes(db: Db): Hono {
   app.get('/sessions/:id/messages', async (c) => {
     const rows = await db.listMessages(c.req.param('id'))
     return c.json({ messages: rows.map(toPublicMessage) })
+  })
+
+  /**
+   * 完整消息树（所有分支）：分支树弹窗用。
+   * active 标出当前活跃路径；其余节点是保留下来但当前看不到的旧分支。
+   */
+  app.get('/sessions/:id/tree', async (c) => {
+    const id = c.req.param('id')
+    const session = await db.getSession(id)
+    if (!session) return c.json({ error: '会话不存在' }, 404)
+    const [rows, activeLeafId] = await Promise.all([
+      db.listAllMessages(id),
+      db.getActiveLeafId(id)
+    ])
+    const parentOf = new Map(rows.map((row) => [row.id, row.parentId]))
+    const active = new Set<string>()
+    let cursor = activeLeafId
+    for (let depth = 0; cursor && depth < 5000; depth += 1) {
+      if (active.has(cursor)) break
+      active.add(cursor)
+      cursor = parentOf.get(cursor) ?? null
+    }
+    const nodes: BranchTreeNode[] = rows.map((row) => ({
+      id: row.id,
+      parentId: row.parentId,
+      role: row.role,
+      preview: previewOf(row.content),
+      createdAt: row.createdAt,
+      branchIndex: row.branchIndex,
+      branchCount: row.branchCount,
+      active: active.has(row.id)
+    }))
+    const response: BranchTreeResponse = { activeLeafId, nodes }
+    return c.json(response)
+  })
+
+  /** 跳到某条消息所在分支的最新后代（分支树点节点 = 切到那条分支继续） */
+  app.post('/sessions/:id/active-leaf', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as
+      | { userId?: unknown; messageId?: unknown }
+      | null
+    const userId = typeof body?.userId === 'string' ? body.userId : ''
+    const messageId = typeof body?.messageId === 'string' ? body.messageId : ''
+    const sessionId = c.req.param('id')
+    if (!userId || !messageId) return c.json({ error: 'userId/messageId 必填' }, 400)
+    const session = await db.getSession(sessionId)
+    if (!session || session.userId !== userId) return c.json({ error: '会话不存在' }, 404)
+    const target = await db.getMessage(messageId)
+    if (!target || target.sessionId !== sessionId) return c.json({ error: '消息不存在' }, 404)
+    const leaf = await db.lastDescendant(messageId)
+    await db.setActiveLeaf(sessionId, leaf)
+    return c.json({ ok: true, activeLeafId: leaf })
   })
 
   /** 会话级 token 用量：turn_metrics 的真实累计（没跑过回合就是 0） */
@@ -131,6 +183,16 @@ export function sessionRoutes(db: Db): Hono {
   })
 
   return app
+}
+
+/** 分支树节点预览：压成一行，去掉常见的 Markdown 记号 */
+function previewOf(content: string): string {
+  const flat = content
+    .replace(/```[\s\S]*?```/g, ' [代码] ')
+    .replace(/[#>*_`~()|-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return flat.length > 100 ? `${flat.slice(0, 100)}…` : flat
 }
 
 /** 命中位置前后各 40 字（不区分大小写；找不到时取开头） */

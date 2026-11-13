@@ -1,13 +1,15 @@
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { PanelLeft, PanelRight, Pencil, Trash2 } from 'lucide-react'
+import { Download, GitBranch, PanelLeft, PanelRight, Pencil, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { SessionUsage } from '@pi-amadeus/shared'
 import { Badge } from '@renderer/components/ui/badge'
 import { fetchSessionUsage } from '@renderer/lib/api'
+import { exportSessionMarkdown } from '@renderer/lib/exportSession'
 import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
+import { useUiStore } from '@renderer/stores/uiStore'
 
 /** 文本模式的标题栏：侧栏开关 + 标题（可重命名） + 渠道徽标 + 轮次统计 + 删除 */
 export function ChatTitlebar({
@@ -32,7 +34,9 @@ export function ChatTitlebar({
   const [editing, setEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
   const [usage, setUsage] = useState<SessionUsage | null>(null)
+  const [exporting, setExporting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const setBranchTreeOpen = useUiStore((s) => s.setBranchTreeOpen)
   /** Esc 取消后紧跟的 blur 不该再提交一次（取消是明确意图） */
   const cancelledRef = useRef(false)
 
@@ -89,6 +93,24 @@ export function ChatTitlebar({
       toast.success(t('chat.renamed'))
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  async function handleExport(): Promise<void> {
+    if (!session || exporting) return
+    setExporting(true)
+    try {
+      const filename = await exportSessionMarkdown(session, {
+        user: t('chat.exportUser'),
+        assistant: 'Amadeus',
+        attachments: t('chat.attachments'),
+        untitled: t('chatShell.untitledTask')
+      })
+      toast.success(t('chat.exported', { name: filename }))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -190,6 +212,28 @@ export function ChatTitlebar({
       <span className="whitespace-nowrap text-[12.5px] text-muted-foreground">
         {t('chatShell.turns', { count: turns })}
       </span>
+      <button
+        type="button"
+        data-testid="open-branch-tree"
+        title={t('branchTree.open')}
+        aria-label={t('branchTree.open')}
+        disabled={messageCount === 0}
+        onClick={() => setBranchTreeOpen(true)}
+        className="grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft disabled:opacity-40"
+      >
+        <GitBranch className="size-4" strokeWidth={1.6} />
+      </button>
+      <button
+        type="button"
+        data-testid="export-session"
+        title={t('chat.exportMarkdown')}
+        aria-label={t('chat.exportMarkdown')}
+        disabled={messageCount === 0 || exporting}
+        onClick={() => void handleExport()}
+        className="grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft disabled:opacity-40"
+      >
+        <Download className="size-4" strokeWidth={1.6} />
+      </button>
       <button
         type="button"
         title={t('chat.deleteTitle')}

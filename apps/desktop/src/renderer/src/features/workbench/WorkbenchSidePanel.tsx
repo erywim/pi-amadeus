@@ -1,13 +1,14 @@
 import * as React from 'react'
-import { ChevronRight, GitBranch, Shapes, SquareTerminal } from 'lucide-react'
+import { ChevronRight, FolderTree, GitBranch, Shapes, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import { useArtifactStore } from '@renderer/stores/artifactStore'
 import { ArtifactsView } from './ArtifactsView'
 import { RunGraph } from './RunGraph'
 import { TerminalView } from './TerminalView'
+import { WorkspaceView } from './WorkspaceView'
 
-type Tab = 'graph' | 'terminal' | 'artifacts'
+type Tab = 'graph' | 'terminal' | 'workspace' | 'artifacts'
 
 /**
  * 右侧工作台面板（右侧的三块区域）：
@@ -26,6 +27,7 @@ export function WorkbenchSidePanel({ onCollapse }: { onCollapse: () => void }): 
   const tabs: { key: Tab; icon: typeof GitBranch; label: string }[] = [
     { key: 'graph', icon: GitBranch, label: t('workbench.panel.graph') },
     { key: 'terminal', icon: SquareTerminal, label: t('workbench.panel.terminal') },
+    { key: 'workspace', icon: FolderTree, label: t('workbench.panel.workspace') },
     { key: 'artifacts', icon: Shapes, label: t('workbench.panel.artifacts') }
   ]
 
@@ -35,7 +37,7 @@ export function WorkbenchSidePanel({ onCollapse }: { onCollapse: () => void }): 
       className={cn(
         'flex shrink-0 flex-col border-l border-border bg-surface transition-[width] duration-150',
         // 工件预览需要更宽的画布；运行图/终端保持紧凑，给聊天留空间
-        tab === 'artifacts' && artifact ? 'w-[min(46vw,520px)]' : 'w-[330px]'
+        tab === 'artifacts' && artifact ? 'w-[min(46vw,520px)]' : tab === 'workspace' ? 'w-[360px]' : 'w-[330px]'
       )}
     >
       <div className="flex h-[42px] shrink-0 items-center gap-1 border-b border-border px-2">
@@ -75,6 +77,7 @@ export function WorkbenchSidePanel({ onCollapse }: { onCollapse: () => void }): 
       <div className="min-h-0 flex-1">
         {tab === 'graph' && <RunGraph />}
         {tab === 'terminal' && <TerminalView />}
+        {tab === 'workspace' && <WorkspaceView />}
         {tab === 'artifacts' && <ArtifactsView />}
       </div>
     </aside>

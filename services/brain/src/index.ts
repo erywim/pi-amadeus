@@ -27,6 +27,7 @@ import { sttRoutes } from './routes/stt.ts'
 import { toolConfirmRoutes } from './routes/tool-confirm.ts'
 import { userRoutes } from './routes/users.ts'
 import { voiceRoutes } from './routes/voice.ts'
+import { workspaceRoutes } from './routes/workspace.ts'
 
 const cfg = loadConfig()
 const db = createDb(cfg.db)
@@ -70,6 +71,7 @@ app.route('/api', knowledgeRoutes(db))
 app.route('/api', mediaRoutes(db))
 app.route('/api', automationRoutes(db))
 app.route('/api', proactiveRoutes(db))
+app.route('/api', workspaceRoutes(cfg))
 app.route('/api', statsRoutes(db))
 app.route('/api', toolConfirmRoutes())
 if (cfg.feishu.enabled) {

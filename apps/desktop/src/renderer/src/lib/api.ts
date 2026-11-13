@@ -3,6 +3,7 @@ import type {
   AttachmentPayload,
   AutomationInput,
   AutomationItem,
+  BranchTreeResponse,
   InstalledPlugin,
   KnowledgeBase,
   KnowledgeDoc,
@@ -27,7 +28,13 @@ import type {
   SessionUsage,
   SseEvent,
   StatsResponse,
-  UserConfig
+  UserConfig,
+  WorkspaceDiff,
+  WorkspaceEntry,
+  WorkspaceFile,
+  WorkspaceGitStatus,
+  WorkspaceInfo,
+  WorkspaceSearchHit
 } from '@pi-amadeus/shared'
 
 /**
@@ -162,6 +169,74 @@ export async function switchBranchApi(input: {
     }
   )
   if (!res.ok) throw new Error(await readError(res, '切换分支失败'))
+}
+
+/** 完整消息分支树：所有分支节点 + 当前活跃路径 */
+export async function fetchMessageTree(sessionId: string): Promise<BranchTreeResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}/tree`)
+  if (!res.ok) throw new Error(await readError(res, '分支树读取失败'))
+  return (await res.json()) as BranchTreeResponse
+}
+
+/** 把活跃叶切到某条消息所在分支的最新后代 */
+export async function setActiveLeafApi(input: {
+  sessionId: string
+  userId: string
+  messageId: string
+}): Promise<string | null> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/sessions/${encodeURIComponent(input.sessionId)}/active-leaf`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: input.userId, messageId: input.messageId })
+    }
+  )
+  if (!res.ok) throw new Error(await readError(res, '切换分支失败'))
+  const json = (await res.json()) as { activeLeafId?: string | null }
+  return json.activeLeafId ?? null
+}
+
+// ---------- 只读工作区（文件树 / Git） ----------
+
+export async function fetchWorkspaceInfo(): Promise<WorkspaceInfo> {
+  const res = await fetch(`${BRAIN_URL}/api/workspace/info`)
+  if (!res.ok) throw new Error(await readError(res, '工作区读取失败'))
+  return (await res.json()) as WorkspaceInfo
+}
+
+export async function fetchWorkspaceTree(): Promise<{ root: string; entries: WorkspaceEntry[] }> {
+  const res = await fetch(`${BRAIN_URL}/api/workspace/tree`)
+  if (!res.ok) throw new Error(await readError(res, '文件树读取失败'))
+  return (await res.json()) as { root: string; entries: WorkspaceEntry[] }
+}
+
+export async function fetchWorkspaceFile(path: string): Promise<WorkspaceFile> {
+  const params = new URLSearchParams({ path })
+  const res = await fetch(`${BRAIN_URL}/api/workspace/file?${params}`)
+  if (!res.ok) throw new Error(await readError(res, '文件读取失败'))
+  return (await res.json()) as WorkspaceFile
+}
+
+export async function fetchWorkspaceGit(): Promise<WorkspaceGitStatus> {
+  const res = await fetch(`${BRAIN_URL}/api/workspace/git`)
+  if (!res.ok) throw new Error(await readError(res, 'Git 状态读取失败'))
+  return (await res.json()) as WorkspaceGitStatus
+}
+
+export async function fetchWorkspaceDiff(path: string): Promise<WorkspaceDiff> {
+  const params = new URLSearchParams({ path })
+  const res = await fetch(`${BRAIN_URL}/api/workspace/diff?${params}`)
+  if (!res.ok) throw new Error(await readError(res, '差异读取失败'))
+  return (await res.json()) as WorkspaceDiff
+}
+
+export async function searchWorkspaceFilesApi(q: string): Promise<WorkspaceSearchHit[]> {
+  const params = new URLSearchParams({ q })
+  const res = await fetch(`${BRAIN_URL}/api/workspace/search?${params}`)
+  if (!res.ok) throw new Error(await readError(res, '文件搜索失败'))
+  const json = (await res.json()) as { hits: WorkspaceSearchHit[] }
+  return json.hits
 }
 
 // ---------- 用户配置（服务端 SQLite 单一来源） ----------

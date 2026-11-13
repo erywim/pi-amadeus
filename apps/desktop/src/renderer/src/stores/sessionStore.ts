@@ -25,6 +25,7 @@ import {
 import { useLive2dStore } from './live2dStore'
 import { useLive2dSpeechStore } from './live2dSpeechStore'
 import { useMemoryStore } from './memoryStore'
+import { useSettingsStore } from './settingsStore'
 import { useUiStore } from './uiStore'
 
 /**
@@ -56,6 +57,14 @@ export interface TurnWorkLog {
   durationMs: number
   /** 被手动停止（发送键变停止键时点击）的回合 */
   stopped: boolean
+}
+
+/** 流式进行中用户继续发送的消息：排队，本回合正常结束后自动发出下一条 */
+export interface QueuedTurn {
+  id: string
+  text: string
+  attachments: OutgoingAttachment[]
+  createdAt: number
 }
 
 /**
@@ -90,6 +99,8 @@ interface SessionState {
    * 下一次发起回合或手动关闭时清掉。
    */
   turnErrors: Record<string, string>
+  /** sessionId → 排队中的消息（流式期间发送不会丢，也不会并发跑两个回合） */
+  queued: Record<string, QueuedTurn[]>
 
   init: () => Promise<void>
   refreshSessions: () => Promise<void>
@@ -114,12 +125,117 @@ interface SessionState {
   /** 手动重命名（乐观更新；失败回滚并抛出，由调用方提示） */
   renameSession: (id: string, title: string) => Promise<void>
   dismissTurnError: (sessionId: string) => void
+  /** 移除一条排队消息 */
+  removeQueued: (sessionId: string, queuedId: string) => void
+  /** 清空某会话的排队消息 */
+  clearQueued: (sessionId: string) => void
+  /** 手动发出排队中的下一条（停止/失败后由用户决定是否继续） */
+  flushQueue: (sessionId: string) => void
 }
 
 export const useSessionStore = create<SessionState>()((set, get) => {
   let abortTurn: AbortController | null = null
   /** 当前回合开始时刻（工作卡耗时统计用） */
   let turnStartedAt = 0
+
+  /** 在指定会话上真正发起一个回合（普通发送与排队发送共用） */
+  function startTurn(sessionId: string, text: string, outgoing: OutgoingAttachment[] = []): void {
+    const { stream, userId } = get()
+    if (stream.streaming || !userId) return
+
+    const trimmed = text.trim()
+    if (!trimmed && outgoing.length === 0) return
+
+    const now = Date.now()
+    const localAttachments: MessageAttachment[] = outgoing.map((item, index) => ({
+      id: `local-${now}-${index}`,
+      kind: attachmentKind(item.mimeType, item.name),
+      name: item.name,
+      mimeType: item.mimeType,
+      size: item.size,
+      url: item.previewUrl ?? ''
+    }))
+    const userMessage: Message = {
+      id: `local-${now}-u`,
+      sessionId,
+      role: 'user',
+      content: trimmed,
+      ttsText: null,
+      mode: 'text',
+      attachments: localAttachments,
+      createdAt: now
+    }
+    const draftId = `local-${now}-a`
+    turnStartedAt = Date.now()
+
+    set((s) => {
+      // 新回合开始：清掉上一回合的停止快照与错误卡
+      const stoppedLogs = { ...s.stoppedLogs }
+      delete stoppedLogs[sessionId]
+      const turnErrors = { ...s.turnErrors }
+      delete turnErrors[sessionId]
+      return {
+        messages: {
+          ...s.messages,
+          [sessionId]: [...(s.messages[sessionId] ?? []), userMessage]
+        },
+        sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
+        stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
+        stoppedLogs,
+        turnErrors
+      }
+    })
+
+    abortTurn = startChatTurn(
+      {
+        userId,
+        sessionId,
+        content: trimmed,
+        attachments: outgoing.map((item) => ({
+          name: item.name,
+          mimeType: item.mimeType,
+          data: item.data
+        }))
+      },
+      (event) => {
+        handleTurnEvent(sessionId, event, false)
+      }
+    )
+  }
+
+  /** 回合完成且窗口不在前台时发系统通知（权限未授予则静默跳过） */
+  function notifyTurnDone(sessionId: string, content: string): void {
+    const settings = useSettingsStore.getState()
+    // hasFocus 比 document.hidden 更准确：Electron 窗口失焦但仍可见时 hidden 为 false
+    if (!settings.notifyOnComplete || document.hasFocus()) return
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+    const title = get().sessions.find((session) => session.id === sessionId)?.title || 'Amadeus'
+    try {
+      const notification = new Notification(title, {
+        body: content.replace(/\s+/g, ' ').trim().slice(0, 120)
+      })
+      notification.onclick = () => {
+        window.focus()
+        notification.close()
+      }
+    } catch (error) {
+      console.warn('[session] 系统通知发送失败：', error)
+    }
+  }
+
+  /** 自动推进队列：优先刚结束的会话，其次当前会话 */
+  function flushNextQueued(preferredSessionId?: string): void {
+    if (get().stream.streaming) return
+    const { queued, activeSessionId } = get()
+    const candidates = [preferredSessionId, activeSessionId].filter(
+      (id): id is string => typeof id === 'string'
+    )
+    for (const sessionId of candidates) {
+      if ((queued[sessionId]?.length ?? 0) === 0) continue
+      get().flushQueue(sessionId)
+      return
+    }
+  }
 
   /** 结束当前回合流（中止 + 清空流状态）；markStopped 时把进行中的工具活动存为停止快照 */
   function endStream(markStopped = false): void {
@@ -296,6 +412,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         })
         turnStartedAt = 0
         abortTurn = null
+        notifyTurnDone(sessionId, assistantMessage.content)
+        // 正常结束后自动发下一条排队消息（停止/失败不自动继续，交给用户决定）
+        flushNextQueued(sessionId)
         // 回合结束后回读一次：同步服务端消息 id、分支序号与附件 URL
         void get().refreshSession(sessionId)
         // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
@@ -327,6 +446,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     workLogs: {},
     stoppedLogs: {},
     turnErrors: {},
+    queued: {},
 
     init: async () => {
       try{
@@ -431,12 +551,15 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         for (const messageId of removedMessageIds) {
           delete workLogs[messageId]
         }
+        const queued = { ...s.queued }
+        delete queued[id]
         return {
           sessions,
           messages,
           stoppedLogs,
           workLogs,
           turnErrors,
+          queued,
           activeSessionId: s.activeSessionId === id ? null : s.activeSessionId
         }
       })
@@ -444,67 +567,29 @@ export const useSessionStore = create<SessionState>()((set, get) => {
 
     sendMessage: (text, outgoing = []) => {
       const { activeSessionId, stream, userId } = get()
-      if (stream.streaming || !activeSessionId || !userId) return
+      if (!activeSessionId || !userId) return
 
       const trimmed = text.trim()
       if (!trimmed && outgoing.length === 0) return
 
-      const sessionId = activeSessionId
-      const now = Date.now()
-      const localAttachments: MessageAttachment[] = outgoing.map((item, index) => ({
-        id: `local-${now}-${index}`,
-        kind: attachmentKind(item.mimeType, item.name),
-        name: item.name,
-        mimeType: item.mimeType,
-        size: item.size,
-        url: item.previewUrl ?? ''
-      }))
-      const userMessage: Message = {
-        id: `local-${now}-u`,
-        sessionId,
-        role: 'user',
-        content: trimmed,
-        ttsText: null,
-        mode: 'text',
-        attachments: localAttachments,
-        createdAt: now
+      // 流式期间继续发送 → 排队（保持顺序，本回合结束后自动发下一条）
+      if (stream.streaming) {
+        const item: QueuedTurn = {
+          id: crypto.randomUUID(),
+          text: trimmed,
+          attachments: outgoing,
+          createdAt: Date.now()
+        }
+        set((s) => ({
+          queued: {
+            ...s.queued,
+            [activeSessionId]: [...(s.queued[activeSessionId] ?? []), item]
+          }
+        }))
+        return
       }
-      const draftId = `local-${now}-a`
-      turnStartedAt = Date.now()
 
-      set((s) => {
-        // 新回合开始：清掉上一回合的停止快照与错误卡
-        const stoppedLogs = { ...s.stoppedLogs }
-        delete stoppedLogs[sessionId]
-        const turnErrors = { ...s.turnErrors }
-        delete turnErrors[sessionId]
-        return {
-          messages: {
-            ...s.messages,
-            [sessionId]: [...(s.messages[sessionId] ?? []), userMessage]
-          },
-          sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
-          stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
-          stoppedLogs,
-          turnErrors
-        }
-      })
-
-      abortTurn = startChatTurn(
-        {
-          userId,
-          sessionId,
-          content: trimmed,
-          attachments: outgoing.map((item) => ({
-            name: item.name,
-            mimeType: item.mimeType,
-            data: item.data
-          }))
-        },
-        (event) => {
-          handleTurnEvent(sessionId, event, false)
-        }
-      )
+      startTurn(activeSessionId, trimmed, outgoing)
     },
 
     regenerate: () => {
@@ -651,6 +736,39 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         delete turnErrors[sessionId]
         return { turnErrors }
       })
+    },
+
+    removeQueued: (sessionId, queuedId) => {
+      set((s) => {
+        const list = (s.queued[sessionId] ?? []).filter((item) => item.id !== queuedId)
+        const queued = { ...s.queued }
+        if (list.length > 0) queued[sessionId] = list
+        else delete queued[sessionId]
+        return { queued }
+      })
+    },
+
+    clearQueued: (sessionId) => {
+      set((s) => {
+        const queued = { ...s.queued }
+        delete queued[sessionId]
+        return { queued }
+      })
+    },
+
+    flushQueue: (sessionId) => {
+      if (get().stream.streaming) return
+      const list = get().queued[sessionId] ?? []
+      const first = list[0]
+      if (!first) return
+      set((s) => {
+        const next = (s.queued[sessionId] ?? []).slice(1)
+        const queued = { ...s.queued }
+        if (next.length > 0) queued[sessionId] = next
+        else delete queued[sessionId]
+        return { queued }
+      })
+      startTurn(sessionId, first.text, first.attachments)
     }
   }
 })
