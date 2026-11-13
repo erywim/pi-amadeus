@@ -1,3 +1,4 @@
+import type { ComputerRequest } from './computer.ts'
 import type { Emotion, Gesture } from './emotion.ts'
 
 /**
@@ -17,6 +18,7 @@ export type SseEventType =
   | 'tool_update'
   | 'tool_end'
   | 'tool_confirm'
+  | 'computer_request'
 
 /** 工具执行状态（渲染端展示用） */
 export type ToolStatus = 'running' | 'success' | 'error' | 'denied' | 'timeout' | 'blocked'
@@ -117,6 +119,9 @@ export interface SseToolConfirmEvent extends SseEventBase {
   expiresAt: number
 }
 
+/** Computer Use 请求：renderer 负责确认并通过 IPC 执行动作，再 POST 结果回 brain。 */
+export type SseComputerRequestEvent = ComputerRequest
+
 export type SseEvent =
   | SseDeltaEvent
   | SseDoneEvent
@@ -129,3 +134,4 @@ export type SseEvent =
   | SseToolUpdateEvent
   | SseToolEndEvent
   | SseToolConfirmEvent
+  | SseComputerRequestEvent

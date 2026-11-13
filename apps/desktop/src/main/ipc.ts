@@ -1,12 +1,15 @@
 import { app, ipcMain, shell } from 'electron'
+import type { ComputerAction } from '@pi-amadeus/shared'
+import { ComputerControl } from './computer-control'
 import type { WindowManager } from './window-manager'
 
 /**
  * IPC 面：应用元信息 + 打开目录（skill 管理页）+ 窗口/桌宠模式。
  * 其余大脑服务以 HTTP/SSE 直连渲染层。渲染层传入的参数一律按 unknown 校验。
  */
-export function registerIpcHandlers(windows: WindowManager, onUiLanguage: (lang: string) => void): void {
+export function registerIpcHandlers(windows: WindowManager, onUiLanguage: (lang: string) => void, computer: ComputerControl): void {
   ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('computer:execute', (event, action: unknown) => computer.execute(event.sender, action as ComputerAction))
   ipcMain.handle('app:platform', () => process.platform)
   // 返回空串=成功；非空=错误消息（shell.openPath 契约）
   ipcMain.handle('shell:openPath', (_event, path: unknown) =>

@@ -1,4 +1,5 @@
 export * from './bilingual.ts'
+export * from './computer.ts'
 export * from './config.ts'
 export * from './emotion.ts'
 export * from './memory.ts'

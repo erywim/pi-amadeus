@@ -1,4 +1,6 @@
 /** 应用模式：window=常规主窗口；pet=透明置顶的桌宠窗口 */
+import type { ComputerAction, ComputerExecutionResult } from '@pi-amadeus/shared'
+
 export type AppMode = 'window' | 'pet'
 
 export type DesktopApi = {
@@ -6,6 +8,9 @@ export type DesktopApi = {
   getPlatform: () => Promise<string>
   /** 在系统文件管理器中打开目录；返回空串=成功，非空=错误消息 */
   openPath: (path: string) => Promise<string>
+  computer: {
+    execute: (action: ComputerAction) => Promise<ComputerExecutionResult>
+  }
   /** 上报界面语言（原生托盘/右键菜单文案跟随） */
   setUiLanguage: (lang: string) => void
   getMode: () => Promise<AppMode>

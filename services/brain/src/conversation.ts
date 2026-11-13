@@ -59,7 +59,8 @@ export function defaultUserConfig(cfg: BrainConfig): UserConfig {
     outputLanguage: 'zh',
     systemPrompt: '',
     temperature: 0.8,
-    tools: { enabled: true }
+    tools: { enabled: true },
+    computerUse: { enabled: false }
   }
 }
 

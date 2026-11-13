@@ -168,7 +168,9 @@
     "toolApprove": "Allow",
     "toolReject": "Reject",
     "toolConfirmExpires": "Auto-rejected in {{seconds}}s",
-    "toolConfirmExpired": "Timed out — command was not executed"
+    "toolConfirmExpired": "Timed out — command was not executed",
+    "computerConfirmTitle": "Computer action confirmation",
+    "computerConfirmDesc": "The assistant wants to operate the current Amadeus window. Review the action first; screenshots are sent to the model."
   },
   "companion": {
     "charName": "Kurisu Makise",
@@ -274,6 +276,8 @@
       "loginRequired": "Log in on the Companion page first",
       "toolsEnable": "Tool Calling",
       "toolsDesc": "Let the assistant use tools: time, calculator, weather, web search, terminal commands (dangerous commands are blocked by the safety policy)",
+      "computerUseEnable": "Enable computer actions",
+      "computerUseDesc": "Available only to vision models; every screenshot and input requires confirmation. Off by default.",
       "fallbackHint": "The built-in config below is used only when no model service is active."
     },
     "feishu": {

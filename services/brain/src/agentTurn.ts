@@ -13,6 +13,7 @@ import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/inde
 import { deniedMessage, rejectAllForTurn, requestBashConfirm } from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
 import { buildToolRegistry } from './tools/index.ts'
+import { DesktopBridge, registerDesktopBridge, unregisterDesktopBridge } from './tools/desktop-bridge.ts'
 
 /**
  * 工具版回合核心（chat 与 feishu 共用）：prepareTurn 复用 →
@@ -123,12 +124,24 @@ export async function* runAgentTurn(
     return promise
   }
 
+  const desktopBridge =
+    toolsEnabled && prepared.userConfig?.computerUse?.enabled === true && opts.channel === 'desktop' && prepared.target.vision
+      ? new DesktopBridge({
+          turnId,
+          signal: opts.signal,
+          timeoutMs: opts.cfg.tools.computerTimeoutMs,
+          push: (event) => queue.push(event)
+        })
+      : undefined
+  if (desktopBridge) registerDesktopBridge(desktopBridge)
+
   const tools = toolsEnabled
     ? buildToolRegistry({
         cfg: opts.cfg,
         channel: opts.channel,
         target: prepared.target,
-        confirmRequest
+        confirmRequest,
+        desktopBridge
       })
     : []
 
@@ -249,6 +262,9 @@ export async function* runAgentTurn(
     unsubscribe()
     opts.signal?.removeEventListener('abort', onAbort)
     rejectAllForTurn(turnId)
+    if (desktopBridge) {
+      unregisterDesktopBridge(turnId)
+    }
   }
 
   if (opts.signal?.aborted) {

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import type { Message, Session, SseEvent, StreamState, ToolActivityItem, ToolStatus } from '@pi-amadeus/shared'
+import type { ComputerRequest, ComputerResult, Message, Session, SseEvent, StreamState, ToolActivityItem, ToolStatus } from '@pi-amadeus/shared'
 import {
+  confirmComputer,
   confirmTool,
   deleteSessionApi,
   fetchCurrentUser,
@@ -73,6 +74,8 @@ interface SessionState {
   stopStreaming: () => void
   /** bash 确认卡应答（允许/拒绝） */
   respondToolConfirm: (approved: boolean) => void
+  /** computer 请求确认与执行结果回传 */
+  respondComputer: (approved: boolean) => void
   /** 手动重命名（乐观更新；失败回滚并抛出，由调用方提示） */
   renameSession: (id: string, title: string) => Promise<void>
   dismissTurnError: (sessionId: string) => void
@@ -107,6 +110,32 @@ export const useSessionStore = create<SessionState>()((set, get) => {
    * replaceLast=true（重新生成）时，done 用新回复替换消息列末尾的旧助手消息；
    * false（普通回合）时追加。错误一律落到 turnErrors，由消息列的错误卡展示。
    */
+  async function executeComputerRequest(request: ComputerRequest, approved = true): Promise<void> {
+    if (request.expiresAt <= Date.now()) {
+      const expired: ComputerResult = { turnId: request.turnId, toolCallId: request.toolCallId, requestId: request.requestId, approved: false, error: { code: 'timeout', message: 'computer 动作确认已超时' } }
+      await confirmComputer(expired).catch(() => {})
+      return
+    }
+    // 已进入执行/拒绝阶段就先撤掉确认卡，避免重复点击产生两次输入。
+    set((s) => ({ stream: { ...s.stream, pendingComputer: undefined } }))
+    if (!approved) {
+      const denied: ComputerResult = { turnId: request.turnId, toolCallId: request.toolCallId, requestId: request.requestId, approved: false, error: { code: 'user_denied', message: '用户拒绝了 computer 动作' } }
+      try { await confirmComputer(denied) } finally { set((s) => ({ stream: { ...s.stream, pendingComputer: undefined } })) }
+      return
+    }
+    try {
+      const result = await window.api.computer.execute(request.args)
+      const reply: ComputerResult = result.ok && result.screenshot
+        ? { turnId: request.turnId, toolCallId: request.toolCallId, requestId: request.requestId, approved: true, screenshot: result.screenshot }
+        : { turnId: request.turnId, toolCallId: request.toolCallId, requestId: request.requestId, approved: true, error: result.error ?? { code: 'execution_failed', message: 'computer 执行失败' } }
+      await confirmComputer(reply)
+    } catch (error) {
+      console.warn('[session] computer 回执失败：', error)
+    } finally {
+      set((s) => ({ stream: { ...s.stream, pendingComputer: undefined } }))
+    }
+  }
+
   function handleTurnEvent(sessionId: string, event: SseEvent, replaceLast: boolean): void {
     const draft = get().stream.draft
     switch (event.type) {
@@ -167,6 +196,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         }))
         return
       }
+      case 'computer_request':
+        set((s) => ({ stream: { ...s.stream, turnId: event.turnId, pendingComputer: event } }))
+        return
       case 'tool_confirm':
         set((s) => ({
           stream: {
@@ -435,6 +467,13 @@ export const useSessionStore = create<SessionState>()((set, get) => {
 
     stopStreaming: () => {
       endStream(true)
+    },
+
+    respondComputer: (approved) => {
+      const request = get().stream.pendingComputer
+      if (!request) return
+      // 用户拒绝或批准都只推进当前一次性请求；回合中止后迟到回执由 brain 以 404 丢弃。
+      void executeComputerRequest(request, approved)
     },
 
     respondToolConfirm: (approved) => {

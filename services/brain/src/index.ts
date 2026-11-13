@@ -8,6 +8,7 @@ import { platformManager } from './platforms/manager.ts'
 import { syncMcpPlugins } from './plugins/registry.ts'
 import { chatRoutes } from './routes/chat.ts'
 import { configRoutes } from './routes/config.ts'
+import { desktopResultRoutes } from './routes/desktop-result.ts'
 import { feishuRoutes } from './routes/feishu.ts'
 import { frameRoutes } from './routes/frames.ts'
 import { memoryRoutes } from './routes/memories.ts'
@@ -47,6 +48,7 @@ app.route('/api', voiceRoutes(cfg, db))
 app.route('/api', sessionRoutes(db))
 app.route('/api', userRoutes(db))
 app.route('/api', configRoutes(cfg, db))
+app.route('/api', desktopResultRoutes())
 app.route('/api', sttRoutes(cfg))
 app.route('/api', frameRoutes())
 app.route('/api', skillRoutes(cfg))

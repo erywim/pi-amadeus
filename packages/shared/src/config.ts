@@ -30,6 +30,8 @@ export interface UserConfig {
   temperature?: number
   /** 工具调用开关（缺省视为 enabled=true，兼容存量配置） */
   tools?: ToolConfig
+  /** Computer Use 独立开关；默认关闭，避免模型静默读取/操作窗口。 */
+  computerUse?: { enabled: boolean }
 }
 
 export const DEFAULT_SYSTEM_PROMPT = `你是"牧濑红莉栖"（Kurisu Makise），天才少女科学家。`

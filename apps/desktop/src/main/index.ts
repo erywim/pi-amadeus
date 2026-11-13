@@ -2,6 +2,7 @@ import { app, ipcMain } from 'electron'
 import { registerIpcHandlers } from './ipc'
 import { setMenuLanguage } from './labels'
 import { AppTray } from './tray'
+import { ComputerControl } from './computer-control'
 import { WindowManager } from './window-manager'
 
 // 开发期开 CDP 调试端口，供自动化 E2E 验证驱动。
@@ -11,11 +12,12 @@ if (!app.isPackaged && !app.commandLine.hasSwitch('remote-debugging-port')) {
 }
 
 app.whenReady().then(() => {
-  const windows = new WindowManager()
+  const computer = new ComputerControl()
+  const windows = new WindowManager(computer)
   const tray = new AppTray(windows)
   registerIpcHandlers(windows, (lang) => {
     if (setMenuLanguage(lang)) tray.refresh()
-  })
+  }, computer)
   windows.onStateChange(() => tray.refresh())
   // 开发期 e2e 断言主进程窗口状态（打包产物不注册）
   if (!app.isPackaged) {

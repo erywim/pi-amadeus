@@ -168,7 +168,9 @@
     "toolApprove": "允许执行",
     "toolReject": "拒绝",
     "toolConfirmExpires": "{{seconds}} 秒后自动拒绝",
-    "toolConfirmExpired": "已超时，命令未执行"
+    "toolConfirmExpired": "已超时，命令未执行",
+    "computerConfirmTitle": "电脑操作确认",
+    "computerConfirmDesc": "助手请求操作当前 Amadeus 窗口，请确认动作和目标后放行。屏幕截图会发送给模型。"
   },
   "companion": {
     "charName": "牧濑红莉栖",
@@ -274,6 +276,8 @@
       "loginRequired": "请先在陪伴模式登录后配置",
       "toolsEnable": "工具调用",
       "toolsDesc": "允许助手使用时间/计算器/天气/搜索/终端命令等工具（危险命令会被安全策略拦截）",
+      "computerUseEnable": "启用电脑操作",
+      "computerUseDesc": "仅视觉模型可用；每次截图和输入都会要求确认，默认关闭。",
       "fallbackHint": "以下内置配置仅在没有任何激活的模型服务时生效。"
     },
     "feishu": {

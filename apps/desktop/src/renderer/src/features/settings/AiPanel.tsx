@@ -157,6 +157,16 @@ export function AiPanel(): React.JSX.Element {
             onCheckedChange={(checked) => updateForm({ ...form, tools: { enabled: checked } })}
           />
         </div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label>{t('settings.ai.computerUseEnable')}</Label>
+            <p className="text-xs text-muted-foreground">{t('settings.ai.computerUseDesc')}</p>
+          </div>
+          <Switch
+            checked={form.computerUse?.enabled ?? false}
+            onCheckedChange={(checked) => updateForm({ ...form, computerUse: { enabled: checked } })}
+          />
+        </div>
         <Button onClick={save} disabled={!userId || !configLoaded || saving}>
           {t('settings.ai.save')}
         </Button>

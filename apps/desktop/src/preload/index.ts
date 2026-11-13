@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { ComputerAction } from '@pi-amadeus/shared'
 
 type AppMode = 'window' | 'pet'
 
@@ -13,6 +14,9 @@ const api = {
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
   getPlatform: (): Promise<NodeJS.Platform> => ipcRenderer.invoke('app:platform'),
   openPath: (path: string): Promise<string> => ipcRenderer.invoke('shell:openPath', path),
+  computer: {
+    execute: (action: ComputerAction): Promise<unknown> => ipcRenderer.invoke('computer:execute', action)
+  },
   setUiLanguage: (lang: string): void => ipcRenderer.send('app:ui-language', lang),
   getMode: (): Promise<AppMode> => ipcRenderer.invoke('mode:get'),
   setMode: (mode: AppMode): void => ipcRenderer.send('mode:set', mode),

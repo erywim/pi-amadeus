@@ -1,3 +1,4 @@
+import type { ComputerRequest } from './computer.ts'
 import type { Emotion } from './emotion.ts'
 import type { ToolStatus } from './sse.ts'
 
@@ -91,4 +92,6 @@ export interface StreamState {
   tools: ToolActivityItem[]
   /** 待确认的 bash 命令 */
   pendingConfirm?: PendingToolConfirm
+  /** 待执行的 computer 请求；截图/输入结果不落库 */
+  pendingComputer?: ComputerRequest
 }

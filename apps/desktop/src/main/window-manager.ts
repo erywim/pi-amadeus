@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, Menu, screen, session, shell, type WebContents } from 'electron'
 import { buildModeMenuItems } from './menus'
 import { PetPointer } from './pet-pointer'
+import type { ComputerControl } from './computer-control'
 
 export type AppMode = 'window' | 'pet'
 
@@ -71,7 +72,7 @@ export class WindowManager {
   private quitting = false
   private readonly listeners = new Set<() => void>()
 
-  constructor() {
+  constructor(private readonly computer?: ComputerControl) {
     app.on('before-quit', () => {
       this.quitting = true
     })
@@ -163,6 +164,7 @@ export class WindowManager {
     })
     loadRenderer(win)
     this.main = win
+    this.computer?.registerWindow(win)
     return win
   }
 
@@ -299,6 +301,7 @@ export class WindowManager {
       if (this.pet === pet && !this.petShown) this.setMode('window')
     }, PET_READY_TIMEOUT_MS)
     loadRenderer(pet, { window: 'pet' })
+    this.computer?.registerWindow(pet)
     return pet
   }
 

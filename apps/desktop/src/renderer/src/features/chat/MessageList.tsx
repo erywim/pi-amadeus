@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { BashConfirmCard } from './BashConfirmCard'
+import { ComputerConfirmCard } from './ComputerConfirmCard'
 import { MessageBubble } from './MessageBubble'
 import { TurnErrorCard } from './TurnErrorCard'
 import { WorkProcessCard } from './WorkProcessCard'
@@ -25,6 +26,7 @@ export function MessageList(): React.JSX.Element {
     s.activeSessionId ? s.turnErrors[s.activeSessionId] : undefined
   )
   const respondToolConfirm = useSessionStore((s) => s.respondToolConfirm)
+  const respondComputer = useSessionStore((s) => s.respondComputer)
   const regenerate = useSessionStore((s) => s.regenerate)
   const dismissTurnError = useSessionStore((s) => s.dismissTurnError)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -170,6 +172,12 @@ export function MessageList(): React.JSX.Element {
             <div className="grid grid-cols-[30px_minmax(0,1fr)] gap-3">
               <div className="size-[30px]" aria-hidden />
               <BashConfirmCard confirm={stream.pendingConfirm} onRespond={respondToolConfirm} />
+            </div>
+          )}
+          {streamInView && stream.pendingComputer && (
+            <div className="grid grid-cols-[30px_minmax(0,1fr)] gap-3">
+              <div className="size-[30px]" aria-hidden />
+              <ComputerConfirmCard request={stream.pendingComputer} onRespond={respondComputer} />
             </div>
           )}
           <div ref={bottomRef} />

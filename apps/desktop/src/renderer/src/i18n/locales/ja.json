@@ -168,7 +168,9 @@
     "toolApprove": "許可する",
     "toolReject": "拒否する",
     "toolConfirmExpires": "{{seconds}} 秒後に自動拒否",
-    "toolConfirmExpired": "タイムアウトしました。コマンドは実行されていません"
+    "toolConfirmExpired": "タイムアウトしました。コマンドは実行されていません",
+    "computerConfirmTitle": "コンピューター操作の確認",
+    "computerConfirmDesc": "アシスタントが Amadeus のウィンドウを操作しようとしています。実行前に確認してください。スクリーンショットはモデルに送信されます。"
   },
   "companion": {
     "charName": "牧瀬紅莉栖",
@@ -274,6 +276,8 @@
       "loginRequired": "先にコンパニオンモードでログインしてください",
       "toolsEnable": "ツール呼び出し",
       "toolsDesc": "アシスタントに時刻・計算機・天気・検索・ターミナルコマンドなどのツール使用を許可（危険なコマンドは安全ポリシーでブロック）",
+      "computerUseEnable": "コンピューター操作を有効化",
+      "computerUseDesc": "視覚モデルのみ利用可能。スクリーンショットと入力は毎回確認が必要です。初期状態はオフです。",
       "fallbackHint": "以下の内蔵設定は、有効なモデルサービスがない場合にのみ使われます。"
     },
     "feishu": {
