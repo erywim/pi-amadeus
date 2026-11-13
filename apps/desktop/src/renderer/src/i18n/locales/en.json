@@ -7,6 +7,8 @@
   "nav": {
     "companion": "Companion",
     "text": "Text",
+    "plugins": "Plugins",
+    "dashboard": "Insights",
     "settings": "Settings",
     "modeSwitch": "Chat mode"
   },
@@ -23,6 +25,87 @@
   "channels": {
     "desktop": "Desktop",
     "feishu": "Feishu"
+  },
+  "plugins": {
+    "title": "Plugin Center",
+    "subtitle": "Extend Amadeus like building blocks: skills, quick commands, themes, and MCP servers.",
+    "search": "Search plugins",
+    "loading": "Loading plugins…",
+    "tab": {
+      "discover": "Discover",
+      "installed": "Installed"
+    },
+    "kind": {
+      "all": "All",
+      "skill": "Skills",
+      "prompt": "Commands",
+      "theme": "Themes",
+      "mcp": "MCP"
+    },
+    "installedBadge": "Installed",
+    "activeTheme": "Active",
+    "install": "Install",
+    "installDone": "Plugin installed",
+    "remove": "Uninstall",
+    "confirmRemove": "Confirm uninstall",
+    "removeDone": "Plugin uninstalled",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "applyTheme": "Apply theme",
+    "themeInUse": "Restore default",
+    "emptySearch": "No matching plugins",
+    "emptyInstalled": "No plugins installed yet — browse Discover",
+    "homepage": "Project page",
+    "securityNote": "MCP plugins start local child processes and may access the network. Only install sources you trust. Skills and commands only affect prompts and never execute code.",
+    "mcp": {
+      "connected": "Connected · {{count}} tools",
+      "connecting": "Connecting…",
+      "failed": "Connection failed",
+      "disabled": "Disabled",
+      "reconnect": "Reconnect",
+      "tools": "Tools: {{tools}}",
+      "envKeys": "Env vars: {{keys}}",
+      "add": "Add MCP",
+      "addTitle": "Add MCP server",
+      "addDesc": "Enter a command that runs locally (stdio transport). It will run as a child process; make sure you trust the source.",
+      "name": "Name",
+      "command": "Command",
+      "args": "Arguments (one per line)",
+      "env": "Environment (KEY=value, one per line)",
+      "added": "MCP server added"
+    }
+  },
+  "dashboard": {
+    "title": "Insights",
+    "subtitle": "Trends across sessions, turns, tool calls, and token usage.",
+    "refresh": "Refresh",
+    "loading": "Crunching numbers…",
+    "empty": "No stats yet",
+    "loginRequired": "Sign in to see insights",
+    "kpi": {
+      "sessions": "Sessions",
+      "messages": "Messages",
+      "turns": "Turns",
+      "toolCalls": "Tool calls",
+      "tokens": "Tokens",
+      "tokensHint": "Input {{input}} · Output {{output}}",
+      "plugins": "Plugins",
+      "pluginsHint": "{{enabled}} enabled"
+    },
+    "chart": {
+      "activity": "Last 14 days",
+      "activityHint": "Completed turns per day",
+      "tokens": "Token trend",
+      "tokensHint": "Input + output",
+      "channels": "Channels",
+      "tools": "Top tools",
+      "noTools": "No tool calls recorded yet",
+      "models": "Model usage",
+      "noModels": "No model usage yet",
+      "plugins": "Plugin mix",
+      "noPlugins": "No plugins installed yet"
+    },
+    "footnote": "Metrics are recorded from this version onward; earlier turns have no token data and are not backfilled."
   },
   "common": {
     "cancel": "Cancel",
@@ -138,6 +221,10 @@
     "inputPlaceholder": "Describe your task; the agent takes over",
     "attach": "Attach",
     "attachWip": "Attachments not integrated yet",
+    "commands": "Commands",
+    "commandsTitle": "Quick commands",
+    "commandsEmpty": "No quick commands yet — install some from Plugins → Discover",
+    "commandsNoMatch": "No matching commands",
     "modelCustom": "Custom model ID…",
     "modelCustomPlaceholder": "Model ID",
     "modelSaved": "Model saved to the brain service",

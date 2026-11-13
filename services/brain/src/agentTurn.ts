@@ -7,6 +7,8 @@ import type { BrainConfig } from './config.ts'
 import { prepareTurn } from './conversation.ts'
 import type { Db } from './db.ts'
 import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
+import { mcpManager } from './mcp/manager.ts'
+import { disabledSkillNames } from './plugins/registry.ts'
 import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/index.ts'
 import { deniedMessage, rejectAllForTurn, requestBashConfirm } from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
@@ -37,9 +39,20 @@ export interface AgentTurnOptions {
   omitMessageId?: string
 }
 
+export interface AgentTurnUsage {
+  input: number
+  output: number
+  total: number
+}
+
 export interface AgentTurnResult {
   full: string
   target: LlmTarget
+  /** 本回合所有 LLM 调用的 token 用量（工具循环会多次调用，逐次累加） */
+  usage: AgentTurnUsage
+  /** 本回合实际执行的工具次数与工具名（看板统计用） */
+  toolCalls: number
+  toolNames: string[]
 }
 
 /** 工具结果文本的 UI 上限（超出截断） */
@@ -78,11 +91,16 @@ export async function* runAgentTurn(
     appendUserMessage: opts.appendUserMessage,
     omitMessageId: opts.omitMessageId
   })
-  if (opts.signal?.aborted) return { full: '', target: prepared.target }
+  if (opts.signal?.aborted) {
+    return { full: '', target: prepared.target, usage: { input: 0, output: 0, total: 0 }, toolCalls: 0, toolNames: [] }
+  }
 
   const toolsEnabled = prepared.userConfig?.tools?.enabled !== false
   const queue = new AsyncQueue<SseEvent>()
   let full = ''
+  // 指标：工具循环里每次 LLM 调用都会带 usage，逐次累加才是本回合真实消耗
+  const usage: AgentTurnUsage = { input: 0, output: 0, total: 0 }
+  const toolNames: string[] = []
 
   // bash 确认握手：登记 pending → tool_confirm 事件上屏 → execute 内 await 放行
   const confirmRequest = async (toolCallId: string, command: string): Promise<boolean> => {
@@ -114,11 +132,15 @@ export async function* runAgentTurn(
       })
     : []
 
-  // skill：文件形式、每回合热加载；启用列表注入 systemPrompt + use_skill 工具
-  const skillBundle = toolsEnabled ? await loadSkillBundle(opts.cfg) : { skills: [] }
+  // skill：文件形式、每回合热加载；启用列表注入 systemPrompt + use_skill 工具。
+  // 插件中心关掉的 skill 与文件状态表里的停用取并集，两处入口效果一致
+  const disabledSkills = toolsEnabled ? await disabledSkillNames(opts.db) : new Set<string>()
+  const skillBundle = toolsEnabled ? await loadSkillBundle(opts.cfg, disabledSkills) : { skills: [] }
   if (skillBundle.skills.length > 0) {
     tools.push(createUseSkillTool(skillBundle.skills))
   }
+  // MCP 插件工具：只取当前已连接的服务，连接失败不阻塞本回合
+  if (toolsEnabled) tools.push(...mcpManager.listAgentTools())
   const labelOf = new Map(tools.map((t) => [t.name, t.label]))
 
   // 安全第一道：pi 原生 beforeToolCall 权限钩子——高危 bash 命令直接拦截
@@ -157,6 +179,14 @@ export async function* runAgentTurn(
           queue.push({ type: 'delta', delta })
         }
         return
+      case 'message_end':
+        // 每条助手消息结束都带 usage；工具循环里的每次调用都要计入本回合
+        if (event.message.role === 'assistant' && event.message.usage) {
+          usage.input += event.message.usage.input ?? 0
+          usage.output += event.message.usage.output ?? 0
+          usage.total += event.message.usage.totalTokens ?? 0
+        }
+        return
       case 'tool_execution_start':
         queue.push({
           type: 'tool_start',
@@ -177,6 +207,7 @@ export async function* runAgentTurn(
         })
         return
       case 'tool_execution_end': {
+        toolNames.push(event.toolName)
         const resultText = textOf(event.result?.content)
         const details: Record<string, unknown> = { ...(event.result?.details ?? {}) }
         // bash 拒绝/拦截：execute 抛出的消息是唯一定位来源，回推 deniedReason
@@ -220,8 +251,12 @@ export async function* runAgentTurn(
     rejectAllForTurn(turnId)
   }
 
-  if (opts.signal?.aborted) return { full: '', target: prepared.target }
+  if (opts.signal?.aborted) {
+    return { full: '', target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
+  }
   if (agent.state.errorMessage) throw new Error(agent.state.errorMessage)
   if (!full) throw new Error('LLM 返回为空')
-  return { full, target: prepared.target }
+  // totalTokens 缺失时用输入+输出兜底（部分兼容端点不返回 total）
+  if (usage.total === 0) usage.total = usage.input + usage.output
+  return { full, target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
 }

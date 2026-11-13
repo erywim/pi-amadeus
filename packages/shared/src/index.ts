@@ -1,5 +1,6 @@
 export * from './bilingual.ts'
 export * from './config.ts'
 export * from './emotion.ts'
+export * from './plugin.ts'
 export * from './session.ts'
 export * from './sse.ts'

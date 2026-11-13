@@ -1,4 +1,12 @@
-import type { Message, Session, SseEvent, UserConfig } from '@pi-amadeus/shared'
+import type {
+  InstalledPlugin,
+  Message,
+  PluginListResponse,
+  Session,
+  SseEvent,
+  StatsResponse,
+  UserConfig
+} from '@pi-amadeus/shared'
 
 /**
  * 大脑服务 HTTP/SSE 客户端。
@@ -259,4 +267,88 @@ export async function setSkillEnabledApi(name: string, enabled: boolean): Promis
     body: JSON.stringify({ enabled })
   })
   if (!res.ok) throw new Error(`skill 启停失败: HTTP ${res.status}`)
+}
+
+// ---------- 插件中心 ----------
+
+async function readError(res: Response, fallback: string): Promise<string> {
+  const text = await res.text().catch(() => '')
+  try {
+    const json = JSON.parse(text) as { error?: unknown }
+    if (typeof json.error === 'string') return json.error
+  } catch {
+    /* 非 JSON 响应：退回状态码 */
+  }
+  return `${fallback}: HTTP ${res.status}`
+}
+
+export async function fetchPlugins(): Promise<PluginListResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/plugins`)
+  if (!res.ok) throw new Error(await readError(res, '插件列表失败'))
+  return (await res.json()) as PluginListResponse
+}
+
+export async function installPluginApi(
+  id: string,
+  fields?: Record<string, string>
+): Promise<InstalledPlugin> {
+  const res = await fetch(`${BRAIN_URL}/api/plugins/${encodeURIComponent(id)}/install`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: fields ?? {} })
+  })
+  if (!res.ok) throw new Error(await readError(res, '插件安装失败'))
+  const json = (await res.json()) as { plugin: InstalledPlugin }
+  return json.plugin
+}
+
+export async function uninstallPluginApi(id: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/plugins/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await readError(res, '插件卸载失败'))
+}
+
+export async function setPluginEnabledApi(id: string, enabled: boolean): Promise<InstalledPlugin> {
+  const res = await fetch(`${BRAIN_URL}/api/plugins/${encodeURIComponent(id)}/enabled`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
+  })
+  if (!res.ok) throw new Error(await readError(res, '插件启停失败'))
+  const json = (await res.json()) as { plugin: InstalledPlugin }
+  return json.plugin
+}
+
+export async function reconnectPluginApi(id: string): Promise<InstalledPlugin> {
+  const res = await fetch(`${BRAIN_URL}/api/plugins/${encodeURIComponent(id)}/reconnect`, {
+    method: 'POST'
+  })
+  if (!res.ok) throw new Error(await readError(res, 'MCP 重连失败'))
+  const json = (await res.json()) as { plugin: InstalledPlugin }
+  return json.plugin
+}
+
+export async function addCustomMcpApi(input: {
+  name: string
+  command: string
+  args: string[]
+  env: Record<string, string>
+}): Promise<InstalledPlugin> {
+  const res = await fetch(`${BRAIN_URL}/api/mcp/custom`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(await readError(res, '添加 MCP 服务失败'))
+  const json = (await res.json()) as { plugin: InstalledPlugin }
+  return json.plugin
+}
+
+// ---------- 数据看板 ----------
+
+export async function fetchStats(userId: string, days = 14): Promise<StatsResponse> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/stats?userId=${encodeURIComponent(userId)}&days=${encodeURIComponent(String(days))}`
+  )
+  if (!res.ok) throw new Error(await readError(res, '统计数据加载失败'))
+  return (await res.json()) as StatsResponse
 }

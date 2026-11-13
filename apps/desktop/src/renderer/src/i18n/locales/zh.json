@@ -7,6 +7,8 @@
   "nav": {
     "companion": "陪伴模式",
     "text": "文本模式",
+    "plugins": "插件",
+    "dashboard": "数据",
     "settings": "设置",
     "modeSwitch": "对话模式"
   },
@@ -23,6 +25,87 @@
   "channels": {
     "desktop": "桌面",
     "feishu": "飞书"
+  },
+  "plugins": {
+    "title": "插件中心",
+    "subtitle": "像搭积木一样扩展 Amadeus：技能、快捷指令、主题与 MCP 服务。",
+    "search": "搜索插件",
+    "loading": "正在读取插件…",
+    "tab": {
+      "discover": "发现",
+      "installed": "已安装"
+    },
+    "kind": {
+      "all": "全部",
+      "skill": "技能",
+      "prompt": "指令",
+      "theme": "主题",
+      "mcp": "MCP"
+    },
+    "installedBadge": "已安装",
+    "activeTheme": "使用中",
+    "install": "安装",
+    "installDone": "插件已安装",
+    "remove": "卸载",
+    "confirmRemove": "确认卸载",
+    "removeDone": "插件已卸载",
+    "enabled": "已启用",
+    "disabled": "已停用",
+    "applyTheme": "应用主题",
+    "themeInUse": "恢复默认",
+    "emptySearch": "没有匹配的插件",
+    "emptyInstalled": "还没有安装插件，去「发现」看看",
+    "homepage": "项目主页",
+    "securityNote": "MCP 插件会在本机启动子进程并可能访问网络；只安装你信任的来源。技能与指令只影响提示词，不会执行代码。",
+    "mcp": {
+      "connected": "已连接 · {{count}} 个工具",
+      "connecting": "连接中…",
+      "failed": "连接失败",
+      "disabled": "已停用",
+      "reconnect": "重新连接",
+      "tools": "工具：{{tools}}",
+      "envKeys": "环境变量：{{keys}}",
+      "add": "添加 MCP",
+      "addTitle": "添加 MCP 服务",
+      "addDesc": "填入本机可执行的命令（stdio 传输）。命令会以子进程方式运行，请确认来源可信。",
+      "name": "名称",
+      "command": "命令",
+      "args": "参数（每行一个）",
+      "env": "环境变量（KEY=value，每行一个）",
+      "added": "MCP 服务已添加"
+    }
+  },
+  "dashboard": {
+    "title": "数据总览",
+    "subtitle": "会话、回合、工具调用与 Token 消耗的趋势。",
+    "refresh": "刷新",
+    "loading": "正在统计…",
+    "empty": "暂无统计数据",
+    "loginRequired": "登录后查看统计数据",
+    "kpi": {
+      "sessions": "会话",
+      "messages": "消息",
+      "turns": "回合",
+      "toolCalls": "工具调用",
+      "tokens": "Token",
+      "tokensHint": "输入 {{input}} · 输出 {{output}}",
+      "plugins": "插件",
+      "pluginsHint": "已启用 {{enabled}}"
+    },
+    "chart": {
+      "activity": "近 14 天活跃",
+      "activityHint": "每天完成的回合数",
+      "tokens": "Token 趋势",
+      "tokensHint": "输入 + 输出",
+      "channels": "渠道分布",
+      "tools": "工具调用 Top",
+      "noTools": "还没有工具调用记录",
+      "models": "模型用量",
+      "noModels": "还没有模型用量",
+      "plugins": "插件构成",
+      "noPlugins": "还没有安装插件"
+    },
+    "footnote": "指标从本版本开始记录；更早的历史回合没有 token 数据，不会回溯补造。"
   },
   "common": {
     "cancel": "取消",
@@ -138,6 +221,10 @@
     "inputPlaceholder": "描述你的任务，智能体接手处理",
     "attach": "附件",
     "attachWip": "附件功能暂未接入",
+    "commands": "指令",
+    "commandsTitle": "快捷指令",
+    "commandsEmpty": "还没有快捷指令：到「插件 → 发现」安装",
+    "commandsNoMatch": "没有匹配的指令",
     "modelCustom": "自定义模型 ID…",
     "modelCustomPlaceholder": "模型 ID",
     "modelSaved": "模型已保存到大脑服务",

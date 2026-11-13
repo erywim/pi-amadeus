@@ -9,6 +9,7 @@ import { router } from './router'
 import { useCompanionStore } from './stores/companionStore'
 import { useLive2dStore } from './stores/live2dStore'
 import { useLive2dSpeechStore } from './stores/live2dSpeechStore'
+import { usePluginStore } from './stores/pluginStore'
 import { useSessionStore } from './stores/sessionStore'
 import { syncPersistedLanguage, useSettingsStore } from './stores/settingsStore'
 import { useUiStore } from './stores/uiStore'
@@ -39,7 +40,8 @@ if (import.meta.env.DEV) {
     live2dStore: useLive2dStore,
     live2dSpeechStore: useLive2dSpeechStore,
     companionStore: useCompanionStore,
-    settingsStore: useSettingsStore
+    settingsStore: useSettingsStore,
+    pluginStore: usePluginStore
   }
 }
 

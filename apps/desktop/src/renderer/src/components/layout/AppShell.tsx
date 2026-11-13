@@ -1,15 +1,16 @@
 import * as React from 'react'
 import { useEffect, useRef } from 'react'
-import { Settings, Terminal, UserRound } from 'lucide-react'
+import { BarChart3, Blocks, Settings, Terminal, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { cn } from '@renderer/lib/utils'
 import { setTtsMuted } from '@renderer/lib/ttsPlayer'
+import { usePluginStore } from '@renderer/stores/pluginStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
-const TAB_ROUTES = ['/companion', '/text'] as const
+const TAB_ROUTES = ['/companion', '/text', '/plugins', '/dashboard'] as const
 
 /**
  * 应用外壳（OpenDesign 原型结构）：56px 顶栏 = 品牌区 + 模式页签
@@ -57,6 +58,11 @@ export default function AppShell(): React.JSX.Element {
     }
   }, [userId, configLoaded, loadAiConfig])
 
+  // 插件列表全局加载一次：快捷指令（输入框）、已安装主题（启动恢复）都依赖它
+  useEffect(() => {
+    void usePluginStore.getState().load()
+  }, [])
+
   useEffect(() => {
     if (TAB_ROUTES.includes(location.pathname as (typeof TAB_ROUTES)[number])) {
       lastTabRoute.current = location.pathname
@@ -69,7 +75,9 @@ export default function AppShell(): React.JSX.Element {
 
   const tabs = [
     { path: '/companion', icon: UserRound, label: t('nav.companion') },
-    { path: '/text', icon: Terminal, label: t('nav.text') }
+    { path: '/text', icon: Terminal, label: t('nav.text') },
+    { path: '/plugins', icon: Blocks, label: t('nav.plugins') },
+    { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') }
   ]
 
   return (

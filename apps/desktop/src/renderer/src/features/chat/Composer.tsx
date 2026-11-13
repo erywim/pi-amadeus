@@ -1,9 +1,10 @@
 import * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, Check, ChevronDown, Plus, Square } from 'lucide-react'
+import { ArrowUp, Check, ChevronDown, Plus, Sparkles, Square } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
+import { promptCommandsOf, usePluginStore, type PromptCommand } from '@renderer/stores/pluginStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 
@@ -27,6 +28,42 @@ function CodexComposerInner(): React.JSX.Element {
   const sendMessage = useSessionStore((s) => s.sendMessage)
   const stopStreaming = useSessionStore((s) => s.stopStreaming)
   const userId = useSessionStore((s) => s.userId)
+  const installedPlugins = usePluginStore((s) => s.installed)
+  const catalog = usePluginStore((s) => s.catalog)
+  const commands = React.useMemo(
+    () => promptCommandsOf(installedPlugins, catalog),
+    [installedPlugins, catalog]
+  )
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuQuery, setMenuQuery] = useState('')
+  const [menuIndex, setMenuIndex] = useState(0)
+  const filteredCommands = commands.filter((command) =>
+    `${command.name} ${command.description}`.toLowerCase().includes(menuQuery.trim().toLowerCase())
+  )
+
+  function openMenu(query = ''): void {
+    setMenuOpen(true)
+    setMenuQuery(query)
+    setMenuIndex(0)
+  }
+
+  function closeMenu(): void {
+    setMenuOpen(false)
+    setMenuQuery('')
+    setMenuIndex(0)
+  }
+
+  function chooseCommand(command: PromptCommand): void {
+    setText(command.prompt)
+    closeMenu()
+    // 等 React 把 value 写回 textarea 后再按内容重算高度
+    window.setTimeout(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      resize(el)
+    }, 0)
+  }
 
   function submit(): void {
     const value = text.trim()
@@ -36,6 +73,7 @@ function CodexComposerInner(): React.JSX.Element {
       toast.error(t('settings.ai.loginRequired'))
       return
     }
+    closeMenu()
     sendMessage(value)
     setText('')
     if (textareaRef.current) textareaRef.current.style.height = ''
@@ -49,12 +87,52 @@ function CodexComposerInner(): React.JSX.Element {
   return (
     <div className="mx-auto max-w-[780px]">
       <form
-        className="rounded-xl border border-line-strong bg-surface transition-shadow focus-within:border-primary focus-within:shadow-[0_0_0_3px_var(--accent-soft)]"
+        className="relative rounded-xl border border-line-strong bg-surface transition-shadow focus-within:border-primary focus-within:shadow-[0_0_0_3px_var(--accent-soft)]"
         onSubmit={(e) => {
           e.preventDefault()
           submit()
         }}
       >
+        {/* 快捷指令菜单：点「指令」按钮或输入 / 触发 */}
+        {menuOpen && (
+          <div className="absolute bottom-[calc(100%+6px)] left-0 right-0 z-20 overflow-hidden rounded-xl border border-border bg-surface shadow-[var(--shadow-pop)]">
+            <div className="border-b border-border px-3 py-2 text-[11.5px] text-muted-foreground">
+              {t('codex.commandsTitle')}
+            </div>
+            <div className="max-h-64 overflow-y-auto p-1">
+              {filteredCommands.length === 0 ? (
+                <p className="px-3 py-6 text-center text-[12px] leading-relaxed text-muted-foreground">
+                  {commands.length === 0 ? t('codex.commandsEmpty') : t('codex.commandsNoMatch')}
+                </p>
+              ) : (
+                filteredCommands.map((command, index) => (
+                  <button
+                    key={command.id}
+                    type="button"
+                    data-testid="command-item"
+                    data-command-id={command.id}
+                    // mousedown 阻止默认：点选时输入框不失焦
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => chooseCommand(command)}
+                    onMouseEnter={() => setMenuIndex(index)}
+                    className={cn(
+                      'flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors',
+                      index === menuIndex ? 'bg-surface-soft' : 'hover:bg-surface-soft'
+                    )}
+                  >
+                    <span className="text-[15px] leading-5">{command.icon}</span>
+                    <span className="min-w-0">
+                      <b className="block truncate text-[13px] font-semibold">{command.name}</b>
+                      <span className="block truncate text-[11.5px] text-muted-foreground">
+                        {command.description}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           rows={2}
@@ -62,10 +140,45 @@ function CodexComposerInner(): React.JSX.Element {
           aria-label={t('codex.inputAria')}
           placeholder={t('codex.inputPlaceholder')}
           onChange={(e) => {
-            setText(e.target.value)
+            const value = e.target.value
+            setText(value)
             resize(e.target)
+            // 以 / 开头（且还没换行）时打开指令菜单，后续输入作为过滤词
+            if (value.startsWith('/') && !value.includes('\n')) openMenu(value.slice(1))
+            else if (menuOpen) closeMenu()
           }}
           onKeyDown={(e) => {
+            if (menuOpen) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault()
+                setMenuIndex((index) => (filteredCommands.length ? (index + 1) % filteredCommands.length : 0))
+                return
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault()
+                setMenuIndex((index) =>
+                  filteredCommands.length
+                    ? (index - 1 + filteredCommands.length) % filteredCommands.length
+                    : 0
+                )
+                return
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                closeMenu()
+                return
+              }
+              if (
+                e.key === 'Enter' &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing &&
+                filteredCommands.length > 0
+              ) {
+                e.preventDefault()
+                chooseCommand(filteredCommands[Math.min(menuIndex, filteredCommands.length - 1)]!)
+                return
+              }
+            }
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
               submit()
@@ -81,6 +194,15 @@ function CodexComposerInner(): React.JSX.Element {
           >
             <Plus className="size-3.5" strokeWidth={2} />
             {t('codex.attach')}
+          </button>
+          <button
+            type="button"
+            data-testid="composer-commands"
+            onClick={() => (menuOpen ? closeMenu() : openMenu())}
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-[5px] text-[13.5px] text-ink-2 transition-colors hover:bg-surface-soft"
+          >
+            <Sparkles className="size-3.5" strokeWidth={2} />
+            {t('codex.commands')}
           </button>
           <ModelSelector />
           <span className="flex-1" />

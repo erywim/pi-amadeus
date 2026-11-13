@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { SQLInputValue } from 'node:sqlite'
-import type { Channel, TurnMode } from '@pi-amadeus/shared'
+import type { Channel, PluginKind, TurnMode } from '@pi-amadeus/shared'
 import type { UserConfig } from '@pi-amadeus/shared'
 import type { BrainConfig } from './config.ts'
 
@@ -24,6 +24,33 @@ export interface MessageRow {
   ttsText: string | null
   mode: TurnMode
   createdAt: number
+}
+
+export interface PluginRow {
+  id: string
+  kind: PluginKind
+  name: string
+  enabled: boolean
+  config: Record<string, unknown>
+  installedAt: number
+}
+
+export interface TurnMetricInput {
+  sessionId: string
+  userId: string
+  channel: string
+  model: string
+  startedAt: number
+  durationMs: number
+  toolCalls: number
+  tools: string[]
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
+export interface TurnMetricRow extends TurnMetricInput {
+  id: string
 }
 
 export interface Db {
@@ -66,6 +93,21 @@ export interface Db {
   getCurrentUser(): Promise<{id: string; username : string} | null>
   setCurrentUser(id:string): Promise<void>
   clearCurrentUser():Promise<void>
+  // plugins（插件安装记录，全局共享；skill 的正文仍在 skills 目录）
+  listPlugins(): Promise<PluginRow[]>
+  getPlugin(id: string): Promise<PluginRow | null>
+  upsertPlugin(input: {
+    id: string
+    kind: PluginKind
+    name: string
+    enabled: boolean
+    config: Record<string, unknown>
+  }): Promise<void>
+  setPluginEnabled(id: string, enabled: boolean): Promise<void>
+  deletePlugin(id: string): Promise<void>
+  // turn metrics（数据看板）
+  recordTurnMetric(input: TurnMetricInput): Promise<void>
+  listTurnMetrics(userId: string, sinceMs: number): Promise<TurnMetricRow[]>
 }
 
 /** 读取一行并收窄为业务类型（node:sqlite 返回宽泛的 SQLOutputValue 记录） */
@@ -162,6 +204,31 @@ export function createDb(cfg: BrainConfig['db']): Db {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
           );
+
+          CREATE TABLE IF NOT EXISTS plugins (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            config TEXT NOT NULL DEFAULT '{}',
+            installed_at INTEGER NOT NULL
+          );
+
+          CREATE TABLE IF NOT EXISTS turn_metrics (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            model TEXT NOT NULL,
+            started_at INTEGER NOT NULL,
+            duration_ms INTEGER NOT NULL,
+            tool_calls INTEGER NOT NULL DEFAULT 0,
+            tools TEXT NOT NULL DEFAULT '[]',
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            total_tokens INTEGER NOT NULL DEFAULT 0
+          );
+          CREATE INDEX IF NOT EXISTS idx_turn_metrics_user ON turn_metrics(user_id, started_at DESC);
         `)
         conn = sqlite
       } catch (error) {
@@ -446,8 +513,159 @@ export function createDb(cfg: BrainConfig['db']): Db {
         [sessionId]
       )
       return Number(row?.n ?? 0)
+    },
+
+    // ---------- plugins ----------
+
+    async listPlugins() {
+      const rows = all<{
+        id: string
+        kind: PluginKind
+        name: string
+        enabled: number
+        config: string
+        installed_at: number
+      }>(getConn(), 'SELECT id, kind, name, enabled, config, installed_at FROM plugins ORDER BY installed_at ASC')
+      return rows.map(toPluginRow)
+    },
+
+    async getPlugin(id) {
+      const row = first<{
+        id: string
+        kind: PluginKind
+        name: string
+        enabled: number
+        config: string
+        installed_at: number
+      }>(getConn(), 'SELECT id, kind, name, enabled, config, installed_at FROM plugins WHERE id = ?', [id])
+      return row ? toPluginRow(row) : null
+    },
+
+    async upsertPlugin(input) {
+      run(
+        getConn(),
+        `INSERT INTO plugins (id, kind, name, enabled, config, installed_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, name = excluded.name,
+           enabled = excluded.enabled, config = excluded.config`,
+        [input.id, input.kind, input.name, input.enabled ? 1 : 0, JSON.stringify(input.config), Date.now()]
+      )
+    },
+
+    async setPluginEnabled(id, enabled) {
+      run(getConn(), 'UPDATE plugins SET enabled = ? WHERE id = ?', [enabled ? 1 : 0, id])
+    },
+
+    async deletePlugin(id) {
+      run(getConn(), 'DELETE FROM plugins WHERE id = ?', [id])
+    },
+
+    // ---------- turn metrics ----------
+
+    async recordTurnMetric(input) {
+      const { randomUUID } = await import('node:crypto')
+      run(
+        getConn(),
+        `INSERT INTO turn_metrics
+           (id, session_id, user_id, channel, model, started_at, duration_ms, tool_calls, tools,
+            input_tokens, output_tokens, total_tokens)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          randomUUID(),
+          input.sessionId,
+          input.userId,
+          input.channel,
+          input.model,
+          input.startedAt,
+          input.durationMs,
+          input.toolCalls,
+          JSON.stringify(input.tools),
+          input.inputTokens,
+          input.outputTokens,
+          input.totalTokens
+        ]
+      )
+    },
+
+    async listTurnMetrics(userId, sinceMs) {
+      const rows = all<{
+        id: string
+        session_id: string
+        user_id: string
+        channel: string
+        model: string
+        started_at: number
+        duration_ms: number
+        tool_calls: number
+        tools: string
+        input_tokens: number
+        output_tokens: number
+        total_tokens: number
+      }>(
+        getConn(),
+        `SELECT id, session_id, user_id, channel, model, started_at, duration_ms, tool_calls, tools,
+                input_tokens, output_tokens, total_tokens
+         FROM turn_metrics
+         WHERE user_id = ? AND started_at >= ?
+         ORDER BY started_at ASC`,
+        [userId, sinceMs]
+      )
+      return rows.map((row) => ({
+        id: row.id,
+        sessionId: row.session_id,
+        userId: row.user_id,
+        channel: row.channel,
+        model: row.model,
+        startedAt: Number(row.started_at),
+        durationMs: Number(row.duration_ms),
+        toolCalls: Number(row.tool_calls),
+        tools: parseStringArray(row.tools),
+        inputTokens: Number(row.input_tokens),
+        outputTokens: Number(row.output_tokens),
+        totalTokens: Number(row.total_tokens)
+      }))
     }
   }
 
   return db
+}
+
+/** plugins.config 是用户装的插件配置；解析失败按空对象处理并告警（不覆盖、不回写） */
+function toPluginRow(row: {
+  id: string
+  kind: PluginKind
+  name: string
+  enabled: number
+  config: string
+  installed_at: number
+}): PluginRow {
+  let config: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = JSON.parse(row.config)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      config = parsed as Record<string, unknown>
+    } else {
+      console.warn(`[db] 插件 ${row.id} 的配置不是对象，按空配置展示`)
+    }
+  } catch (error) {
+    console.warn(
+      `[db] 插件 ${row.id} 的配置解析失败，按空配置展示（不会回写）：${error instanceof Error ? error.message : error}`
+    )
+  }
+  return {
+    id: row.id,
+    kind: row.kind,
+    name: row.name,
+    enabled: row.enabled === 1,
+    config,
+    installedAt: Number(row.installed_at)
+  }
+}
+
+function parseStringArray(text: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(text)
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
 }

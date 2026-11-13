@@ -5,6 +5,30 @@ import { runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
 import { finishTurn } from '../conversation.ts'
 import { sseResponse } from '../sse.ts'
 
+/** 回合指标落库（看板数据源）；指标失败不影响回合结果 */
+async function recordMetric(
+  db: Db,
+  input: { sessionId: string; userId: string; startedAt: number; result: AgentTurnResult }
+): Promise<void> {
+  try {
+    await db.recordTurnMetric({
+      sessionId: input.sessionId,
+      userId: input.userId,
+      channel: 'desktop',
+      model: input.result.target.model,
+      startedAt: input.startedAt,
+      durationMs: Date.now() - input.startedAt,
+      toolCalls: input.result.toolCalls,
+      tools: input.result.toolNames,
+      inputTokens: input.result.usage.input,
+      outputTokens: input.result.usage.output,
+      totalTokens: input.result.usage.total
+    })
+  } catch (error) {
+    console.warn('[chat] 回合指标写入失败：', error instanceof Error ? error.message : error)
+  }
+}
+
 /** 文本回合：POST /api/chat { userId, sessionId, content } → SSE delta / tool 事件 / done / error（仅中文） */
 export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
   const app = new Hono()
@@ -22,8 +46,10 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
 
     return sseResponse(
       async function* (signal) {
+        const startedAt = Date.now()
         let full = ''
         let target: AgentTurnResult['target'] | null = null
+        let result: AgentTurnResult | null = null
         try {
           // 手动 next() 迭代：for await 会丢弃 generator 的 return 值
           const run = runAgentTurn({
@@ -41,8 +67,9 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             yield next.value
             next = await run.next()
           }
-          full = next.value.full
-          target = next.value.target
+          result = next.value
+          full = result.full
+          target = result.target
         } catch (error) {
           if (signal.aborted) return
           const message = error instanceof Error ? error.message : String(error)
@@ -50,7 +77,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           yield { type: 'error', message }
           return
         }
-        if (signal.aborted || !full || !target) {
+        if (signal.aborted || !full || !target || !result) {
           if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空' }
           return
         }
@@ -64,6 +91,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           target,
           userText: content
         })
+        await recordMetric(db, { sessionId, userId, startedAt, result })
         yield { type: 'done', sessionId, messageId }
       },
       c.req.raw.signal
@@ -102,8 +130,10 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
 
     return sseResponse(
       async function* (signal) {
+        const startedAt = Date.now()
         let full = ''
         let target: AgentTurnResult['target'] | null = null
+        let result: AgentTurnResult | null = null
         try {
           const run = runAgentTurn({
             cfg,
@@ -123,8 +153,9 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             yield next.value
             next = await run.next()
           }
-          full = next.value.full
-          target = next.value.target
+          result = next.value
+          full = result.full
+          target = result.target
         } catch (error) {
           if (signal.aborted) return
           const message = error instanceof Error ? error.message : String(error)
@@ -132,7 +163,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           yield { type: 'error', message }
           return
         }
-        if (signal.aborted || !full || !target) {
+        if (signal.aborted || !full || !target || !result) {
           if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空' }
           return
         }
@@ -147,6 +178,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           userText,
           replaceMessageId
         })
+        await recordMetric(db, { sessionId, userId, startedAt, result })
         yield { type: 'done', sessionId, messageId }
       },
       c.req.raw.signal

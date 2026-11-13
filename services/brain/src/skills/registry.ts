@@ -171,11 +171,20 @@ async function loadAll(cfg: BrainConfig): Promise<Skill[]> {
   return skills
 }
 
-/** 每回合调用：skill 是文件形式，热编辑无需重启 */
-export async function loadSkillBundle(cfg: BrainConfig): Promise<{ skills: Skill[] }> {
+/**
+ * 每回合调用：skill 是文件形式，热编辑无需重启。
+ * disabledByPlugin 来自插件中心的启停状态——同一份 skill 可能由插件安装，
+ * 用户在插件页关掉它时不应该再去改文件里的状态表，两处状态取并集。
+ */
+export async function loadSkillBundle(
+  cfg: BrainConfig,
+  disabledByPlugin: ReadonlySet<string> = new Set()
+): Promise<{ skills: Skill[] }> {
   const state = readState(cfg.skills.dir)
   const skills = await loadAll(cfg)
-  return { skills: skills.filter((s) => !state.disabled.includes(s.name)) }
+  return {
+    skills: skills.filter((s) => !state.disabled.includes(s.name) && !disabledByPlugin.has(s.name))
+  }
 }
 
 /** 管理页列表：全部 skill + 启停状态（不含正文） */

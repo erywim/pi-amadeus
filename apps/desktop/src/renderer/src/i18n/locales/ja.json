@@ -7,6 +7,8 @@
   "nav": {
     "companion": "コンパニオン",
     "text": "テキスト",
+    "plugins": "プラグイン",
+    "dashboard": "データ",
     "settings": "設定",
     "modeSwitch": "会話モード"
   },
@@ -23,6 +25,87 @@
   "channels": {
     "desktop": "デスクトップ",
     "feishu": "飛書"
+  },
+  "plugins": {
+    "title": "プラグインセンター",
+    "subtitle": "スキル・ショートカット・テーマ・MCP サービスで Amadeus を積み木のように拡張。",
+    "search": "プラグインを検索",
+    "loading": "プラグインを読み込み中…",
+    "tab": {
+      "discover": "見つける",
+      "installed": "インストール済み"
+    },
+    "kind": {
+      "all": "すべて",
+      "skill": "スキル",
+      "prompt": "ショートカット",
+      "theme": "テーマ",
+      "mcp": "MCP"
+    },
+    "installedBadge": "インストール済み",
+    "activeTheme": "使用中",
+    "install": "インストール",
+    "installDone": "インストールしました",
+    "remove": "アンインストール",
+    "confirmRemove": "削除を確認",
+    "removeDone": "アンインストールしました",
+    "enabled": "有効",
+    "disabled": "無効",
+    "applyTheme": "テーマを適用",
+    "themeInUse": "既定に戻す",
+    "emptySearch": "一致するプラグインがありません",
+    "emptyInstalled": "まだプラグインがありません。「見つける」から追加しましょう",
+    "homepage": "プロジェクトページ",
+    "securityNote": "MCP プラグインはローカルで子プロセスを起動し、ネットワークにアクセスする場合があります。信頼できる提供元のみインストールしてください。スキルとショートカットはプロンプトにのみ影響し、コードは実行しません。",
+    "mcp": {
+      "connected": "接続済み · ツール {{count}} 個",
+      "connecting": "接続中…",
+      "failed": "接続失敗",
+      "disabled": "無効",
+      "reconnect": "再接続",
+      "tools": "ツール：{{tools}}",
+      "envKeys": "環境変数：{{keys}}",
+      "add": "MCP を追加",
+      "addTitle": "MCP サービスを追加",
+      "addDesc": "ローカルで実行するコマンドを入力します（stdio 転送）。子プロセスとして起動されるため、信頼できる提供元か確認してください。",
+      "name": "名前",
+      "command": "コマンド",
+      "args": "引数（1 行に 1 つ）",
+      "env": "環境変数（KEY=value、1 行に 1 つ）",
+      "added": "MCP サービスを追加しました"
+    }
+  },
+  "dashboard": {
+    "title": "データ概要",
+    "subtitle": "セッション・ターン・ツール呼び出し・Token 消費の推移。",
+    "refresh": "更新",
+    "loading": "集計中…",
+    "empty": "統計データがありません",
+    "loginRequired": "ログイン後に統計を表示します",
+    "kpi": {
+      "sessions": "セッション",
+      "messages": "メッセージ",
+      "turns": "ターン",
+      "toolCalls": "ツール呼び出し",
+      "tokens": "Token",
+      "tokensHint": "入力 {{input}} · 出力 {{output}}",
+      "plugins": "プラグイン",
+      "pluginsHint": "有効 {{enabled}}"
+    },
+    "chart": {
+      "activity": "直近 14 日のアクティビティ",
+      "activityHint": "1 日あたりの完了ターン数",
+      "tokens": "Token 推移",
+      "tokensHint": "入力 + 出力",
+      "channels": "チャネル分布",
+      "tools": "ツール呼び出し Top",
+      "noTools": "ツール呼び出しの記録はまだありません",
+      "models": "モデル使用量",
+      "noModels": "モデル使用量はまだありません",
+      "plugins": "プラグイン構成",
+      "noPlugins": "プラグインはまだありません"
+    },
+    "footnote": "指標はこのバージョンから記録されます。以前のターンには token データがなく、遡って作成しません。"
   },
   "common": {
     "cancel": "キャンセル",
@@ -138,6 +221,10 @@
     "inputPlaceholder": "タスクを記述すると、エージェントが引き継ぎます",
     "attach": "添付",
     "attachWip": "添付機能は未実装です",
+    "commands": "ショートカット",
+    "commandsTitle": "ショートカット",
+    "commandsEmpty": "ショートカットがありません。「プラグイン → 見つける」から追加してください",
+    "commandsNoMatch": "一致するショートカットがありません",
     "modelCustom": "カスタムモデル ID…",
     "modelCustomPlaceholder": "モデル ID",
     "modelSaved": "モデルを脳サービスに保存しました",
