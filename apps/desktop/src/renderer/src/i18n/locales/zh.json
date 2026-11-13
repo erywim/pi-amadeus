@@ -625,5 +625,70 @@
       "once": "一次性"
     },
     "loginRequired": "登录后可以使用自动化任务"
+  },
+  "workbench": {
+    "title": "Agent 工作台",
+    "providerLabel": "模型",
+    "providerEmpty": "未连接模型服务，正在使用内置配置",
+    "providerSettings": "连接模型服务",
+    "providerHint": "点击切换模型服务",
+    "stage": {
+      "think": "思考",
+      "tool": "工具",
+      "reply": "回复",
+      "done": "完成"
+    },
+    "stageIdle": "待命",
+    "panel": {
+      "graph": "运行图",
+      "terminal": "终端",
+      "artifacts": "工件",
+      "collapse": "收起右侧面板",
+      "expand": "展开右侧面板"
+    },
+    "graph": {
+      "title": "会话运行图",
+      "subtitle": "同一工作区的并行会话",
+      "lane": "会话",
+      "turns": "{{count}} 轮",
+      "live": "运行中",
+      "empty": "还没有会话",
+      "emptyHint": "新建一个会话后，这里会出现它的运行轨道。",
+      "legendUser": "用户",
+      "legendAssistant": "助手",
+      "legendTool": "工具",
+      "legendLive": "进行中",
+      "nodeTooltip": "第 {{index}} 条消息 · {{role}}",
+      "turnNode": "第 {{index}} 轮",
+      "more": "+{{count}}",
+      "historyHint": "非当前会话按消息数绘制，打开后显示完整节点"
+    },
+    "terminal": {
+      "title": "工具活动",
+      "idle": "等待工具调用…",
+      "empty": "这个会话还没有工具活动",
+      "result": "结果",
+      "running": "运行中",
+      "success": "完成",
+      "error": "失败",
+      "session": "会话",
+      "args": "参数"
+    },
+    "artifacts": {
+      "title": "工件",
+      "empty": "助手回复里的 HTML / SVG / Mermaid 会出现在这里",
+      "emptyHint": "在消息的代码块上点「预览」也可以直接打开。",
+      "select": "选择一个工件预览",
+      "count": "{{count}} 个"
+    },
+    "status": {
+      "workspace": "本地工作区",
+      "sessions": "{{count}} 个会话",
+      "turns": "{{count}} 轮对话",
+      "streaming": "正在生成",
+      "idle": "空闲",
+      "model": "模型",
+      "recently": "最近活动"
+    }
   }
 }

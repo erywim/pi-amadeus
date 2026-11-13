@@ -4,6 +4,7 @@ import { ArrowDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { BashConfirmCard } from './BashConfirmCard'
 import { MessageBubble } from './MessageBubble'
+import { RunningBorder } from './RunningBorder'
 import { TurnErrorCard } from './TurnErrorCard'
 import { WorkProcessCard } from './WorkProcessCard'
 import { useSessionStore } from '@renderer/stores/sessionStore'
@@ -125,29 +126,36 @@ export function MessageList(): React.JSX.Element {
 
           {/* 当前回合的流式智能体区块：工作过程卡先行露出，随后流出正文 */}
           {stream.streaming && streamInView && (showTyping || showDraftBubble) && (
-            <div className="anim-msg grid grid-cols-[30px_minmax(0,1fr)] gap-3">
-              <div className="grid size-[30px] place-items-center rounded-full border border-line-strong bg-surface">
-                <span className="font-mono text-[13px] font-bold">K</span>
-              </div>
-              <div className="flex min-w-0 flex-col gap-2 text-[15px] leading-relaxed">
-                {stream.tools.length > 0 && <WorkProcessCard live={{ tools: stream.tools }} />}
-                {showTyping && (
-                  <span className="inline-flex h-[1em] items-center gap-1">
-                    {[0, 1, 2].map((i) => (
-                      <i
-                        key={i}
-                        className="anim-blink inline-block size-[5px] rounded-full bg-muted-foreground"
-                        style={{ animationDelay: `${i * 0.18}s` }}
-                      />
-                    ))}
-                  </span>
-                )}
-                {showDraftBubble && stream.draft && (
-                  <div className="break-words">
-                    <span className="whitespace-pre-wrap">{stream.draft.content}</span>
-                    <span className="ml-0.5 inline-block h-3.5 w-[7px] animate-pulse bg-primary align-middle" />
-                  </div>
-                )}
+            <div
+              data-testid="streaming-bubble"
+              className="anim-msg relative rounded-xl px-2 py-1.5"
+            >
+              {/* Lancer 式流动边框：只在流式期间存在，完成即移除 */}
+              <RunningBorder />
+              <div className="grid grid-cols-[30px_minmax(0,1fr)] gap-3">
+                <div className="grid size-[30px] place-items-center rounded-full border border-line-strong bg-surface">
+                  <span className="font-mono text-[13px] font-bold">K</span>
+                </div>
+                <div className="flex min-w-0 flex-col gap-2 text-[15px] leading-relaxed">
+                  {stream.tools.length > 0 && <WorkProcessCard live={{ tools: stream.tools }} />}
+                  {showTyping && (
+                    <span className="inline-flex h-[1em] items-center gap-1">
+                      {[0, 1, 2].map((i) => (
+                        <i
+                          key={i}
+                          className="anim-blink inline-block size-[5px] rounded-full bg-muted-foreground"
+                          style={{ animationDelay: `${i * 0.18}s` }}
+                        />
+                      ))}
+                    </span>
+                  )}
+                  {showDraftBubble && stream.draft && (
+                    <div className="break-words">
+                      <span className="whitespace-pre-wrap">{stream.draft.content}</span>
+                      <span className="ml-0.5 inline-block h-3.5 w-[7px] animate-pulse bg-primary align-middle" />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

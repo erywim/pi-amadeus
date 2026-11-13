@@ -11,7 +11,7 @@ import { useArtifactStore } from '@renderer/stores/artifactStore'
  * 助手代码块里的 HTML / SVG / Mermaid 在右侧沙箱里渲染。
  * iframe 用 sandbox 且不给 allow-same-origin——模型输出不可信，不能拿到应用上下文。
  */
-export function ArtifactPanel(): React.JSX.Element | null {
+export function ArtifactView(): React.JSX.Element | null {
   const { t } = useTranslation()
   const artifact = useArtifactStore((s) => s.artifact)
   const close = useArtifactStore((s) => s.close)
@@ -90,9 +90,9 @@ export function ArtifactPanel(): React.JSX.Element | null {
   }
 
   return (
-    <aside
+    <div
       data-testid="artifact-panel"
-      className="flex w-[min(46vw,560px)] shrink-0 flex-col border-l border-border bg-surface"
+      className="flex h-full min-h-0 flex-col bg-surface"
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -165,6 +165,6 @@ export function ArtifactPanel(): React.JSX.Element | null {
       <p className="border-t border-border px-3 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
         {t('chat.artifactHint')}
       </p>
-    </aside>
+    </div>
   )
 }

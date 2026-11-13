@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { PanelLeft, Pencil, Trash2 } from 'lucide-react'
+import { PanelLeft, PanelRight, Pencil, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { SessionUsage } from '@pi-amadeus/shared'
@@ -12,10 +12,14 @@ import { useSessionStore } from '@renderer/stores/sessionStore'
 /** 文本模式的标题栏：侧栏开关 + 标题（可重命名） + 渠道徽标 + 轮次统计 + 删除 */
 export function CodexTitlebar({
   sidebarOpen,
-  onToggleSidebar
+  onToggleSidebar,
+  sideOpen,
+  onToggleSide
 }: {
   sidebarOpen: boolean
   onToggleSidebar: () => void
+  sideOpen: boolean
+  onToggleSide: () => void
 }): React.JSX.Element {
   const { t } = useTranslation()
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeSessionId))
@@ -104,6 +108,20 @@ export function CodexTitlebar({
         className="grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft"
       >
         <PanelLeft className="size-4" strokeWidth={1.8} />
+      </button>
+      <button
+        type="button"
+        data-testid="toggle-side-panel"
+        aria-label={sideOpen ? t('workbench.panel.collapse') : t('workbench.panel.expand')}
+        aria-pressed={sideOpen}
+        title={sideOpen ? t('workbench.panel.collapse') : t('workbench.panel.expand')}
+        onClick={onToggleSide}
+        className={cn(
+          'grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft',
+          sideOpen && 'bg-surface-soft text-foreground'
+        )}
+      >
+        <PanelRight className="size-4" strokeWidth={1.8} />
       </button>
       {editing ? (
         <input

@@ -625,5 +625,70 @@
       "once": "1回だけ"
     },
     "loginRequired": "ログインすると利用できます"
+  },
+  "workbench": {
+    "title": "Agent ワークベンチ",
+    "providerLabel": "モデル",
+    "providerEmpty": "モデルサービス未接続（内蔵設定を使用）",
+    "providerSettings": "モデルを接続",
+    "providerHint": "クリックでモデルサービスを切替",
+    "stage": {
+      "think": "思考",
+      "tool": "ツール",
+      "reply": "返答",
+      "done": "完了"
+    },
+    "stageIdle": "待機",
+    "panel": {
+      "graph": "実行グラフ",
+      "terminal": "ターミナル",
+      "artifacts": "成果物",
+      "collapse": "パネルを閉じる",
+      "expand": "パネルを開く"
+    },
+    "graph": {
+      "title": "セッション実行グラフ",
+      "subtitle": "同じワークスペースの並列セッション",
+      "lane": "セッション",
+      "turns": "{{count}} ターン",
+      "live": "実行中",
+      "empty": "セッションがありません",
+      "emptyHint": "セッションを作成すると実行レーンが表示されます。",
+      "legendUser": "ユーザー",
+      "legendAssistant": "アシスタント",
+      "legendTool": "ツール",
+      "legendLive": "実行中",
+      "nodeTooltip": "メッセージ {{index}} · {{role}}",
+      "turnNode": "ターン {{index}}",
+      "more": "+{{count}}",
+      "historyHint": "非アクティブセッションはメッセージ数から描画されます"
+    },
+    "terminal": {
+      "title": "ツール活動",
+      "idle": "ツール呼び出しを待っています…",
+      "empty": "このセッションにはツール活動がありません",
+      "result": "結果",
+      "running": "実行中",
+      "success": "完了",
+      "error": "失敗",
+      "session": "セッション",
+      "args": "引数"
+    },
+    "artifacts": {
+      "title": "成果物",
+      "empty": "アシスタント返答内の HTML / SVG / Mermaid がここに表示されます",
+      "emptyHint": "メッセージのコードブロックで「プレビュー」を押しても開けます。",
+      "select": "成果物を選択してプレビュー",
+      "count": "{{count}} 件"
+    },
+    "status": {
+      "workspace": "ローカルワークスペース",
+      "sessions": "{{count}} セッション",
+      "turns": "{{count}} ターン",
+      "streaming": "生成中",
+      "idle": "アイドル",
+      "model": "モデル",
+      "recently": "最近"
+    }
   }
 }

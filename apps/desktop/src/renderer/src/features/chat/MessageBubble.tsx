@@ -188,7 +188,10 @@ function UserNode({ message }: { message: Message }): React.JSX.Element {
   }
 
   return (
-    <div className="group anim-msg flex flex-col items-end gap-1">
+    <div
+      data-message-id={message.id}
+      className="group anim-msg flex flex-col items-end gap-1"
+    >
       <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-xl border border-border bg-surface-soft px-3.5 py-2.5 text-[15px] leading-relaxed">
         {message.content}
       </div>
@@ -215,7 +218,10 @@ function AssistantNode({
   const workLog = useSessionStore((s) => s.workLogs[message.id])
 
   return (
-    <div className="group anim-msg grid grid-cols-[30px_minmax(0,1fr)] gap-3">
+    <div
+      data-message-id={message.id}
+      className="group anim-msg grid grid-cols-[30px_minmax(0,1fr)] gap-3"
+    >
       <div className="grid size-[30px] place-items-center rounded-full border border-line-strong bg-surface">
         <span className="font-mono text-[13px] font-bold text-foreground">K</span>
       </div>

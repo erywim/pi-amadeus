@@ -625,5 +625,70 @@
       "once": "Once"
     },
     "loginRequired": "Sign in to use automations"
+  },
+  "workbench": {
+    "title": "Agent workbench",
+    "providerLabel": "Models",
+    "providerEmpty": "No model service connected — using built-in config",
+    "providerSettings": "Connect a model",
+    "providerHint": "Click to switch model service",
+    "stage": {
+      "think": "Think",
+      "tool": "Tools",
+      "reply": "Reply",
+      "done": "Done"
+    },
+    "stageIdle": "Idle",
+    "panel": {
+      "graph": "Run graph",
+      "terminal": "Terminal",
+      "artifacts": "Artifacts",
+      "collapse": "Collapse panel",
+      "expand": "Expand panel"
+    },
+    "graph": {
+      "title": "Session run graph",
+      "subtitle": "Parallel sessions in this workspace",
+      "lane": "Session",
+      "turns": "{{count}} turns",
+      "live": "Running",
+      "empty": "No sessions yet",
+      "emptyHint": "Create a session and its run lane will appear here.",
+      "legendUser": "User",
+      "legendAssistant": "Assistant",
+      "legendTool": "Tool",
+      "legendLive": "Live",
+      "nodeTooltip": "Message {{index}} · {{role}}",
+      "turnNode": "Turn {{index}}",
+      "more": "+{{count}}",
+      "historyHint": "Inactive sessions are drawn from message counts; open one for full nodes"
+    },
+    "terminal": {
+      "title": "Tool activity",
+      "idle": "Waiting for tool calls…",
+      "empty": "No tool activity in this session yet",
+      "result": "Result",
+      "running": "Running",
+      "success": "Done",
+      "error": "Failed",
+      "session": "Session",
+      "args": "Args"
+    },
+    "artifacts": {
+      "title": "Artifacts",
+      "empty": "HTML / SVG / Mermaid from assistant replies appears here",
+      "emptyHint": "You can also click Preview on a code block in a message.",
+      "select": "Select an artifact to preview",
+      "count": "{{count}}"
+    },
+    "status": {
+      "workspace": "Local workspace",
+      "sessions": "{{count}} sessions",
+      "turns": "{{count}} turns",
+      "streaming": "Generating",
+      "idle": "Idle",
+      "model": "Model",
+      "recently": "Recently"
+    }
   }
 }

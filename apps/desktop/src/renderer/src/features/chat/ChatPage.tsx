@@ -1,8 +1,10 @@
 import * as React from 'react'
 import { useEffect, useState } from 'react'
-import { useArtifactStore } from '@renderer/stores/artifactStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
-import { ArtifactPanel } from './ArtifactPanel'
+import { ProviderStrip } from '../workbench/ProviderStrip'
+import { StagePipeline } from '../workbench/StagePipeline'
+import { WorkbenchSidePanel } from '../workbench/WorkbenchSidePanel'
+import { WorkbenchStatusBar } from '../workbench/WorkbenchStatusBar'
 import { CodexTitlebar } from './CodexTitlebar'
 import { Composer } from './Composer'
 import { MessageList } from './MessageList'
@@ -17,8 +19,8 @@ export default function ChatPage(): React.JSX.Element {
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const createSession = useSessionStore((s) => s.createSession)
   const stopStreaming = useSessionStore((s) => s.stopStreaming)
-  const artifact = useArtifactStore((s) => s.artifact)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sideOpen, setSideOpen] = useState(true)
 
   // 常见助手的快捷键：⌘/Ctrl+N 新会话、Esc 停止正在生成的回合
   useEffect(() => {
@@ -40,10 +42,14 @@ export default function ChatPage(): React.JSX.Element {
   }, [createSession, stopStreaming])
 
   return (
-    <div className="flex h-full min-h-0 flex-1 bg-surface">
-      {sidebarOpen && <SessionSidebar />}
-      <div className="flex min-w-0 flex-1">
-        <section className="flex min-w-0 flex-1 flex-col">
+    <div
+      data-testid="workbench"
+      className="lancer-workbench grid h-full min-h-0 grid-rows-[minmax(0,1fr)_30px] bg-background text-foreground"
+    >
+      <div className="flex min-h-0">
+        {sidebarOpen && <SessionSidebar />}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <ProviderStrip />
           {activeSessionId === null ? (
             <WelcomeState />
           ) : (
@@ -51,14 +57,22 @@ export default function ChatPage(): React.JSX.Element {
               <CodexTitlebar
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen((v) => !v)}
+                sideOpen={sideOpen}
+                onToggleSide={() => setSideOpen((v) => !v)}
               />
-              <MessageList />
-              <Composer />
+              <div className="flex min-h-0 flex-1">
+                <section className="flex min-w-0 flex-1 flex-col">
+                  <StagePipeline />
+                  <MessageList />
+                  <Composer />
+                </section>
+                {sideOpen && <WorkbenchSidePanel onCollapse={() => setSideOpen(false)} />}
+              </div>
             </>
           )}
-        </section>
-        {artifact && <ArtifactPanel />}
+        </div>
       </div>
+      <WorkbenchStatusBar />
     </div>
   )
 }
