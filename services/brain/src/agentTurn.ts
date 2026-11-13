@@ -143,8 +143,6 @@ export async function* runAgentTurn(
       })
     : []
 
-  if (desktopBridge) registerDesktopBridge(desktopBridge)
-
   // skill：文件形式、每回合热加载；启用列表注入 systemPrompt + use_skill 工具。
   // 插件中心关掉的 skill 与文件状态表里的停用取并集，两处入口效果一致
   const disabledSkills = toolsEnabled ? await disabledSkillNames(opts.db) : new Set<string>()
@@ -154,6 +152,7 @@ export async function* runAgentTurn(
   }
   // MCP 插件工具：只取当前已连接的服务，连接失败不阻塞本回合
   if (toolsEnabled) tools.push(...mcpManager.listAgentTools())
+  if (desktopBridge) registerDesktopBridge(desktopBridge)
   const labelOf = new Map(tools.map((t) => [t.name, t.label]))
 
   // 安全第一道：pi 原生 beforeToolCall 权限钩子——高危 bash 命令直接拦截
