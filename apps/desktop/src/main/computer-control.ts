@@ -91,11 +91,11 @@ function validateAction(action: unknown): asserts action is ComputerAction {
 
 async function captureWindow(win: BrowserWindow): Promise<ComputerExecutionResult> {
   const image = await win.webContents.capturePage()
-  const png = image.toPNG()
-  if (png.byteLength > MAX_SCREENSHOT_BYTES) return failure('execution_failed', '截图超过大小限制')
   const jpeg = image.toJPEG(70)
-  const data = (jpeg.byteLength <= MAX_SCREENSHOT_BYTES ? jpeg : png).toString('base64')
-  const mimeType = jpeg.byteLength <= MAX_SCREENSHOT_BYTES ? 'image/jpeg' : 'image/png'
+  const png = jpeg.byteLength <= MAX_SCREENSHOT_BYTES ? null : image.toPNG()
+  if (png && png.byteLength > MAX_SCREENSHOT_BYTES) return failure('execution_failed', '截图超过大小限制')
+  const data = (png ?? jpeg).toString('base64')
+  const mimeType = png ? 'image/png' : 'image/jpeg'
   const size = nativeImage.createFromBuffer(Buffer.from(data, 'base64')).getSize()
   const screenshot: ComputerScreenshot = { data, mimeType, width: size.width, height: size.height, surface: 'window' }
   return { ok: true, screenshot }
