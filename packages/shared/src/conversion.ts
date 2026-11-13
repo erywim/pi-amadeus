@@ -31,6 +31,7 @@ export type ConversionFormat =
   | 'xml'
   | 'yaml'
   | 'yml'
+  | 'tex'
   | 'doc'
   | 'docx'
   | 'odt'
@@ -39,6 +40,7 @@ export type ConversionFormat =
   | 'wpt'
   | 'wpd'
   | 'ofd'
+  | 'odg'
   | 'xls'
   | 'xlsx'
   | 'xlsm'
@@ -70,7 +72,6 @@ export type ConversionFormat =
   | 'm4v'
   | 'wmv'
   | 'flv'
-  | 'gif-video'
   | 'srt'
   | 'vtt'
   | 'ass'
@@ -79,12 +80,31 @@ export type ConversionFormat =
 export type ConversionOperationId =
   | 'convert'
   | 'images-to-pdf'
+  | 'images-to-zip'
   | 'merge-pdfs'
   | 'pdf-raster'
   | 'media-convert'
   | 'ocr'
   | 'office-convert'
 
+export function normalizeConversionFormat(value: string): ConversionFormat {
+  const format = value.trim().toLowerCase().replace(/^\./, '')
+  if (format === 'jpeg') return 'jpg'
+  if (format === 'markdown') return 'md'
+  if (format === 'yml') return 'yaml'
+  if (format === 'text') return 'txt'
+  return format as ConversionFormat
+}
+
+export function conversionExtension(name: string): ConversionFormat {
+  const extension = name.split(/[\\\\/]/).pop()?.split('.').pop() ?? ''
+  return normalizeConversionFormat(extension)
+}
+
+/**
+ * `ready` 表示进程内依赖已加载；`detected` 表示已找到并启用的本机适配器。
+ * 两种状态都可以执行，前端只应把其它状态显示为不可用。
+ */
 export type ConversionCapabilityStatus = 'ready' | 'detected' | 'missing' | 'broken' | 'unsupported'
 
 export type ConversionReasonCode =
@@ -139,6 +159,7 @@ export interface ConversionCapabilities {
 export interface ConversionTargetsResponse {
   extension: ConversionFormat
   category: string
+  operation: ConversionOperationId
   targets: ConversionFormat[]
   experimental: ConversionFormat[]
 }
@@ -160,10 +181,11 @@ export const CONVERSION_LIMITS: ConversionLimits = {
 }
 
 export const CONVERSION_FORMATS = {
-  image: ['png', 'jpg', 'webp', 'avif', 'tiff', 'gif', 'bmp'] as ConversionFormat[],
-  text: ['txt', 'md', 'html', 'json', 'csv', 'tsv', 'log', 'xml', 'yaml'] as ConversionFormat[],
-  office: ['doc', 'docx', 'odt', 'rtf', 'wps', 'wpt', 'wpd', 'ofd', 'xls', 'xlsx', 'xlsm', 'ods', 'et', 'ett', 'ppt', 'pptx', 'odp', 'dps', 'dpt'] as ConversionFormat[],
+  image: ['png', 'jpg', 'webp', 'avif', 'tiff', 'gif', 'bmp', 'svg', 'ico', 'tga', 'jp2', 'jxl', 'qoi', 'ppm', 'raw'] as ConversionFormat[],
+  text: ['txt', 'md', 'html', 'json', 'csv', 'tsv', 'log', 'xml', 'yaml', 'tex'] as ConversionFormat[],
+  office: ['doc', 'docx', 'odt', 'rtf', 'wps', 'wpt', 'wpd', 'ofd', 'odg', 'xls', 'xlsx', 'xlsm', 'ods', 'et', 'ett', 'ppt', 'pptx', 'odp', 'dps', 'dpt'] as ConversionFormat[],
   document: ['pdf', 'epub', 'mobi'] as ConversionFormat[],
+  archive: ['zip'] as ConversionFormat[],
   audio: ['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg', 'opus', 'wma'] as ConversionFormat[],
-  video: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v', 'wmv', 'flv', 'gif-video'] as ConversionFormat[]
+  video: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v', 'wmv', 'flv'] as ConversionFormat[]
 } as const

@@ -17,7 +17,7 @@
   "conversion": {
     "eyebrow": "LOCAL FILE LAB",
     "title": "File conversion",
-    "subtitle": "Process images, documents, and PDFs locally. Capabilities reflect the current runtime; unavailable engines stay clearly unavailable.",
+    "subtitle": "Process images, text, Office files, ebooks, media, and PDFs locally. Capabilities reflect the current runtime; unavailable engines stay clearly unavailable.",
     "refresh": "Refresh conversion capabilities",
     "serviceOffline": "Conversion service is unavailable",
     "retry": "Retry",
@@ -30,6 +30,7 @@
     "operation": "Operation",
     "target": "Target format",
     "noTargets": "No targets available",
+    "loadingTargets": "Loading target formats…",
     "convert": "Convert",
     "converting": "Converting…",
     "download": "Download result",
@@ -38,8 +39,9 @@
     "detected": "Detected (not enabled)",
     "localOnly": "Conversion runs locally and never uploads to the cloud. Results stay in this page until you download them.",
     "operations": {
-      "convert": "Document / image conversion",
+      "convert": "File format conversion",
       "imagesToPdf": "Images to PDF",
+      "imagesToZip": "Images to ZIP",
       "mergePdfs": "Merge PDFs"
     }
   },

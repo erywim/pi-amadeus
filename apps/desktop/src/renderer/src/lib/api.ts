@@ -578,6 +578,13 @@ export async function mergePdfsApi(files: File[]): Promise<{ blob: Blob; name: s
   return conversionBlob(res, 'PDF 合并失败')
 }
 
+export async function imagesToZipApi(files: File[]): Promise<{ blob: Blob; name: string }> {
+  const form = new FormData()
+  files.forEach((file) => form.append('files', file))
+  const res = await fetch(`${BRAIN_URL}/api/conversion/images-to-zip`, { method: 'POST', body: form })
+  return conversionBlob(res, '图片打包失败')
+}
+
 // ---------- 数据看板 ----------
 
 export async function fetchStats(userId: string, days = 14): Promise<StatsResponse> {

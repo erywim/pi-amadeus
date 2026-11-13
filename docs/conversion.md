@@ -21,17 +21,18 @@ Amadeus 提供一个独立的本地文件转换页（`/conversion`）。它参�
 
 - `sharp`：常见图片解码、EXIF 方向校正与 PNG/JPEG/WebP/AVIF/TIFF/GIF 输出。
 - `pdf-lib`：图片转 PDF 与 PDF 合并。
-- `officeparser`：DOCX/PPTX/XLSX/ODF/RTF/PDF/Markdown/HTML/CSV/EPUB 等文档解析与文本、Markdown、HTML、PDF、CSV、RTF、EPUB 输出；复杂版式、字体、表格与图片可能有损，PDF 原生输出需要其 `pdf-lib` 路径。
+- `fflate`：在本机内存中把多张图片打包为 ZIP，不写入用户目录。
+- `officeparser`：DOCX/PPTX/XLSX/ODF/RTF/PDF/Markdown/HTML/CSV/EPUB/TEX 等文档解析与文本、Markdown、HTML、PDF、CSV、RTF、EPUB、DOCX、ODT、XLSX、ODS、PPTX、ODP、TEX 输出；复杂版式、字体、表格与图片可能有损。
 
-服务只探测、不自动执行的本机工具：FFmpeg/FFprobe、Poppler、LibreOffice、Tesseract、Pandoc。状态含义：
+可选的本机工具也会在运行时探测，并在检测到后用于对应转换：FFmpeg/FFprobe（音视频）、Poppler（PDF 首页栅格化）、LibreOffice（旧版 Office/WPS/OFD 等）、Tesseract（图片 OCR）、Pandoc（文本/文档补充转换）。这些工具不会由用户输入拼接 shell 命令；调用使用固定可执行文件、固定临时目录、参数白名单、超时和结果大小上限。
 
-- `ready`：本服务已加载，可执行对应操作。
-- `detected`：系统找到了工具，但当前版本尚未把它接入转换执行路径。
+状态含义：
+
+- `ready`：进程内依赖已加载，可执行对应操作。
+- `detected`：系统找到了并接入了对应本机适配器，可执行对应操作；具体源/目标组合仍以目标格式接口为准。
 - `missing`：未找到可执行文件。
 - `broken`：找到但版本探测失败。
 - `unsupported`：当前操作没有可用实现。
-
-不能把 `detected` 当成「已支持」：工具的版本、许可证、编解码器与打包策略必须先确认。
 
 ## 限制与安全
 
@@ -41,7 +42,7 @@ Amadeus 提供一个独立的本地文件转换页（`/conversion`）。它参�
 - 不接受可执行文件路径、shell 命令或用户指定的服务端输出路径；转换不经过已有 `bash` 工具。
 - 输出文件名只从展示名生成，并清理换行、引号和反斜杠。
 - 文件内容不会进入聊天上下文、LLM、SQLite 或外部平台。
-- 复杂 PDF、扫描件、OCR、视频编解码、WPS 专有格式、RAW 与加密文件仍需专门引擎和质量验证，不能因为扩展名出现在参考项目矩阵里就宣称已支持。
+- PDF 栅格化当前输出首页；扫描 PDF 的 OCR 需要本机 Tesseract，且默认使用 `eng` 语言。视频编解码、WPS 专有格式、RAW、加密文件和复杂版式的结果仍取决于本机引擎质量，不能因为扩展名出现在参考项目矩阵里就宣称所有组合都无损。
 
 ## 验证
 

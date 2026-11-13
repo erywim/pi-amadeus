@@ -25,7 +25,7 @@
 | 12 | 插件中心 + 数据看板 | ✅ | 四类插件（技能/指令/主题/MCP）、MCP 工具接入、快捷指令、主题切换、回合指标看板 |
 | 13 | 记忆/好感度 + 多模型服务 | ✅ | 长期记忆提取与召回、关系阶段、多服务切换与真实连通性测试 |
 | 14 | 通讯平台接入 | ✅ | Telegram / OneBot v11（QQ）/ 通用 Webhook，共用会话、记忆与指标 |
-| 15 | 本地文件转换 | ✅ | 独立转换页：图片、文档与 PDF 的能力发现、批量图片转 PDF、PDF 合并；更多原生引擎按运行时能力逐步接入 |
+| 15 | 本地文件转换 | ✅ | 独立转换页：图片、文本、Office、电子书、音视频与 PDF 的能力发现、格式转换、图片批处理、归档和 PDF 合并；可选本机引擎按运行时能力显示 |
 
 ## 3. 架构约束
 
@@ -199,10 +199,9 @@
 
 ### 5.13 本地文件转换
 
-- 独立 `/conversion` 页面支持拖放/选择文件、目标格式能力发现、批量图片转 PDF、PDF 合并与下载。
-- 图片、PDF 与 OfficeParser 文档转换在本机 brain 服务内执行；服务只返回当前结果，不把文件写入 SQLite、聊天或外部平台。
-- FFmpeg、Poppler、LibreOffice、Tesseract、Pandoc 等系统工具只显示探测状态，未经过许可证、打包与质量审核前不自动执行。
-- 完整 FlyingMouse 格式矩阵不等于本项目当前承诺；支持情况以 `/api/conversion/capabilities` 的运行时结果为准。
+- 独立 `/conversion` 页面支持拖放/选择文件、目标格式能力发现、图片批量转 PDF/ZIP、PDF 合并与结果下载。
+- 图片、文本、PDF 与 OfficeParser 文档转换在本机 brain 服务内执行；FFmpeg、Poppler、LibreOffice、Tesseract、Pandoc 在存在时接入对应音视频、栅格、Office、OCR 与文档路径。服务只返回当前结果，不把文件写入 SQLite、聊天或外部平台。
+- 完整 FlyingMouse 格式矩阵不等于所有组合无损支持；支持情况以 `/api/conversion/capabilities` 与 `/api/conversion/targets` 的运行时结果为准。
 
 详见 [conversion.md](conversion.md)。
 

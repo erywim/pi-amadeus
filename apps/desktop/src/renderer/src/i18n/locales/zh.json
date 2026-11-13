@@ -17,7 +17,7 @@
   "conversion": {
     "eyebrow": "LOCAL FILE LAB",
     "title": "文件转换",
-    "subtitle": "在本机处理图片、文档与 PDF。能力按当前环境动态显示，未启用的引擎不会伪装成可用。",
+    "subtitle": "在本机处理图片、文本、Office、电子书、音视频与 PDF。能力按当前环境动态显示，未启用的引擎不会伪装成可用。",
     "refresh": "刷新转换能力",
     "serviceOffline": "转换服务暂不可用",
     "retry": "重试",
@@ -30,6 +30,7 @@
     "operation": "操作",
     "target": "目标格式",
     "noTargets": "暂无可用目标",
+    "loadingTargets": "正在读取目标格式…",
     "convert": "开始转换",
     "converting": "转换中…",
     "download": "下载结果",
@@ -38,8 +39,9 @@
     "detected": "已探测（未启用）",
     "localOnly": "转换在本机完成，不上传云端；结果只保留在当前页面，下载前不会写入磁盘。",
     "operations": {
-      "convert": "文档 / 图片转换",
+      "convert": "文件格式转换",
       "imagesToPdf": "图片合并为 PDF",
+      "imagesToZip": "图片打包为 ZIP",
       "mergePdfs": "合并 PDF"
     }
   },

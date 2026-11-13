@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
+import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
 import { loadConfig } from './config.ts'
 import { createDb } from './db.ts'
@@ -36,8 +37,13 @@ void platformManager.init(cfg, db).catch((error) => {
 
 const app = new Hono()
 
-// 开发期 CORS（渲染层 dev server 517x 跨源访问）
-app.use('/api/*', cors({ origin: '*' }))
+// 开发期 CORS（渲染层 dev server 517x 跨源访问）；Electron 打包页的 Origin 为 null，按本机页面放行。
+app.use('/api/*', cors({
+  origin: (origin) => origin === 'null' ? 'null' : origin === 'file://' || origin === 'http://localhost:5173' || origin === 'http://localhost:5174' ? origin : undefined,
+  exposeHeaders: ['Content-Disposition', 'Content-Length']
+}))
+// 在 multipart/json 解析前限制请求体，避免转换请求先整体读入内存再检查大小。
+app.use('/api/conversion/*', bodyLimit({ maxSize: 128 * 1024 * 1024 }))
 
 app.get('/api/health', (c) =>
   c.json({ ok: true, service: 'pi-amadeus-brain', time: Date.now(), feishuEnabled: cfg.feishu.enabled })
@@ -62,7 +68,7 @@ if (cfg.feishu.enabled) {
   app.route('/api', feishuRoutes(cfg, db))
 }
 
-serve({ fetch: app.fetch, port: cfg.port }, (info) => {
+serve({ fetch: app.fetch, port: cfg.port, hostname: '127.0.0.1' }, (info) => {
   console.log(`[brain] pi-amadeus 大脑服务已启动: http://localhost:${info.port}`)
   console.log(`[brain] LLM: ${cfg.llm.model} @ ${cfg.llm.baseUrl}`)
   console.log(`[brain] SQLite: ${cfg.db.path}`)

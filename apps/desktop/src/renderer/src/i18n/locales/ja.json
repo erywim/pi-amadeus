@@ -17,7 +17,7 @@
   "conversion": {
     "eyebrow": "LOCAL FILE LAB",
     "title": "ファイル変換",
-    "subtitle": "画像・文書・PDFをローカルで処理します。利用可能な機能は現在の実行環境に合わせて表示されます。",
+    "subtitle": "画像・テキスト・Office・電子書籍・メディア・PDFをローカルで処理します。利用可能な機能は現在の実行環境に合わせて表示されます。",
     "refresh": "変換機能を更新",
     "serviceOffline": "変換サービスを利用できません",
     "retry": "再試行",
@@ -30,6 +30,7 @@
     "operation": "操作",
     "target": "出力形式",
     "noTargets": "利用可能な形式なし",
+    "loadingTargets": "出力形式を読み込み中…",
     "convert": "変換開始",
     "converting": "変換中…",
     "download": "結果をダウンロード",
@@ -38,8 +39,9 @@
     "detected": "検出済み（未有効）",
     "localOnly": "変換はローカルで完了し、クラウドへアップロードしません。結果はダウンロードするまでページ内だけに保持されます。",
     "operations": {
-      "convert": "文書 / 画像変換",
+      "convert": "ファイル形式変換",
       "imagesToPdf": "画像を PDF に変換",
+      "imagesToZip": "画像を ZIP にまとめる",
       "mergePdfs": "PDF を結合"
     }
   },
