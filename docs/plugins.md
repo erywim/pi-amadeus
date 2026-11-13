@@ -1,6 +1,6 @@
 # 插件中心与数据看板
 
-参考 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的「万物皆插件」生态：
+参考常见的「万物皆插件」生态：
 一个插件就是一份可安装、可启停的能力包。Amadeus 现在有四类插件、一个离线可用的内置目录、
 一个能真实拉起本地 MCP 服务的运行时，以及一块记录回合指标的数据看板。
 

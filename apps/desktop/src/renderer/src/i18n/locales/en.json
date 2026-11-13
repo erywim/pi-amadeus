@@ -236,7 +236,7 @@
       "closeLabel": "Hide dialog"
     }
   },
-  "codex": {
+  "chatShell": {
     "newTask": "New Task",
     "sessionsLabel": "Sessions",
     "untitledTask": "Untitled task",

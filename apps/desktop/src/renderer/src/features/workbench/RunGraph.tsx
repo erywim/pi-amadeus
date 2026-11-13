@@ -111,7 +111,7 @@ export function RunGraph(): React.JSX.Element {
                       isActive ? 'font-semibold text-foreground' : 'text-muted-foreground'
                     )}
                   >
-                    {session.title || t('codex.untitledTask')}
+                    {session.title || t('chatShell.untitledTask')}
                   </span>
                 </button>
 

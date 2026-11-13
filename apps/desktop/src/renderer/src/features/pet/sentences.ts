@@ -3,7 +3,7 @@
 const SENTENCE_END = /[。！？!?]+["”』」）)]*|\n+/g
 
 /**
- * 把流式回复切成句子（XnneHangLab 的 PetBubble 按句显示：新句淡入、上一句缩成一行）。
+ * 把流式回复切成句子（桌宠气泡 按句显示：新句淡入、上一句缩成一行）。
  * 最后一段可能还没说完，照样作为当前句。
  */
 export function splitSentences(text: string): string[] {

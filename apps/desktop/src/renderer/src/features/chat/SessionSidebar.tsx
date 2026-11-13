@@ -54,7 +54,7 @@ function SessionItem({
       <div className="flex min-w-0 items-center gap-2">
         <SessionStatusDot running={running && active} />
         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-[13.5px] font-medium">
-          {session.title || t('codex.untitledTask')}
+          {session.title || t('chatShell.untitledTask')}
         </span>
         <button
           type="button"
@@ -98,8 +98,8 @@ function SessionItem({
         </button>
       </div>
       <div className="overflow-hidden text-ellipsis whitespace-nowrap pl-[15px] text-[12.5px] text-muted-foreground">
-        {t('codex.agentSub', {
-          status: running && active ? t('codex.stateRunning') : t('codex.stateDone'),
+        {t('chatShell.agentSub', {
+          status: running && active ? t('chatShell.stateRunning') : t('chatShell.stateDone'),
           turns
         })}
       </div>
@@ -108,7 +108,7 @@ function SessionItem({
 }
 
 /**
- * Codex 风会话侧栏：新任务按钮 / 按天分组的会话列表（状态点 + 轮次副标题） /
+ * 紧凑工作台风会话侧栏：新任务按钮 / 按天分组的会话列表（状态点 + 轮次副标题） /
  * 底部用户卡（头像、名、研究所头衔、当前世界线读数）。
  */
 export function SessionSidebar(): React.JSX.Element {
@@ -189,7 +189,7 @@ export function SessionSidebar(): React.JSX.Element {
           className="flex w-full items-center gap-2 rounded-[10px] border border-line-strong bg-surface px-3 py-[9px] text-[15px] font-semibold text-foreground transition-colors hover:bg-surface-soft"
         >
           <Plus className="size-4 text-muted-foreground" strokeWidth={2} />
-          {t('codex.newTask')}
+          {t('chatShell.newTask')}
         </button>
       </div>
       <div className="px-4 pb-1 pt-1">
@@ -221,7 +221,7 @@ export function SessionSidebar(): React.JSX.Element {
         </div>
       </div>
       <div className="px-4 pb-1 pt-3 text-[12.5px] tracking-[0.04em] text-muted-foreground">
-        {t('codex.sessionsLabel')}
+        {t('chatShell.sessionsLabel')}
       </div>
       <div className="flex min-h-0 flex-col gap-px overflow-y-auto px-2 py-1">
         {pinnedSessions.length > 0 && (
@@ -292,7 +292,7 @@ export function SessionSidebar(): React.JSX.Element {
                 >
                   <span className="flex items-center gap-1.5 text-[12.5px] font-medium">
                     <span className="truncate">
-                      {hit.sessionTitle || t('codex.untitledTask')}
+                      {hit.sessionTitle || t('chatShell.untitledTask')}
                     </span>
                     <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[9.5px]">
                       {hit.role === 'user' ? 'U' : 'A'}
@@ -325,13 +325,13 @@ export function SessionSidebar(): React.JSX.Element {
       {/* 底部：用户卡 + 世界线彩蛋读数 */}
       <div className="flex items-center gap-2 border-t border-border px-4 py-3">
         <span className="grid size-7 flex-none place-items-center rounded-full bg-foreground text-[12.5px] font-semibold text-background">
-          {(username ?? t('codex.defaultUser')).charAt(0).toUpperCase()}
+          {(username ?? t('chatShell.defaultUser')).charAt(0).toUpperCase()}
         </span>
         <span className="grid min-w-0">
-          <b className="truncate text-[13.5px] font-semibold">{username ?? t('codex.defaultUser')}</b>
-          <span className="text-[12.5px] text-muted-foreground">{t('codex.userRole')}</span>
+          <b className="truncate text-[13.5px] font-semibold">{username ?? t('chatShell.defaultUser')}</b>
+          <span className="text-[12.5px] text-muted-foreground">{t('chatShell.userRole')}</span>
           <span className="text-[10.5px] text-muted-foreground">
-            {t('codex.currentWorldLine')}{' '}
+            {t('chatShell.currentWorldLine')}{' '}
             <span className="font-digit text-[11px] tracking-[0.05em] text-ink-2">{worldLine}</span>
           </span>
           {affinity && affinity.events.length > 0 && (

@@ -32,7 +32,7 @@ interface WorkProcessCardProps {
 }
 
 /**
- * Codex 风工作过程折叠卡：处理中（转环）→ 已处理 / 已停止（✓ + 耗时），
+ * 紧凑工作台风工作过程折叠卡：处理中（转环）→ 已处理 / 已停止（✓ + 耗时），
  * 展开可见逐行工具调用（工具名 + 摘要首行）。
  */
 export function WorkProcessCard({ live, log }: WorkProcessCardProps): React.JSX.Element | null {
@@ -67,10 +67,10 @@ export function WorkProcessCard({ live, log }: WorkProcessCardProps): React.JSX.
             <Check className="size-2.5" strokeWidth={3} />
           </span>
         )}
-        <span>{running ? t('codex.workWorking') : stopped ? t('codex.workStopped') : t('codex.workDone')}</span>
+        <span>{running ? t('chatShell.workWorking') : stopped ? t('chatShell.workStopped') : t('chatShell.workDone')}</span>
         {!running && log && (
           <span className="ml-auto font-mono text-[12.5px] text-muted-foreground">
-            {stopped ? t('codex.workStoppedByUser') : formatDuration(log.durationMs)}
+            {stopped ? t('chatShell.workStoppedByUser') : formatDuration(log.durationMs)}
           </span>
         )}
       </button>

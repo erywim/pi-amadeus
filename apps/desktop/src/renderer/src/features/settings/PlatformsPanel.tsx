@@ -80,7 +80,7 @@ const EMPTY_FORM: FormState = {
 }
 
 /**
- * 通讯平台（参考 AstrBot 的多平台接入）：Telegram / OneBot v11（QQ）/ 通用 Webhook。
+ * 通讯平台（参考常见的多平台接入）：Telegram / OneBot v11（QQ）/ 通用 Webhook。
  * 卡片显示适配器实时状态；每 5 秒轮询一次，配置变更后立即同步。
  */
 export function PlatformsPanel(): React.JSX.Element {

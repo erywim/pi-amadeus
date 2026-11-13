@@ -10,15 +10,15 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
 
 | 实现 | 形态 | 与本项目相关的共性能力 |
 | --- | --- | --- |
-| Claude Code Desktop | 桌面 agent 客户端 | 会话列表各自独立上下文；输入框工具行有环境 / 权限模式 / 模型选择；`+` 挂附件、skills、connectors；`@` 引用文件；运行中可继续输入纠偏；停止按钮；转录视图 Normal / Thinking / Verbose，工具调用默认折叠成摘要；改动用 diff 审阅 |
-| Codex / ChatGPT Desktop | 桌面 agent 客户端 | 任务式会话（New chat）；侧栏按时间分组的会话；任务进行中可见工具/命令执行；审批与权限模式；错误与重试；模型选择器 |
-| Cherry Studio | 开源桌面客户端 | 多助手/Agent（指令、工作区、模型、工具权限）；文件与命令、浏览器自动化；Skills 与 MCP；定时任务与消息渠道；多模型对比；Markdown / 代码高亮 / Mermaid；本地知识库；附件与文件库 |
-| LibreChat | 开源自托管 | ChatGPT 风格 UI；Agent 管理；工具活动 / 推理 / 搜索统一展示；消息复制（富文本）；会话置顶；搜索全部消息；上下文用量；可恢复流（断线重连续传）；消息编辑与分支 |
-| Open WebUI | 开源自托管 | 模型切换；工具/函数；知识库；以终端与计算机能力扩展成 agent harness |
-| LobeChat | 开源 | Agent 市场；MCP / Skills；多 IM 接入；并行任务 |
-| Jan | 开源桌面 | 本地模型 + 云模型统一；自定义助手；MCP；隐私优先 |
-| AnythingLLM | 开源 | 工作区内 Agent；定时任务；技能自动选择；附件拖拽与引用来源 |
-| Open-LLM-VTuber | Live2D 桌宠 + Web | **窗口模式 / 桌宠模式自由切换**（与本项目两种形态最接近）；聊天记录持久化与历史切换；表情映射；桌宠置顶、穿透、拖动；内心想法展示 |
+| 桌面 agent 客户端（A） | 桌面 agent 客户端 | 会话列表各自独立上下文；输入框工具行有环境 / 权限模式 / 模型选择；`+` 挂附件、skills、connectors；`@` 引用文件；运行中可继续输入纠偏；停止按钮；转录视图 Normal / Thinking / Verbose，工具调用默认折叠成摘要；改动用 diff 审阅 |
+| 桌面 agent 客户端（B） | 桌面 agent 客户端 | 任务式会话（New chat）；侧栏按时间分组的会话；任务进行中可见工具/命令执行；审批与权限模式；错误与重试；模型选择器 |
+| 开源桌面客户端（A） | 开源桌面客户端 | 多助手/Agent（指令、工作区、模型、工具权限）；文件与命令、浏览器自动化；Skills 与 MCP；定时任务与消息渠道；多模型对比；Markdown / 代码高亮 / Mermaid；本地知识库；附件与文件库 |
+| 开源自托管客户端（A） | 开源自托管 | 常见助手风格 UI；Agent 管理；工具活动 / 推理 / 搜索统一展示；消息复制（富文本）；会话置顶；搜索全部消息；上下文用量；可恢复流（断线重连续传）；消息编辑与分支 |
+| 开源自托管客户端（B） | 开源自托管 | 模型切换；工具/函数；知识库；以终端与计算机能力扩展成 agent harness |
+| 开源客户端（A） | 开源 | Agent 市场；MCP / Skills；多 IM 接入；并行任务 |
+| 开源桌面客户端（B） | 开源桌面 | 本地模型 + 云模型统一；自定义助手；MCP；隐私优先 |
+| 开源工作区客户端（A） | 开源 | 工作区内 Agent；定时任务；技能自动选择；附件拖拽与引用来源 |
+| Live2D 桌宠客户端（A） | Live2D 桌宠 + Web | **窗口模式 / 桌宠模式自由切换**（与本项目两种形态最接近）；聊天记录持久化与历史切换；表情映射；桌宠置顶、穿透、拖动；内心想法展示 |
 
 提炼出的共同骨架（与实现无关）：
 
@@ -52,7 +52,7 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
 | --- | --- |
 | `apps/desktop/src/renderer/src/features/chat/ChatPage.tsx` | 文本形态页面与全局快捷键（新会话 / 停止） |
 | `.../features/chat/SessionSidebar.tsx` | 按天分组、置顶分组、标题过滤 + 正文搜索、`⌘/Ctrl+K` 聚焦、删除 |
-| `.../features/chat/CodexTitlebar.tsx` | 标题内联重命名（Enter / 失焦提交，Esc 取消）+ 会话 token 用量读数 |
+| `.../features/chat/ChatTitlebar.tsx` | 标题内联重命名（Enter / 失焦提交，Esc 取消）+ 会话 token 用量读数 |
 | `.../features/chat/MessageList.tsx` | 流式区块、错误卡、滚动跟随与「回到底部」 |
 | `.../features/chat/MessageBubble.tsx` | 消息复制、编辑后重发、最后一条助手回复的重新生成入口 |
 | `.../features/chat/ArtifactPanel.tsx` | HTML / SVG / Mermaid 沙箱预览面板 |

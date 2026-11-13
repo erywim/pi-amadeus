@@ -191,7 +191,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
 
   /**
    * 编辑用户消息并重发：改正文 → 截断该消息之后的所有消息 → 以编辑后的内容重跑。
-   * 这是 LibreChat 式「编辑后重发」：之后的分支内容会被丢弃，界面对应截断。
+   * 这是 开源自托管客户端（A） 式「编辑后重发」：之后的分支内容会被丢弃，界面对应截断。
    */
   app.post('/chat/edit', async (c) => {
     const body = (await c.req.json().catch(() => null)) as

@@ -112,7 +112,7 @@ export function MessageList(): React.JSX.Element {
         <div className="mx-auto flex max-w-[780px] flex-col gap-5">
           {list.length === 0 && !stream.streaming && (
             <p className="py-12 text-center text-[13.5px] text-muted-foreground">
-              {t('codex.emptyHint')}
+              {t('chatShell.emptyHint')}
             </p>
           )}
           {list.map((m) => (

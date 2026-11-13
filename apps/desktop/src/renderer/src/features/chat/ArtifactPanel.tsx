@@ -7,7 +7,7 @@ import { copyText } from '@renderer/lib/clipboard'
 import { useArtifactStore } from '@renderer/stores/artifactStore'
 
 /**
- * 工件预览（参考 Claude Artifacts / Cherry Studio）：
+ * 工件预览（工件预览）：
  * 助手代码块里的 HTML / SVG / Mermaid 在右侧沙箱里渲染。
  * iframe 用 sandbox 且不给 allow-same-origin——模型输出不可信，不能拿到应用上下文。
  */

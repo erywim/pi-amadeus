@@ -1,5 +1,5 @@
 /**
- * 知识库（参考 Cherry Studio / AnythingLLM / Open WebUI）：
+ * 知识库（参考 开源桌面客户端（A） / 开源工作区客户端（A） / 开源自托管客户端（B））：
  * 用户导入的文档被切成块存进 SQLite，回合里由 search_knowledge 工具检索。
  * 检索结果是真实导入的文本片段，不生成、不补全、不伪造引用。
  */

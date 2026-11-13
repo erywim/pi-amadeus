@@ -32,7 +32,7 @@ const TAB_ROUTES = [
 ] as const
 
 /**
- * 应用外壳（OpenDesign 原型结构）：56px 顶栏 = 品牌区 + 模式页签
+ * 应用外壳（早期界面原型结构）：56px 顶栏 = 品牌区 + 模式页签
  * （陪伴 / 文本，role=tablist）+ 设置齿轮 + 当前模型胶囊；下方为各视图。
  * 陪伴视图挂载时 body.theme-amadeus 整套令牌翻转为暗色实验台。
  */

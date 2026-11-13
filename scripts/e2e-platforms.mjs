@@ -1,5 +1,5 @@
 /**
- * 通讯平台适配器 E2E（参考 AstrBot 的多平台接入）：
+ * 通讯平台适配器 E2E（参考常见的多平台接入）：
  *  1. Webhook 平台：密钥校验、入站 → 真实 agent 回合 → 出站回复、会话渠道标记、测试发送
  *  2. Telegram 平台：长轮询（本地 mock Bot API）、消息 → 回合 → sendMessage 回复、测试发送
  *  3. OneBot v11 平台：正向 WebSocket（本地 mock 服务端）、私聊事件 → 回合 →

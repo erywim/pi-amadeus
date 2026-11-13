@@ -10,7 +10,7 @@ import { StageBay } from './companion/StageBay'
 import { StageHud } from './companion/StageHud'
 
 /**
- * 陪伴模式页（OpenDesign 原型布局）：左舞台（Live2D + HUD），右对话流
+ * 陪伴模式页（早期界面原型布局）：左舞台（Live2D + HUD），右对话流
  * （气泡 + 快速话题 + 麦克风/输入框）。挂载时 body 翻转 theme-amadeus
  * （由 AppShell 驱动），进入暗色实验台。
  * 语音与文本回合共享同一会话列表：选中会话若无则展示首轮引导，首条

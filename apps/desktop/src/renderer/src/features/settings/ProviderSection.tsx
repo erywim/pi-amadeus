@@ -38,7 +38,7 @@ const EMPTY_FORM: FormState = {
 }
 
 /**
- * 多模型服务（参考 magpie）：列表 + 添加/编辑/删除 + 激活 + 真实连通性测试。
+ * 多模型服务（参考常见的多模型服务）：列表 + 添加/编辑/删除 + 激活 + 真实连通性测试。
  * 激活的服务优先于下面的内置单项配置；密钥保存后不回显。
  */
 export function ProviderSection(): React.JSX.Element {

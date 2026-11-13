@@ -18,7 +18,7 @@ import { useMemoryStore } from './memoryStore'
 import { useUiStore } from './uiStore'
 
 /**
- * 回合工作过程日志：一个回合的工具活动快照 + 耗时（Codex 风格折叠卡的数据源）。
+ * 回合工作过程日志：一个回合的工具活动快照 + 耗时（紧凑工作台风格折叠卡的数据源）。
  * 不落库、仅内存：本会话窗口内可回看，重进页面后历史消息不带工作卡。
  */
 export interface TurnWorkLog {

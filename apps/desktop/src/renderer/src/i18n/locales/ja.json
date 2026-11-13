@@ -236,7 +236,7 @@
       "closeLabel": "会話を閉じる"
     }
   },
-  "codex": {
+  "chatShell": {
     "newTask": "新しいタスク",
     "sessionsLabel": "セッション",
     "untitledTask": "無題のタスク",

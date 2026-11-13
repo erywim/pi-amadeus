@@ -10,18 +10,18 @@ import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 
 /**
- * Codex 风输入区：外框盒（focus 描边）+ 底部工具行
+ * 紧凑工作台风输入区：外框盒（focus 描边）+ 底部工具行
  * （附件占位 / 模型选择器（写回大脑配置）/ 发送↔停止一体按钮）+ 快捷键提示。
  */
 export function Composer(): React.JSX.Element {
   return (
     <div className="shrink-0 border-t border-border bg-surface px-5 pb-4 pt-3">
-      <CodexComposerInner />
+      <ChatComposerInner />
     </div>
   )
 }
 
-function CodexComposerInner(): React.JSX.Element {
+function ChatComposerInner(): React.JSX.Element {
   const { t } = useTranslation()
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -98,12 +98,12 @@ function CodexComposerInner(): React.JSX.Element {
         {menuOpen && (
           <div className="absolute bottom-[calc(100%+6px)] left-0 right-0 z-20 overflow-hidden rounded-xl border border-border bg-surface shadow-[var(--shadow-pop)]">
             <div className="border-b border-border px-3 py-2 text-[11.5px] text-muted-foreground">
-              {t('codex.commandsTitle')}
+              {t('chatShell.commandsTitle')}
             </div>
             <div className="max-h-64 overflow-y-auto p-1">
               {filteredCommands.length === 0 ? (
                 <p className="px-3 py-6 text-center text-[12px] leading-relaxed text-muted-foreground">
-                  {commands.length === 0 ? t('codex.commandsEmpty') : t('codex.commandsNoMatch')}
+                  {commands.length === 0 ? t('chatShell.commandsEmpty') : t('chatShell.commandsNoMatch')}
                 </p>
               ) : (
                 filteredCommands.map((command, index) => (
@@ -138,8 +138,8 @@ function CodexComposerInner(): React.JSX.Element {
           ref={textareaRef}
           rows={2}
           value={text}
-          aria-label={t('codex.inputAria')}
-          placeholder={t('codex.inputPlaceholder')}
+          aria-label={t('chatShell.inputAria')}
+          placeholder={t('chatShell.inputPlaceholder')}
           onChange={(e) => {
             const value = e.target.value
             setText(value)
@@ -190,11 +190,11 @@ function CodexComposerInner(): React.JSX.Element {
         <div className="flex items-center gap-2 p-2">
           <button
             type="button"
-            onClick={() => toast(t('codex.attachWip'))}
+            onClick={() => toast(t('chatShell.attachWip'))}
             className="flex items-center gap-1.5 rounded-lg px-2.5 py-[5px] text-[13.5px] text-ink-2 transition-colors hover:bg-surface-soft"
           >
             <Plus className="size-3.5" strokeWidth={2} />
-            {t('codex.attach')}
+            {t('chatShell.attach')}
           </button>
           <button
             type="button"
@@ -203,7 +203,7 @@ function CodexComposerInner(): React.JSX.Element {
             className="flex items-center gap-1.5 rounded-lg px-2.5 py-[5px] text-[13.5px] text-ink-2 transition-colors hover:bg-surface-soft"
           >
             <Sparkles className="size-3.5" strokeWidth={2} />
-            {t('codex.commands')}
+            {t('chatShell.commands')}
           </button>
           <ModelSelector />
           <span className="flex-1" />
@@ -230,7 +230,7 @@ function CodexComposerInner(): React.JSX.Element {
           )}
         </div>
       </form>
-      <p className="mt-2 text-center text-[12.5px] text-muted-foreground">{t('codex.composerHint')}</p>
+      <p className="mt-2 text-center text-[12.5px] text-muted-foreground">{t('chatShell.composerHint')}</p>
     </div>
   )
 }
@@ -308,7 +308,7 @@ function ModelSelector(): React.JSX.Element {
         const latest = useSettingsStore.getState().aiConfig
         await saveAiConfig(userId, { ...latest, provider: { ...latest.provider, model: trimmed } })
       }
-      toast.success(t('codex.modelSaved'))
+      toast.success(t('chatShell.modelSaved'))
       setOpen(false)
       setCustomMode(false)
       setCustomValue('')
@@ -365,7 +365,7 @@ function ModelSelector(): React.JSX.Element {
                 autoFocus
                 value={customValue}
                 onChange={(e) => setCustomValue(e.target.value)}
-                placeholder={t('codex.modelCustomPlaceholder')}
+                placeholder={t('chatShell.modelCustomPlaceholder')}
                 className="min-w-0 flex-1 rounded-md border border-border bg-transparent px-2 py-1.5 font-mono text-[12.5px] outline-none focus:border-primary"
               />
               <button
@@ -382,7 +382,7 @@ function ModelSelector(): React.JSX.Element {
               onClick={() => setCustomMode(true)}
               className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13.5px] text-muted-foreground transition-colors hover:bg-surface-soft hover:text-foreground"
             >
-              {t('codex.modelCustom')}
+              {t('chatShell.modelCustom')}
             </button>
           )}
         </span>

@@ -1,6 +1,6 @@
 # 知识库（Knowledge）
 
-参考 Cherry Studio / AnythingLLM / Open WebUI 的本地知识库：用户导入自己的文档，
+参考常见的本地知识库设计：用户导入自己的文档，
 聊天时模型通过 `search_knowledge` 工具检索**真实原文片段**再回答。
 没有向量数据库依赖，也没有云端上传——文档只存在本机 SQLite。
 

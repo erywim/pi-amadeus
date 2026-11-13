@@ -10,7 +10,7 @@ import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 
 /** 文本模式的标题栏：侧栏开关 + 标题（可重命名） + 渠道徽标 + 轮次统计 + 删除 */
-export function CodexTitlebar({
+export function ChatTitlebar({
   sidebarOpen,
   onToggleSidebar,
   sideOpen,
@@ -102,7 +102,7 @@ export function CodexTitlebar({
     <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-5">
       <button
         type="button"
-        aria-label={t('codex.sidebarToggle')}
+        aria-label={t('chatShell.sidebarToggle')}
         aria-pressed={sidebarOpen}
         onClick={onToggleSidebar}
         className="grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft"
@@ -152,7 +152,7 @@ export function CodexTitlebar({
             title={t('chat.renameHint')}
             className="min-w-0 truncate text-[15px] font-semibold"
           >
-            {session.title || t('codex.untitledTask')}
+            {session.title || t('chatShell.untitledTask')}
           </h2>
           <button
             type="button"
@@ -188,7 +188,7 @@ export function CodexTitlebar({
         </span>
       )}
       <span className="whitespace-nowrap text-[12.5px] text-muted-foreground">
-        {t('codex.turns', { count: turns })}
+        {t('chatShell.turns', { count: turns })}
       </span>
       <button
         type="button"

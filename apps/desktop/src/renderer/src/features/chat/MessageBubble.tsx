@@ -91,7 +91,7 @@ function MessageActions({
 }
 
 /**
- * Codex 风消息：
+ * 紧凑工作台风消息：
  * 用户 = 右对齐软卡；助手 = 30px 圆形印记 + 正文列（可含工作过程折叠卡 + markdown）。
  */
 export function MessageBubble({

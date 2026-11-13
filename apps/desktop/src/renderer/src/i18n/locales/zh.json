@@ -236,7 +236,7 @@
       "closeLabel": "收起对话"
     }
   },
-  "codex": {
+  "chatShell": {
     "newTask": "新任务",
     "sessionsLabel": "会话",
     "untitledTask": "未命名任务",
