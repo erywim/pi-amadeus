@@ -14,6 +14,7 @@ export function sessionRoutes(db: Db): Hono {
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
     pinned: r.pinned,
+    archived: r.archived,
     messageCount: r.messageCount
   })
 
@@ -113,13 +114,15 @@ export function sessionRoutes(db: Db): Hono {
    */
   app.patch('/sessions/:id', async (c) => {
     const body = (await c.req.json().catch(() => null)) as
-      | { title?: unknown; pinned?: unknown; userId?: unknown; channel?: unknown }
+      | { title?: unknown; pinned?: unknown; archived?: unknown; userId?: unknown; channel?: unknown }
       | null
     const title = typeof body?.title === 'string' ? body.title.trim() : ''
     const hasPinned = typeof body?.pinned === 'boolean'
     const pinned = hasPinned ? (body!.pinned as boolean) : undefined
+    const hasArchived = typeof body?.archived === 'boolean'
+    const archived = hasArchived ? (body!.archived as boolean) : undefined
     const userId = typeof body?.userId === 'string' ? body.userId : ''
-    if (!title && !hasPinned) return c.json({ error: 'title 或 pinned 必填' }, 400)
+    if (!title && !hasPinned && !hasArchived) return c.json({ error: 'title / pinned / archived 必填' }, 400)
     if (title.length > 80) return c.json({ error: 'title 最多 80 字' }, 400)
 
     const id = c.req.param('id')
@@ -129,7 +132,13 @@ export function sessionRoutes(db: Db): Hono {
       if (userId && session.userId !== userId) return c.json({ error: '无权修改该会话' }, 403)
       if (title) await db.renameSession(id, title)
       if (pinned !== undefined) await db.setSessionPinned(id, pinned)
-      return c.json({ ok: true, ...(title ? { title } : {}), ...(pinned !== undefined ? { pinned } : {}) })
+      if (archived !== undefined) await db.setSessionArchived(id, archived)
+      return c.json({
+        ok: true,
+        ...(title ? { title } : {}),
+        ...(pinned !== undefined ? { pinned } : {}),
+        ...(archived !== undefined ? { archived } : {})
+      })
     }
     // 新会话是懒创建的（首条消息才落库）：空会话重命名 / 置顶时按当前身份补建，
     // 否则用户给刚开的会话改名或置顶会得到一个没头没脑的 404
@@ -138,10 +147,12 @@ export function sessionRoutes(db: Db): Hono {
     await db.touchSession({ id, userId, channel })
     if (title) await db.renameSession(id, title)
     if (pinned !== undefined) await db.setSessionPinned(id, pinned)
+    if (archived !== undefined) await db.setSessionArchived(id, archived)
     return c.json({
       ok: true,
       ...(title ? { title } : {}),
-      ...(pinned !== undefined ? { pinned } : {})
+      ...(pinned !== undefined ? { pinned } : {}),
+      ...(archived !== undefined ? { archived } : {})
     })
   })
 

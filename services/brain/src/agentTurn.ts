@@ -16,6 +16,7 @@ import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/inde
 import { deniedMessage, rejectAllForTurn, requestBashConfirm } from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
 import { buildToolRegistry } from './tools/index.ts'
+import { diffSnapshots, gitSnapshot } from './workspace.ts'
 
 /**
  * 工具版回合核心（chat 与 feishu 共用）：prepareTurn 复用 →
@@ -62,6 +63,8 @@ export interface AgentTurnResult {
   toolNames: string[]
   /** 本次落库的用户消息 id（重新生成/编辑重发不写用户消息时为空） */
   userMessageId?: string
+  /** 本回合工作区改动（桌面端真实 git 快照差集；非 Git 或未知时为空） */
+  changedFiles?: Array<{ path: string; status: string }>
 }
 
 /** 工具结果文本的 UI 上限（超出截断） */
@@ -261,6 +264,11 @@ export async function* runAgentTurn(
   const lastUser = prepared.messages[prepared.messages.length - 1]
   if (!lastUser) throw new Error('LLM 上下文为空')
 
+  // 回合开始前的 git 状态快照：回合结束后取差集，得到「这回合真实改了哪些文件」。
+  // 只在桌面端做（其它渠道没有本机工作区可看），且 shell 工具关闭时也不做
+  const trackWorkspace = opts.channel === 'desktop' && toolsEnabled
+  const beforeSnapshot = trackWorkspace ? await gitSnapshot(opts.cfg.workspace.root) : null
+
   try {
     // Agent 契约不抛（失败编码进事件流），防御性兜底；close 保证
     // done/error 之前队列事件全部排空
@@ -297,12 +305,16 @@ export async function* runAgentTurn(
   markProviderSuccess(prepared.target.providerId)
   // totalTokens 缺失时用输入+输出兜底（部分兼容端点不返回 total）
   if (usage.total === 0) usage.total = usage.input + usage.output
+  const changedFiles = trackWorkspace
+    ? diffSnapshots(beforeSnapshot, await gitSnapshot(opts.cfg.workspace.root))
+    : []
   return {
     full,
     target: prepared.target,
     usage,
     toolCalls: toolNames.length,
     toolNames,
-    userMessageId: prepared.userMessageId
+    userMessageId: prepared.userMessageId,
+    ...(changedFiles.length > 0 ? { changedFiles } : {})
   }
 }

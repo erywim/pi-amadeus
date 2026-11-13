@@ -350,6 +350,8 @@ export async function finishTurn(
     parentMessageId?: string
     /** 本回合工具调用次数（好感度事件用） */
     toolCalls?: number
+    /** 本回合工作区改动（桌面端真实 git 快照差集） */
+    changedFiles?: Array<{ path: string; status: string }>
   }
 ): Promise<string> {
   const assistantId = randomUUID()
@@ -362,7 +364,10 @@ export async function finishTurn(
     content: input.content,
     ttsText: input.ttsText,
     mode: input.mode,
-    ...(input.parentMessageId ? { parentId: input.parentMessageId } : {})
+    ...(input.parentMessageId ? { parentId: input.parentMessageId } : {}),
+    ...(input.changedFiles && input.changedFiles.length > 0
+      ? { changedFiles: input.changedFiles }
+      : {})
   })
   await db.touchSession({ id: input.sessionId, userId: input.userId, channel: input.channel })
 

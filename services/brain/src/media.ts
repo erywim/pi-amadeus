@@ -175,6 +175,7 @@ export function toPublicMessage(row: MessageRow): Message {
     branchIndex: row.branchIndex,
     branchCount: row.branchCount,
     attachments: row.attachments.map(toMessageAttachment),
+    ...(row.changedFiles.length > 0 ? { changedFiles: row.changedFiles } : {}),
     createdAt: row.createdAt
   }
 }

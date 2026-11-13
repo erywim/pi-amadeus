@@ -23,6 +23,8 @@ export interface SessionRow {
   updatedAt: number
   /** 置顶会话排在列表最前（不改变 updated_at） */
   pinned: boolean
+  /** 已归档：默认列表隐藏，可在侧栏「已归档」里恢复 */
+  archived: boolean
   messageCount: number
 }
 
@@ -123,6 +125,8 @@ export interface MessageRow {
   branchIndex: number
   branchCount: number
   attachments: MessageMediaRow[]
+  /** 本回合工作区改动（桌面端真实 git 状态快照差集；其它渠道为空） */
+  changedFiles: Array<{ path: string; status: string }>
   createdAt: number
 }
 
@@ -232,6 +236,8 @@ export interface Db {
   reassignSession(id: string, userId: string): Promise<void>
   /** 置顶 / 取消置顶；不刷新 updated_at（置顶不是一次活动） */
   setSessionPinned(id: string, pinned: boolean): Promise<void>
+  /** 归档 / 取消归档；同样不刷新 updated_at */
+  setSessionArchived(id: string, archived: boolean): Promise<void>
   /** 跨会话消息全文搜索（LIKE，最近的在前） */
   searchMessages(userId: string, query: string, limit?: number): Promise<MessageSearchRow[]>
   /** 会话级用量：turn_metrics 真实累计 */
@@ -282,6 +288,8 @@ export interface Db {
     mode: TurnMode
     /** 分支父节点；缺省时接在当前活跃叶之后 */
     parentId?: string | null
+    /** 本回合工作区改动（只有桌面端回合会带） */
+    changedFiles?: Array<{ path: string; status: string }>
   }): Promise<void>
   countMessages(sessionId: string): Promise<number>
   // auth: 当前登录用户
@@ -614,6 +622,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
             channel TEXT NOT NULL,
             title TEXT NOT NULL DEFAULT '',
             active_leaf_id TEXT,
+            archived INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
           );
@@ -626,6 +635,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
             tts_text TEXT,
             mode TEXT NOT NULL,
             parent_id TEXT,
+            changed_files TEXT NOT NULL DEFAULT '[]',
             created_at INTEGER NOT NULL
           );
           CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
@@ -825,11 +835,18 @@ export function createDb(cfg: BrainConfig['db']): Db {
         if (!sessionColumns.some((column) => column.name === 'active_leaf_id')) {
           sqlite.exec('ALTER TABLE sessions ADD COLUMN active_leaf_id TEXT')
         }
+        // 老库升级：会话归档
+        if (!sessionColumns.some((column) => column.name === 'archived')) {
+          sqlite.exec('ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
+        }
         const messageColumns = sqlite
           .prepare('PRAGMA table_info(messages)')
           .all() as unknown as { name: string }[]
         if (!messageColumns.some((column) => column.name === 'parent_id')) {
           sqlite.exec('ALTER TABLE messages ADD COLUMN parent_id TEXT')
+        }
+        if (!messageColumns.some((column) => column.name === 'changed_files')) {
+          sqlite.exec("ALTER TABLE messages ADD COLUMN changed_files TEXT NOT NULL DEFAULT '[]'")
         }
         const backfilled = sqlite
           .prepare("SELECT value FROM app_state WHERE key = 'messages_tree_v1'")
@@ -1022,12 +1039,13 @@ export function createDb(cfg: BrainConfig['db']): Db {
         channel: Channel
         title: string
         pinned: number
+        archived: number
         created_ms: number
         updated_ms: number
         message_count: number
       }>(
         getConn(),
-        `SELECT s.id, s.user_id, s.channel, s.title, s.pinned,
+        `SELECT s.id, s.user_id, s.channel, s.title, s.pinned, s.archived,
                 s.created_at AS created_ms, s.updated_at AS updated_ms,
                 (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
          FROM sessions s WHERE s.user_id = ?
@@ -1041,6 +1059,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
           channel: row.channel,
           title: row.title,
           pinned: row.pinned === 1,
+          archived: row.archived === 1,
           createdAt: Number(row.created_ms),
           updatedAt: Number(row.updated_ms),
           messageCount: Number(row.message_count)
@@ -1055,12 +1074,13 @@ export function createDb(cfg: BrainConfig['db']): Db {
         channel: Channel
         title: string
         pinned: number
+        archived: number
         created_ms: number
         updated_ms: number
         message_count: number
       }>(
         getConn(),
-        `SELECT s.id, s.user_id, s.channel, s.title, s.pinned,
+        `SELECT s.id, s.user_id, s.channel, s.title, s.pinned, s.archived,
                 s.created_at AS created_ms, s.updated_at AS updated_ms,
                 (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
          FROM sessions s WHERE s.id = ?`,
@@ -1073,6 +1093,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         channel: row.channel,
         title: row.title,
         pinned: row.pinned === 1,
+        archived: row.archived === 1,
         createdAt: Number(row.created_ms),
         updatedAt: Number(row.updated_ms),
         messageCount: Number(row.message_count)
@@ -1114,6 +1135,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
     async setSessionPinned(id, pinned) {
       // 只改 pinned：置顶不是一次活动，不动 updated_at
       run(getConn(), 'UPDATE sessions SET pinned = ? WHERE id = ?', [pinned ? 1 : 0, id])
+    },
+
+    async setSessionArchived(id, archived) {
+      // 归档同样不是一次活动：不改 updated_at，取消归档时会话回到原来的时间位置
+      run(getConn(), 'UPDATE sessions SET archived = ? WHERE id = ?', [archived ? 1 : 0, id])
     },
 
     async searchMessages(userId, query, limit = 30) {
@@ -1185,6 +1211,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         tts_text: string | null
         mode: TurnMode
         parent_id: string | null
+        changed_files: string
         created_ms: number
       }>(
         getConn(),
@@ -1194,10 +1221,10 @@ export function createDb(cfg: BrainConfig['db']): Db {
            SELECT m.parent_id FROM messages m JOIN path p ON m.id = p.id
             WHERE m.parent_id IS NOT NULL
          )
-         SELECT id, session_id, role, content, tts_text, mode, parent_id, created_ms, seq
+         SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files, created_ms, seq
          FROM (
            SELECT m.id, m.session_id, m.role, m.content, m.tts_text, m.mode, m.parent_id,
-                  m.created_at AS created_ms, m.rowid AS seq
+                  m.changed_files, m.created_at AS created_ms, m.rowid AS seq
            FROM messages m
            WHERE m.id IN (SELECT id FROM path)
            ORDER BY m.created_at DESC, m.rowid DESC
@@ -1220,6 +1247,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
           branchIndex: branch.get(row.id)?.index ?? 1,
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
+          changedFiles: parseChangedFiles(row.changed_files),
           createdAt: Number(row.created_ms)
         })
       )
@@ -1234,10 +1262,12 @@ export function createDb(cfg: BrainConfig['db']): Db {
         tts_text: string | null
         mode: TurnMode
         parent_id: string | null
+        changed_files: string
         created_ms: number
       }>(
         getConn(),
-        `SELECT id, session_id, role, content, tts_text, mode, parent_id, created_at AS created_ms
+        `SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files,
+                created_at AS created_ms
          FROM messages WHERE session_id = ?
          ORDER BY created_at ASC, rowid ASC
          LIMIT ?`,
@@ -1257,6 +1287,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
           branchIndex: branch.get(row.id)?.index ?? 1,
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
+          changedFiles: parseChangedFiles(row.changed_files),
           createdAt: Number(row.created_ms)
         })
       )
@@ -1280,10 +1311,12 @@ export function createDb(cfg: BrainConfig['db']): Db {
         tts_text: string | null
         mode: TurnMode
         parent_id: string | null
+        changed_files: string
         created_ms: number
       }>(
         getConn(),
-        `SELECT id, session_id, role, content, tts_text, mode, parent_id, created_at AS created_ms
+        `SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files,
+                created_at AS created_ms
          FROM messages WHERE id = ?`,
         [id]
       )
@@ -1300,6 +1333,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         branchIndex: branch.get(row.id)?.index ?? 1,
         branchCount: branch.get(row.id)?.count ?? 1,
         attachments: mediaFor([row.id]).get(row.id) ?? [],
+        changedFiles: parseChangedFiles(row.changed_files),
         createdAt: Number(row.created_ms)
       }
     },
@@ -1315,14 +1349,17 @@ export function createDb(cfg: BrainConfig['db']): Db {
         tts_text: string | null
         mode: TurnMode
         parent_id: string | null
+        changed_files: string
         created_ms: number
       }>(
         getConn(),
         target.parentId
-          ? `SELECT id, session_id, role, content, tts_text, mode, parent_id, created_at AS created_ms
+          ? `SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files,
+                    created_at AS created_ms
              FROM messages WHERE session_id = ? AND parent_id = ?
              ORDER BY created_at ASC, rowid ASC`
-          : `SELECT id, session_id, role, content, tts_text, mode, parent_id, created_at AS created_ms
+          : `SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files,
+                    created_at AS created_ms
              FROM messages WHERE session_id = ? AND parent_id IS NULL
              ORDER BY created_at ASC, rowid ASC`,
         target.parentId ? [target.sessionId, target.parentId] : [target.sessionId]
@@ -1341,6 +1378,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
           branchIndex: branch.get(row.id)?.index ?? 1,
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
+          changedFiles: parseChangedFiles(row.changed_files),
           createdAt: Number(row.created_ms)
         })
       )
@@ -1453,8 +1491,8 @@ export function createDb(cfg: BrainConfig['db']): Db {
       try {
         run(
           sqlite,
-          `INSERT INTO messages (id, session_id, role, content, tts_text, mode, parent_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO messages (id, session_id, role, content, tts_text, mode, parent_id, changed_files, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             input.id,
             input.sessionId,
@@ -1463,6 +1501,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
             input.ttsText ?? null,
             input.mode,
             parentId,
+            JSON.stringify(input.changedFiles ?? []),
             Date.now()
           ]
         )
@@ -2643,6 +2682,25 @@ function parseStringArray(text: string): string[] {
   try {
     const parsed: unknown = JSON.parse(text)
     return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** messages.changed_files 解析：格式不对时按空处理（展示字段，坏了不影响消息本身） */
+function parseChangedFiles(text: string | null): Array<{ path: string; status: string }> {
+  if (!text) return []
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const value = item as { path?: unknown; status?: unknown }
+        if (typeof value.path !== 'string' || !value.path) return null
+        return { path: value.path, status: typeof value.status === 'string' ? value.status : 'M' }
+      })
+      .filter((item): item is { path: string; status: string } => item !== null)
   } catch {
     return []
   }

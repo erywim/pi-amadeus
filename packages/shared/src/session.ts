@@ -27,6 +27,14 @@ export type Role = 'user' | 'assistant'
  */
 export type TurnMode = 'text' | 'voice'
 
+/** 本回合期间工作区里状态发生变化的文件（真实 git status 快照差集） */
+export interface TurnChangedFile {
+  /** 相对工作区根目录的 POSIX 路径 */
+  path: string
+  /** 回合结束时的 porcelain 状态码（M / A / D / R / ?? …） */
+  status: string
+}
+
 export interface Message {
   id: string
   sessionId: string
@@ -44,6 +52,8 @@ export interface Message {
   branchCount?: number
   /** 图片 / 语音 / 文件附件（文件本体在服务端数据目录） */
   attachments?: MessageAttachment[]
+  /** 本回合工作区改动（仅桌面端真实 git 快照有差异时才有） */
+  changedFiles?: TurnChangedFile[]
   createdAt: number
 }
 
@@ -55,6 +65,8 @@ export interface Session {
   updatedAt: number
   /** 置顶会话排在列表最前（置顶不改变 updated_at） */
   pinned?: boolean
+  /** 已归档：默认列表隐藏，可在侧栏「已归档」里恢复 */
+  archived?: boolean
   /** 服务端会话列表附带的消息数（历史页统计用；未加载消息时也可见） */
   messageCount?: number
 }

@@ -248,6 +248,46 @@ export async function readWorkspaceFile(root: string, relativePath: string): Pro
   }
 }
 
+/**
+ * 回合级变更快照：path → 状态码。非 Git 仓库/命令失败返回 null
+ * （null 表示「不知道」，绝不与「没有变化」混为一谈）。
+ */
+export async function gitSnapshot(root: string): Promise<Map<string, string> | null> {
+  const inside = (await tryGit(root, ['rev-parse', '--is-inside-work-tree']))?.trim() === 'true'
+  if (!inside) return null
+  const raw = await tryGit(root, ['status', '--porcelain=v1', '-z', '-uall'])
+  if (raw === null) return null
+  const snapshot = new Map<string, string>()
+  const tokens = raw.split('\0')
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (!token || token.length < 4) continue
+    const code = token.slice(0, 2)
+    const path = normalizeGitPath(token.slice(3))
+    if (code.includes('R') || code.includes('C')) index += 1
+    if (!isSafeRelative(path) || isSensitive(path) || isInternal(path)) continue
+    snapshot.set(path, code.trim() || '??')
+  }
+  return snapshot
+}
+
+/**
+ * 两次快照的差集：回合期间新出现或状态变化的文件。
+ * before 为 null（回合开始时还不知道）时不报任何改动——宁缺勿假。
+ */
+export function diffSnapshots(
+  before: Map<string, string> | null,
+  after: Map<string, string> | null
+): Array<{ path: string; status: string }> {
+  if (!before || !after) return []
+  const changed: Array<{ path: string; status: string }> = []
+  for (const [path, status] of after) {
+    if (before.get(path) !== status) changed.push({ path, status })
+  }
+  changed.sort((a, b) => a.path.localeCompare(b.path))
+  return changed.slice(0, 60)
+}
+
 export async function workspaceGit(root: string): Promise<WorkspaceGitStatus> {
   const inside = (await tryGit(root, ['rev-parse', '--is-inside-work-tree']))?.trim() === 'true'
   if (!inside) return { isRepo: false, branch: '', files: [], changedCount: 0 }
