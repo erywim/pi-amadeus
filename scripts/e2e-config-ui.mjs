@@ -6,7 +6,7 @@
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
 const results = []
 function report(name, ok, detail = '') {

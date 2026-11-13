@@ -12,7 +12,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 // 9222 被本机 Chrome 占用时，用 --remoteDebuggingPort 换端口并设置 CDP_HTTP
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 const results = []
 function report(name, ok, detail = '') {
   results.push({ name, ok })

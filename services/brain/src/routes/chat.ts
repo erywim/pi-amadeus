@@ -4,7 +4,7 @@ import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import { runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
 import { finishTurn } from '../conversation.ts'
-import { prepareAttachments, type SavedAttachment } from '../media.ts'
+import { copyAttachments, prepareAttachments, removeAttachmentCopies, type SavedAttachment } from '../media.ts'
 import { recordTurnMetric } from '../metrics.ts'
 import { sseResponse } from '../sse.ts'
 
@@ -172,6 +172,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             channel: 'desktop',
             mode: 'text',
             content: userText,
+            attachments: lastUser.attachments,
             signal,
             // 历史里已有这条用户消息；旧助手回复不进上下文
             appendUserMessage: false,
@@ -259,7 +260,11 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
         let full = ''
         let target2: AgentTurnResult['target'] | null = null
         let result: AgentTurnResult | null = null
+        let attachments: SavedAttachment[] = []
+        let committed = false
+        let messageId2 = ''
         try {
+          attachments = copyAttachments(target.attachments, cfg.media.dir)
           const run = runAgentTurn({
             cfg,
             db,
@@ -269,7 +274,8 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             mode: 'text',
             content,
             signal,
-            // 新用户消息作为原消息的兄弟节点写入；历史只读到共同父节点
+            attachments,
+            // 新分支先只准备上下文；模型成功后再提交用户节点与附件
             appendUserMessage: true,
             branchParentId
           })
@@ -281,31 +287,49 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           result = next.value
           full = result.full
           target2 = result.target
+          if (signal.aborted || !full || !target2 || !result.userMessageId) {
+            if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空' }
+            return
+          }
+          const previousLeaf = await db.getActiveLeafId(sessionId)
+          try {
+            // 成功才从旧路径切到编辑分支；用户与回复共用本轮预留的父节点 ID
+            await db.appendMessage({
+              id: result.userMessageId, sessionId, role: 'user', content, mode: 'text', parentId: branchParentId
+            })
+            await db.addMessageMedia(result.userMessageId, attachments)
+            messageId2 = await finishTurn(db, {
+              sessionId,
+              userId,
+              channel: 'desktop',
+              mode: 'text',
+              content: full,
+              ttsText: null,
+              target: target2,
+              userText: content,
+              parentMessageId: result.userMessageId,
+              toolCalls: result.toolCalls,
+              changedFiles: result.changedFiles,
+              thinking: result.thinking
+            })
+            committed = true
+          } catch (error) {
+            const pending = (await db.listAllMessages(sessionId)).filter((item) => item.parentId === result.userMessageId)
+            for (const item of pending) await db.deleteMessage(item.id)
+            await db.deleteMessage(result.userMessageId)
+            if (previousLeaf) await db.setActiveLeaf(sessionId, previousLeaf)
+            throw error
+          }
         } catch (error) {
           if (signal.aborted) return
           const message = error instanceof Error ? error.message : String(error)
           console.error('[chat] 编辑重发失败：', message)
           yield { type: 'error', message }
           return
+        } finally {
+          // 失败/取消尚未提交的编辑只清副本；旧分支、原附件始终不动
+          if (!committed) removeAttachmentCopies(attachments)
         }
-        if (signal.aborted || !full || !target2 || !result) {
-          if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空' }
-          return
-        }
-        const messageId2 = await finishTurn(db, {
-          sessionId,
-          userId,
-          channel: 'desktop',
-          mode: 'text',
-          content: full,
-          ttsText: null,
-          target: target2,
-          userText: content,
-          parentMessageId: result.userMessageId,
-          toolCalls: result.toolCalls,
-          changedFiles: result.changedFiles,
-          thinking: result.thinking
-        })
         await recordTurnMetric(db, {
           sessionId,
           userId,

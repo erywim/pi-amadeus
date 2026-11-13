@@ -375,7 +375,10 @@
       "testRun": "搜索",
       "hitEngine": "来源 {{engine}}",
       "hitCount": "{{count}} 条结果",
-      "allFailed": "全部引擎失败",
+      "allFailed": "搜索不可用（非零匹配）",
+      "empty": "搜索完成，暂无匹配",
+      "resultFor": "查询：{{query}}",
+      "network": { "direct": "实际路径：直连。", "proxy": "实际路径：代理。" },
       "toolHintTitle": "助手怎么用",
       "toolHint": "search 只返回标题、链接与摘要；需要正文时助手会再用 fetch_url 打开具体页面。抓取工具只允许公网 http(s) 地址，本机与内网地址会被拒绝。",
       "engine": {

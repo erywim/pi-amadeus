@@ -6,6 +6,7 @@ import { createBashTool } from './bash.ts'
 import { createCalculateTool } from './calculate.ts'
 import { createFetchUrlTool } from './fetchUrl.ts'
 import { createSearchTool } from './search.ts'
+import { searchOptions } from './searchConfig.ts'
 import { createTimeTool } from './time.ts'
 import { createWeatherTool } from './weather.ts'
 
@@ -27,18 +28,13 @@ export interface ToolRegistryOptions {
 }
 
 export function buildToolRegistry(opts: ToolRegistryOptions): AgentTool[] {
-  const proxy = opts.target.proxy || ''
+  const network = searchOptions(opts.cfg, opts.target.proxy, opts.signal)
   const tools: AgentTool[] = [
     createTimeTool(),
     createCalculateTool(),
-    createWeatherTool({ proxy }),
-    createSearchTool({
-      ...(opts.cfg.tools.tavilyKey ? { tavilyKey: opts.cfg.tools.tavilyKey } : {}),
-      proxy,
-      endpoints: opts.cfg.tools.searchEndpoints,
-      ...(opts.signal ? { signal: opts.signal } : {})
-    }),
-    createFetchUrlTool({ proxy, ...(opts.signal ? { signal: opts.signal } : {}) })
+    createWeatherTool({ proxy: opts.target.proxy || '' }),
+    createSearchTool(network),
+    createFetchUrlTool(network)
   ]
   if (opts.channel === 'desktop') {
     tools.push(

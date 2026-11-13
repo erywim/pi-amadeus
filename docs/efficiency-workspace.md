@@ -18,6 +18,8 @@
 - **变更**：`git status --porcelain=v1 -z -uall`，未跟踪文件合成「整份新增」的 diff。
 - **安全**：路径做词法 + `realpath` 两层越界校验；`.env*`、`id_rsa`、`*.pem` 等敏感文件
   既不进文件树也不出现在变更列表；`.multica/` 运行时目录同样排除。
+  直接请求正文或 diff 也执行相同过滤，符号链接不能绕过；diff 只接受单文件字面路径，不展开目录或 Git pathspec。
+  普通文件与指向普通文件的区内链接仍可读，已删除的普通文件仍可查看 Git diff。
 - **只读**：不提供任何写入接口——终端命令仍走 bash 工具与确认卡。
 
 接口：`GET /api/workspace/{info,tree,file,git,diff,search}`，根目录由 `WORKSPACE_DIR`
@@ -75,6 +77,9 @@
 ## 8. 验证
 
 ```bash
+# 直接 file/diff 隐私过滤与符号链接回归（完全隔离，不需要启动应用）
+node scripts/e2e-privacy-contract.mjs
+
 npm run dev:brain
 npx --prefix apps/desktop electron-vite dev --remoteDebuggingPort 9333
 

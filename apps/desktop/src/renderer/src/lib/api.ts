@@ -25,6 +25,7 @@ import type {
   ProviderInput,
   ProviderItem,
   ProviderTestResult,
+  ResolvedModelRuntime,
   SearchDiagnostics,
   SearchEngineName,
   SearchTestResponse,
@@ -271,6 +272,13 @@ export async function fetchUserConfig(userId: string): Promise<UserConfigRespons
   const res = await fetch(`${BRAIN_URL}/api/config/${encodeURIComponent(userId)}`)
   if (!res.ok) throw new Error(`配置读取失败: HTTP ${res.status}`)
   return (await res.json()) as UserConfigResponse
+}
+
+/** 实际路由与生效窗口；不在前端猜模型能力或继承另一条服务的窗口。 */
+export async function fetchModelRuntime(userId: string, signal?: AbortSignal): Promise<ResolvedModelRuntime> {
+  const res = await fetch(`${BRAIN_URL}/api/config/${encodeURIComponent(userId)}/runtime`, { signal })
+  if (!res.ok) throw new Error(`运行参数读取失败: HTTP ${res.status}`)
+  return (await res.json()) as ResolvedModelRuntime
 }
 
 /** 保存配置；provider.apiKey 留空 = 保持服务端已有密钥不变 */
@@ -629,8 +637,8 @@ export async function testProviderApi(id: string): Promise<ProviderTestResult> {
 // ---------- 联网搜索 ----------
 
 /** 各引擎在当前网络下的真实可达性（服务端逐个发探测请求，不做缓存） */
-export async function fetchSearchStatus(): Promise<SearchDiagnostics> {
-  const res = await fetch(`${BRAIN_URL}/api/search/status`)
+export async function fetchSearchStatus(signal?: AbortSignal): Promise<SearchDiagnostics> {
+  const res = await fetch(`${BRAIN_URL}/api/search/status`, { signal })
   if (!res.ok) throw new Error(await readError(res, '联网状态检查失败'))
   return (await res.json()) as SearchDiagnostics
 }
@@ -638,11 +646,13 @@ export async function fetchSearchStatus(): Promise<SearchDiagnostics> {
 /** 用给定关键词真的搜一次（engine 可选，用于单引擎诊断） */
 export async function testSearchApi(
   query: string,
-  engine?: SearchEngineName
+  engine?: SearchEngineName,
+  signal?: AbortSignal
 ): Promise<SearchTestResponse> {
   const res = await fetch(`${BRAIN_URL}/api/search/test`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({ query, ...(engine ? { engine } : {}) })
   })
   if (!res.ok) throw new Error(await readError(res, '搜索测试失败'))

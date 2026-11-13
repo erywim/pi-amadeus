@@ -1,114 +1,96 @@
 # 联网搜索与网页读取
 
-参考常见 agent 的做法：搜索不是「一个有就用、没有就废」的单点，而是**多引擎降级链 +
-网页读取**的组合。搜索只给标题、链接与摘要；要读原文时用 `fetch_url` 打开具体页面。
+## 1. 设计依据与边界
 
-## 1. 两个工具
+参考 [OpenClaw 的 Web Search](https://docs.openclaw.ai/tools/web) 与
+[DuckDuckGo provider](https://docs.openclaw.ai/tools/duckduckgo-search)：
+搜索与读取网页分开、结构化 provider 结果归一化、配置存在不代表健康、诊断必须执行真实查询、
+取消不是服务故障，HTML 搜索只能作为尽力可用的入口。这是行为参考，没有复制其实现。
 
-| 工具 | 能力 | 边界 |
-| --- | --- | --- |
-| `search` | 关键词搜索，返回标题 / 链接 / 摘要；可指定条数与时效 | 只读摘要，不抓正文 |
-| `fetch_url` | 打开一个网页，HTML 转纯文本返回 | 仅公网 http(s)；本机与内网地址拒绝；正文有字符上限并标注截断 |
+本项目仍走自己的 Brain HTTP 工具，不是模型供应商托管的 native search，也不需要安装一个
+「搜索技能」才能使用。当前 **文本 Agent、自动化、通讯平台**可调用工具；**陪伴/语音回合
+尚无工具循环**，不能声称它们已经真实搜索。纯 JavaScript 渲染页、登录页、验证码不尝试绕过。
 
-助手在需要实时信息（新闻、版本发布、价格、天气以外的时效内容）时会自己调用它们，
-不需要用户手动触发。
-
-## 2. 多引擎降级
-
-顺序固定，前一个不可达或没有结果时自动换下一个：
-
-```
-Tavily（配了 TAVILY_API_KEY 才有）
-  → 必应（cn.bing.com）
-  → 360 搜索（so.com）
-  → 搜狗（sogou.com）
-  → DuckDuckGo 即时答案
-```
-
-- **单引擎超时 12 秒**：搜索在交互路径上，慢引擎不拖住整回合。
-- **空结果继续降级**：不同引擎索引覆盖差异大，「这个引擎没有」不等于「网上没有」。
-- **全部失败时把每个引擎的真实原因回给模型**（例如 `bing: 请求失败: HTTP 500`、
-  `duckduckgo: 连接超时`），模型据此如实告知用户，而不是编造答案。
-- **结果清洗**：过滤「其他人还搜了」「大家还在搜」这类推荐词块、搜索引擎自己的站内链接，
-  按 URL 去重（锚点/查询串不同视为同一条）。
-- **解析顺序**：先收全部候选 → 过滤杂质 → 去重 → 最后按 `maxResults` 截断。
-  反过来做（先截断再过滤）会在杂质排在前面时返回空结果，这是本模块的已知回归点，
-  `scripts/e2e-search.mjs` 有专门用例守着。
-
-为什么不用单一引擎：不同网络环境下各站点可达性差异极大。本机实测 DuckDuckGo 完全
-连不上（连接超时），而必应 / 360 / 搜狗可以直连——单一引擎实现等于「能不能搜全看运气」。
-
-## 3. 端点可覆盖
-
-镜像站、自建代理或企业内网关可以覆盖引擎地址（留空 = 官方地址）：
-
-```bash
-SEARCH_TAVILY_URL=
-SEARCH_BING_URL=https://cn.bing.com/search
-SEARCH_SO_URL=https://www.so.com/s
-SEARCH_SOGOU_URL=https://www.sogou.com/web
-SEARCH_DUCKDUCKGO_URL=https://api.duckduckgo.com/
-```
-
-E2E 用同一机制把五个引擎指向本地 mock，因此解析与降级链的验证不依赖外网。
-
-## 4. 设置页：联网搜索
-
-设置 → **联网搜索**：
-
-- **引擎状态**：打开面板时逐个真实探测（并发，总耗时约等于最慢的那个）。
-  显示每个引擎此刻是否可用、耗时、成功时首条结果标题或失败原因。
-  这是运行时事实，不写死「可用」。
-- **试搜**：输入关键词真的搜一次，展示命中条数、来源引擎、每条结果，以及前面失败引擎的原因。
-- **助手怎么用**：说明 search 与 fetch_url 的分工和边界。
-
-## 5. 诊断接口
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/search/status` | 五个引擎的真实可达性（并发探测，不缓存） |
-| POST | `/api/search/test` | `{ query, engine?, maxResults?, freshness? }` → 命中与逐引擎错误 |
-| POST | `/api/search/fetch` | `{ url, maxChars? }` → 网页标题 / 正文 / 截断标记 |
-
-这三个接口不做缓存：用户点「检查」时要看到此刻的真实结果。
-
-## 6. 安全边界
-
-- **只读**：两个工具都不写文件、不改状态。
-- **抓取只允许公网 http(s)**：`localhost`、`127.x`、`10.x`、`192.168.x`、`172.16-31.x`、
-  `169.254.x` 全部拒绝。模型可以用 bash 访问本机（有确认卡），但网页抓取不该成为
-  绕过确认的内网探测通道。
-- **二进制不解析**：PDF / 图片 / 音视频 / 压缩包明确告知类型，不把二进制当文本塞进上下文。
-- **正文上限**：默认 12000 字符（工具）/ 4000 字符（诊断接口），超出在结果里写明「已截断」。
-- **取消**：用户点停止时，搜索与抓取请求随回合 signal 一起结束。
-
-## 7. 代码地图
-
-| 位置 | 职责 |
+| 工具 | 能力 |
 | --- | --- |
-| `services/brain/src/tools/search.ts` | 降级链、四个免密钥引擎的解析、结果清洗 |
-| `services/brain/src/tools/fetchUrl.ts` | 网页读取工具、公网地址校验 |
-| `services/brain/src/tools/net.ts` | HTTP 客户端、UA、超时、中文错误、HTML→文本 |
-| `services/brain/src/routes/search.ts` | `/api/search/*` 诊断接口 |
-| `services/brain/src/config.ts` | `TAVILY_API_KEY` 与端点覆盖环境变量 |
-| `packages/shared/src/search.ts` | 诊断接口的跨端类型 |
-| `apps/desktop/src/renderer/src/features/settings/SearchPanel.tsx` | 设置页面板 |
+| `search` | 搜索并返回标题、原文链接、摘要；模型回答应附来源，不能把失败编成零匹配 |
+| `fetch_url` | 打开公网 http(s) 原文，HTML 转文本；有字节/字符上限并明确标注截断 |
 
-## 8. 验证
+## 2. 搜索状态与降级
 
-```bash
-# 自起一个 brain（端口 3012），五个引擎指向本地 mock，不依赖外网
-node scripts/e2e-search.mjs
+默认顺序：**Tavily（有密钥时）→ Bing → 360 → 搜狗 → DuckDuckGo HTML**。
+DuckDuckGo 使用网页结果，不再把 Instant Answer 的知识摘要当作通用搜索。
 
-# 有桌面端 dev（CDP 9333）时一并验证设置页
-CDP_HTTP=http://127.0.0.1:9333 node scripts/e2e-search.mjs
+- 单引擎最多 8 秒，整条链共用 20 秒预算；用户取消立即终止，不启动后续引擎。
+- `success`：拿到可用命中；保留之前失败的引擎及原因。
+- `empty`：至少一个引擎明确完成但没有匹配；不是网络故障。
+- `failed`：没有引擎完成查询。工具抛真实错误，工具卡不再显示成功。
+- HTTP 200 的验证码页是 `blocked`；没有可识别结果且没有零命中提示是 `parse_failed`，
+  两者都不能解释成「网上没有」。不做反爬对抗。
+- `freshness` 在 Tavily 映射为 `time_range`、Bing 映射为时间 filters、DuckDuckGo 映射为 `df`。
+  360/搜狗不支持时效条件时明确跳过，不用不限时间结果冒充最近结果。
+
+网页结果用 DOM 选择器解析，容忍属性顺序、单双引号与额外 class。清洗时先过滤推荐词与
+非 HTTP 链接，再去重，最后按条数截断；保留文档 id/签名/跳转 token 等查询参数，只去锚点与
+已知追踪参数。Bing 与 DuckDuckGo 的可解码跳转恢复为原文 URL。
+
+## 3. 网络配置
+
+`search`、`fetch_url` 与设置页诊断使用同一份实际出站配置：
+
+1. 显式 `SEARCH_PROXY` 优先，**空字符串表示直连**。
+2. 未设置时继承当前用户实际选中的模型服务代理（包括健康/配额路由后的目标）。
+3. 没有代理配置时直连。不把宿主 shell 的失效 HTTP_PROXY 当作搜索的隐式配置。
+
+```dotenv
+TAVILY_API_KEY=
+# SEARCH_PROXY=http://127.0.0.1:7890
+# SEARCH_PROXY=
+# SEARCH_TAVILY_URL=https://api.tavily.com/search
+# SEARCH_BING_URL=https://cn.bing.com/search
+# SEARCH_SO_URL=https://www.so.com/s
+# SEARCH_SOGOU_URL=https://www.sogou.com/web
+# SEARCH_DUCKDUCKGO_URL=https://html.duckduckgo.com/html/
 ```
 
-`scripts/e2e-search.mjs` 覆盖：必应 / 360 / 搜狗三种 HTML 解析；实体解码；
-「杂质在前 + 小 maxResults」回归；四段降级链（500 → 超时 → 成功）与失败原因回传；
-空结果不算错误；全失败语义；时效参数真的下发；真实 agent 回合调用 search；
-网页读取的协议 / 内网 / 二进制 / 不可达域名边界；桌面端面板与试搜。
+端点覆盖是用户的可信配置，允许已有查询参数；关键词通过 URLSearchParams 加入。
+Tavily 密钥只由服务端环境读取，不回传。HTML 引擎随站点改版/网络变化可能不可用，
+生产使用建议配置结构化 API。**不能保证免密钥引擎在所有网络一直可用。**
 
-**已知限制**：免密钥引擎是 HTML 解析，站点改版会让解析失效——届时
-`/api/search/status` 会立刻显示该引擎不可用，其余引擎继续工作；配 Tavily 密钥可获得
-稳定的结构化结果。搜索引擎对高频抓取可能限流，本项目不做反爬对抗。
+## 4. 设置页与诊断
+
+设置 → 联网搜索：并发探测五个引擎，显示首条命中或真实错误、耗时以及直连/代理路径。
+试搜结果标明查询词，零匹配与故障分别展示。按钮/Enter 共用同步锁；卸载取消请求，
+旧响应不能覆盖新面板。
+
+| 方法 | 路径 | 内容 |
+| --- | --- | --- |
+| GET | `/api/search/status` | 当前用户实际网络路径下的并发探测，不缓存 |
+| POST | `/api/search/test` | `{ query, engine?, maxResults?, freshness? }` → `status/hits/errors` |
+| POST | `/api/search/fetch` | `{ url, maxChars? }` → 与工具相同的网页提取结果 |
+
+## 5. 网页读取安全与真实性
+
+公网 URL 校验覆盖 IPv4/IPv6（含映射地址）、DNS 的全部解析结果与每次重定向；连接固定到
+已校验 IP，避免校验后重新解析到私网。知识库 URL 导入也复用同一读取器。
+二进制/媒体拒绝，支持响应头与 HTML 声明字符集；越界实体不会让解析器抛 RangeError。
+达到字节上限后，即便清洗后的正文很短，也必须标记截断，不能假装读完。
+
+**代理限制**：当前公网读取器不能验证 HTTP 代理实际连接到的 IP，所以 `fetch_url` / 知识库
+公网抓取在有代理时明确拒绝，而不是静默绕过安全检查或静默改成直连。可显式
+`SEARCH_PROXY=` 使用经过 DNS 固定校验的直连，或使用用户自行信任的独立抓取服务。
+搜索端点是可信配置，其搜索请求仍支持代理。
+
+## 6. 验证
+
+```bash
+# 完全离线：随机环回端口，解析/错误/时效/取消/总预算
+node scripts/e2e-search-contract.mjs
+# 公网抓取的 DNS/重定向/IPv6/二进制/字符集/截断边界
+node scripts/e2e-fetch-contract.mjs
+# 自起隔离 brain + mock 引擎，验证 HTTP 与 Agent 接线
+node scripts/e2e-search.mjs
+```
+
+真实搜索需另外联网验证；本地 mock 的通过不代表真实搜索引擎此刻可达。真实模型是否调用
+`search` 必须依据 tool_start/tool_end 与最终回复确认，不能把模型报错或未调用算作通过。

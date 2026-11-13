@@ -48,6 +48,37 @@ export interface ModelRuntimeOptions {
   thinkingLevel?: ThinkingLevel
   contextWindow?: number
   maxTokens?: number
+  temperature?: number
+}
+
+/** 配置入口与实际请求共用校验：0 token 配置表示默认，非法值不能静默降级。 */
+export function validateModelRuntimeOptions(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '模型运行参数必须是对象'
+  const input = value as Record<string, unknown>
+  if (input.thinkingLevel !== undefined && !THINKING_LEVELS.includes(input.thinkingLevel as ThinkingLevel)) {
+    return `thinkingLevel 必须是 ${THINKING_LEVELS.join(' / ')}`
+  }
+  for (const key of ['contextWindow', 'maxTokens'] as const) {
+    const n = input[key]
+    if (n !== undefined && (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0)) {
+      return `${key} 必须是非负安全整数（0 表示默认）`
+    }
+  }
+  const temperature = input.temperature
+  if (temperature !== undefined && (typeof temperature !== 'number' || !Number.isFinite(temperature) || temperature < 0 || temperature > 2)) {
+    return 'temperature 必须是 0 到 2 之间的有限数值'
+  }
+  return undefined
+}
+
+/** 实际路由结果，只读有效运行参数，不含端点、密钥或代理。 */
+export interface ResolvedModelRuntime {
+  providerId: string | null
+  providerName: string | null
+  model: string
+  contextWindow: number
+  maxTokens: number
+  thinkingLevel: ThinkingLevel
 }
 
 /** 工具调用配置（v1：仅一个总开关，缺省视为开启） */

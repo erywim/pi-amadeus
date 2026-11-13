@@ -1,34 +1,12 @@
 import * as React from 'react'
 import { Gauge } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { ResolvedModelRuntime } from '@pi-amadeus/shared'
+import { fetchModelRuntime } from '@renderer/lib/api'
 import { cn } from '@renderer/lib/utils'
-import { activeProviderOf, useProviderStore } from '@renderer/stores/providerStore'
+import { useProviderStore } from '@renderer/stores/providerStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
-
-/**
- * 常见模型的上下文上限：只在用户没显式配置窗口时兜底估算。
- * 显式配置（模型服务 / 内置配置里的 contextWindow）优先——那才是真实值。
- */
-const CONTEXT_WINDOWS: Array<[RegExp, number]> = [
-  [/gemini/i, 1_000_000],
-  [/claude/i, 200_000],
-  [/gpt-4\.1/i, 1_000_000],
-  [/gpt-4o|gpt-4-turbo/i, 128_000],
-  [/deepseek/i, 128_000],
-  [/qwen/i, 131_072],
-  [/kimi|moonshot/i, 128_000],
-  [/glm/i, 128_000],
-  [/llama|mistral|mixtral/i, 128_000]
-]
-
-function contextWindowForModel(model: string, configured?: number): number {
-  if (configured && configured > 0) return configured
-  for (const [pattern, window] of CONTEXT_WINDOWS) {
-    if (pattern.test(model)) return window
-  }
-  return 128_000
-}
 
 /**
  * 粗略 token 估算：中日文字符约 1 token/字，其余按 3.6 字符/token。
@@ -56,17 +34,31 @@ export function ContextMeter(): React.JSX.Element | null {
   const draft = useSessionStore((s) =>
     s.stream.sessionId === s.activeSessionId ? (s.stream.draft?.content ?? '') : ''
   )
-  const provider = activeProviderOf(useProviderStore((s) => s.providers))
-  const fallbackModel = useSettingsStore((s) => s.aiConfig.provider.model)
-  const fallbackWindow = useSettingsStore((s) => s.aiConfig.provider.contextWindow)
-  const model = provider?.model ?? fallbackModel
+  const userId = useSessionStore((s) => s.userId)
+  const streaming = useSessionStore((s) => s.stream.streaming)
+  const providers = useProviderStore((s) => s.providers)
+  const configuredProvider = useSettingsStore((s) => s.aiConfig.provider)
+  const runtimeKey = JSON.stringify([userId, streaming, providers, configuredProvider])
+  const [resolved, setResolved] = React.useState<{ key: string; runtime: ResolvedModelRuntime | null } | null>(null)
+
+  React.useEffect(() => {
+    if (!userId) return
+    const controller = new AbortController()
+    // 配置或回合状态变化后重新解析路由；旧请求中止，避免冷却/切换后的窗口被旧响应覆盖。
+    void fetchModelRuntime(userId, controller.signal).then(
+      (runtime) => { if (!controller.signal.aborted) setResolved({ key: runtimeKey, runtime }) },
+      () => { if (!controller.signal.aborted) setResolved({ key: runtimeKey, runtime: null }) }
+    )
+    return () => controller.abort()
+  }, [userId, runtimeKey])
+  const runtime = resolved?.key === runtimeKey ? resolved.runtime : null
 
   let used = 0
   for (const message of messages ?? []) used += estimateTokens(message.content)
   if (draft) used += estimateTokens(draft)
-  if (used === 0) return null
+  if (used === 0 || !runtime) return null
 
-  const limit = contextWindowForModel(model, provider?.contextWindow || fallbackWindow)
+  const { model, contextWindow: limit } = runtime
   const ratio = Math.min(1, used / limit)
   const tone = ratio >= 0.9 ? 'bg-destructive' : ratio >= 0.75 ? 'bg-amber-500' : 'bg-primary'
 

@@ -1,7 +1,7 @@
 import type { ProviderInput, ProviderItem, ProviderTestResult, ThinkingLevel } from '@pi-amadeus/shared'
-import { THINKING_LEVELS } from '@pi-amadeus/shared'
+import { validateModelRuntimeOptions } from '@pi-amadeus/shared'
 import type { Db, ProviderRow } from '../db.ts'
-import { completeText, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, supportsVision, type LlmTarget } from '../llm.ts'
+import { completeText, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, shouldCooldownProvider, supportsVision, type LlmTarget } from '../llm.ts'
 import { isProviderCoolingDown, markProviderFailure, markProviderSuccess } from './failover.ts'
 
 /**
@@ -10,10 +10,10 @@ import { isProviderCoolingDown, markProviderFailure, markProviderSuccess } from 
  */
 
 const ROUTE_TAGS = new Set(['chat', 'vision', 'summary', 'memory'])
-const THINKING_SET = new Set<string>(THINKING_LEVELS)
-
 export function parseThinkingLevel(value: string | undefined): ThinkingLevel {
-  return value && THINKING_SET.has(value) ? (value as ThinkingLevel) : 'off'
+  const error = validateModelRuntimeOptions({ thinkingLevel: value })
+  if (error) throw new Error(error)
+  return (value ?? 'off') as ThinkingLevel
 }
 
 export function parseTags(tags: string): string[] {
@@ -83,8 +83,8 @@ export async function createProviderItem(
     tags: parseTags((input.tags ?? ['chat']).join(',')).join(','),
     dailyTokenQuota: Math.max(0, Math.floor(input.dailyTokenQuota ?? 0)),
     thinkingLevel: parseThinkingLevel(input.thinkingLevel),
-    contextWindow: Math.max(0, Math.floor(input.contextWindow ?? 0)),
-    maxTokens: Math.max(0, Math.floor(input.maxTokens ?? 0)),
+    contextWindow: input.contextWindow ?? 0,
+    maxTokens: input.maxTokens ?? 0,
     enabled: input.enabled !== false,
     priority: input.priority ?? maxPriority + 10
   })
@@ -117,12 +117,14 @@ export async function updateProviderItem(
       ? { thinkingLevel: parseThinkingLevel(input.thinkingLevel) }
       : {}),
     ...(input.contextWindow !== undefined
-      ? { contextWindow: Math.max(0, Math.floor(input.contextWindow)) }
+      ? { contextWindow: input.contextWindow }
       : {}),
-    ...(input.maxTokens !== undefined ? { maxTokens: Math.max(0, Math.floor(input.maxTokens)) } : {}),
+    ...(input.maxTokens !== undefined ? { maxTokens: input.maxTokens } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.priority !== undefined ? { priority: input.priority } : {})
   })
+  // 保存新配置后从冷却恢复为可选，让修正端点/密钥/运行参数的下一次请求立即生效。
+  if (updated) markProviderSuccess(id)
   return updated
     ? { ok: true, provider: await withUsage(db, updated) }
     : { ok: false, error: '更新失败' }
@@ -174,7 +176,7 @@ export async function testProvider(db: Db, id: string): Promise<ProviderTestResu
         systemPrompt: '你是连通性测试助手。',
         messages: [{ role: 'user', content: '只回复 OK 两个字符。', timestamp: Date.now() }]
       },
-      { signal: controller.signal, maxTokens: 16, temperature: 0 }
+      { signal: controller.signal, maxTokens: 16, temperature: 0, thinkingLevel: 'off' }
     )
     const trimmed = reply.trim()
     // 空回复按失败处理：不可达端点在部分客户端里会「成功」返回空流，
@@ -187,8 +189,8 @@ export async function testProvider(db: Db, id: string): Promise<ProviderTestResu
       reply: trimmed.slice(0, 40)
     }
   } catch (error) {
-    // 连通性测试也是真实请求：失败同样让该服务进入冷却，成功后立即解除
-    markProviderFailure(row.id)
+    // 测试与回合一致：只有真实服务故障进入冷却，参数 400/输出截断保留原错误。
+    if (shouldCooldownProvider(error)) markProviderFailure(row.id)
     return {
       ok: false,
       latencyMs: Date.now() - startedAt,
@@ -200,6 +202,8 @@ export async function testProvider(db: Db, id: string): Promise<ProviderTestResu
 }
 
 function validate(input: ProviderInput): { ok: true } | { ok: false; error: string } {
+  const error = validateModelRuntimeOptions(input)
+  if (error) return { ok: false, error }
   if (!input.name?.trim()) return { ok: false, error: 'name 必填' }
   if (!input.model?.trim()) return { ok: false, error: 'model 必填' }
   const baseUrl = input.baseUrl?.trim()

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { ProviderInput, ThinkingLevel } from '@pi-amadeus/shared'
+import { validateModelRuntimeOptions, type ProviderInput, type ThinkingLevel } from '@pi-amadeus/shared'
 import type { Db } from '../db.ts'
 import {
   activateProvider,
@@ -55,7 +55,7 @@ export function providerRoutes(db: Db): Hono {
 
 async function readInput(c: { req: { json: () => Promise<unknown> } }): Promise<ProviderInput | null> {
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
-  if (!body || typeof body !== 'object') return null
+  if (!body || typeof body !== 'object' || validateModelRuntimeOptions(body)) return null
   const str = (key: string): string => (typeof body[key] === 'string' ? (body[key] as string) : '')
   return {
     name: str('name'),

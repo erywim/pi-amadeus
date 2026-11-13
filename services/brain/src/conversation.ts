@@ -229,6 +229,8 @@ export interface PreparedTurn {
 export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   const { cfg, db, userId, sessionId, channel, mode, content, frames } = ctx
   const appendUserMessage = ctx.appendUserMessage !== false
+  // 编辑回合先只准备输入，模型成功后才由路由提交新分支，失败不切走旧路径
+  const deferUserMessage = appendUserMessage && ctx.branchParentId !== undefined
   await db.touchSession({ id: sessionId, userId, channel })
 
   // 先读历史再落库本次用户消息：避免当前消息在 LLM 上下文里出现两次
@@ -257,9 +259,8 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     : allHistoryRows
 
   const attachments = ctx.attachments ?? []
-  let userMessageId: string | undefined
-  if (appendUserMessage) {
-    userMessageId = randomUUID()
+  const userMessageId = appendUserMessage ? randomUUID() : undefined
+  if (userMessageId && !deferUserMessage) {
     const parentId =
       ctx.branchParentId !== undefined ? ctx.branchParentId : (historyRows.at(-1)?.id ?? null)
     await db.appendMessage({
@@ -287,15 +288,19 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     }
   }
 
-  const hasImageAttachment = (ctx.attachments ?? []).some((item) => item.kind === 'image')
+  const hasImageAttachment = attachments.some((item) => item.kind === 'image')
   const target = await resolveTarget(cfg, db, userId, hasImageAttachment ? 'vision' : 'chat')
   const systemPrompt =
     buildSystemPrompt(storedConfig?.systemPrompt, mode) +
     memorySystemPrompt(recalledMemories, affinity) +
     knowledgePrompt
-  // 历史里的文本附件/语音转写继续进入上下文；图片历史不重发（只保留占位说明）
+  if (!appendUserMessage && historyRows.at(-1)?.role !== 'user') {
+    throw new Error('重新生成失败：会话末尾没有用户消息')
+  }
+  // 重新生成把末尾用户消息作为本次输入重建，避免历史占位丢图片或文本/转写重复
+  const contextHistory = appendUserMessage ? historyRows : historyRows.slice(0, -1)
   const messages = toContextMessages(
-    historyRows.map((m) => ({
+    contextHistory.map((m) => ({
       role: m.role,
       content: m.content + mediaContext(m.attachments),
       createdAt: m.createdAt
@@ -310,39 +315,33 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   }
   const attachFrames = hasFrames && target.vision
 
-  if (appendUserMessage) {
-    const imageAttachments = attachments.filter((item) => item.kind === 'image')
-    const visionNote =
-      imageAttachments.length > 0 && !target.vision
-        ? `\n\n[用户发送了 ${imageAttachments.length} 张图片，但当前模型不支持图像输入]`
-        : ''
-    const userText = content + savedMediaContext(attachments) + visionNote
-    const imageBlocks = [
-      ...(attachFrames
-        ? frames.map((f) => ({ type: 'image' as const, data: f, mimeType: 'image/jpeg' as const }))
-        : []),
-      ...(target.vision
-        ? imageAttachments.map((item) => ({
-            type: 'image' as const,
-            data: readAttachment(item.path).toString('base64'),
-            mimeType: item.mimeType as 'image/png'
-          }))
-        : [])
-    ]
-    const userMessage =
-      imageBlocks.length > 0
-        ? {
-            role: 'user' as const,
-            content: [{ type: 'text' as const, text: userText }, ...imageBlocks],
-            timestamp: Date.now()
-          }
-        : { role: 'user' as const, content: userText, timestamp: Date.now() }
-    messages.push(userMessage)
-  } else if (historyRows.at(-1)?.role !== 'user') {
-    // 不追加时上下文必须以本次用户消息收尾：否则 agent.prompt(content) 会把它
-    // 再塞一次，模型看到重复提问（重新生成的定位逻辑保证末尾是用户消息）
-    throw new Error('重新生成失败：会话末尾没有用户消息')
-  }
+  const imageAttachments = attachments.filter((item) => item.kind === 'image')
+  const visionNote =
+    imageAttachments.length > 0 && !target.vision
+      ? `\n\n[用户发送了 ${imageAttachments.length} 张图片，但当前模型不支持图像输入]`
+      : ''
+  const userText = content + savedMediaContext(attachments) + visionNote
+  const imageBlocks = [
+    ...(attachFrames
+      ? frames.map((f) => ({ type: 'image' as const, data: f, mimeType: 'image/jpeg' as const }))
+      : []),
+    ...(target.vision
+      ? imageAttachments.map((item) => ({
+          type: 'image' as const,
+          data: readAttachment(item.path).toString('base64'),
+          mimeType: item.mimeType as 'image/png'
+        }))
+      : [])
+  ]
+  const userMessage =
+    imageBlocks.length > 0
+      ? {
+          role: 'user' as const,
+          content: [{ type: 'text' as const, text: userText }, ...imageBlocks],
+          timestamp: Date.now()
+        }
+      : { role: 'user' as const, content: userText, timestamp: Date.now() }
+  messages.push(userMessage)
 
   return { target, systemPrompt, messages, userConfig: storedConfig, userMessageId }
 }

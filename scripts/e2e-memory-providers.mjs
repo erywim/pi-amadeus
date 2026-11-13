@@ -73,7 +73,8 @@ async function waitFor(expression, timeoutMs = 30000, label = expression) {
   }
 }
 async function goto(path, readyExpr) {
-  await evalJs(`location.href = ${JSON.stringify(`http://localhost:5173${path}`)}; true`)
+  const origin = await evalJs('location.origin')
+  await cdp.call('Page.navigate', { url: `${origin}${path}` })
   await sleep(1500)
   await waitFor(readyExpr, 20000, `进入 ${path}`)
   await sleep(500)

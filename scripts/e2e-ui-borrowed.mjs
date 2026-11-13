@@ -17,7 +17,7 @@ import { setTimeout as sleep } from 'node:timers/promises'
 
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
 const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
-const DOWNLOAD_DIR = '/tmp/amadeus-e2e-borrowed-downloads'
+const DOWNLOAD_DIR = process.env.E2E_DOWNLOAD_DIR ?? '/tmp/amadeus-e2e-borrowed-downloads'
 
 const results = []
 function report(name, ok, detail = '') {

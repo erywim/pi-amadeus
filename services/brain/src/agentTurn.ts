@@ -6,7 +6,7 @@ import { AsyncQueue } from './bilingual.ts'
 import type { BrainConfig } from './config.ts'
 import { prepareTurn } from './conversation.ts'
 import type { Db } from './db.ts'
-import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
+import { createAgentStreamFn, getLlm, OUTPUT_LIMIT_ERROR, shouldCooldownProvider, type LlmTarget } from './llm.ts'
 import { createKnowledgeTool } from './knowledge/index.ts'
 import type { SavedAttachment } from './media.ts'
 import { mcpManager } from './mcp/manager.ts'
@@ -34,7 +34,7 @@ export interface AgentTurnOptions {
   mode: TurnMode
   content: string
   signal?: AbortSignal
-  /** LLM 采样参数（缺省不传 = 供应商默认） */
+  /** LLM 采样参数（显式覆盖优先，否则使用用户配置） */
   temperature?: number
   maxTokens?: number
   /** 是否把本次用户消息写入会话（重新生成传 false，历史里已有那条消息） */
@@ -204,7 +204,7 @@ export async function* runAgentTurn(
       tools
     },
     streamFn: createAgentStreamFn(prepared.target, {
-      temperature: opts.temperature,
+      temperature: opts.temperature ?? prepared.userConfig?.temperature,
       maxTokens: opts.maxTokens
     }),
     beforeToolCall
@@ -321,38 +321,17 @@ export async function* runAgentTurn(
       userMessageId: prepared.userMessageId
     }
   }
-  // 真实回合失败 → 该服务进入冷却，下一回合自动按 priority 换健康服务；
-  // 成功一次立即解除冷却。中止（用户点停止）不算服务故障。
+  // 只有真实服务故障才进入冷却；请求 400 原样上报，不根据思考开关猜测原因。
   if (agent.state.errorMessage) {
-    markProviderFailure(prepared.target.providerId)
     const raw = agent.state.errorMessage
-    /**
-     * 上游拒绝思考参数时原始报错只有 "400 upstream_rejected"，对用户没有任何指引。
-     * 不同端点支持的思考档位不同（例如只认 low/high/max），这里把这种情况
-     * 翻译成「换一档或关掉」——只改措辞不掩盖失败，错误仍然照实抛出。
-     */
-    if (thinkingEnabled && /\b400\b|upstream_rejected|reasoning/i.test(raw)) {
-      throw new Error(
-        `当前模型服务不接受「${prepared.target.thinkingLevel}」思考档位（原始错误：${raw}）。` +
-          '请在设置里换一个思考档位或关闭思考模式后重试。'
-      )
-    }
+    if (shouldCooldownProvider(raw)) markProviderFailure(prepared.target.providerId)
     throw new Error(raw)
   }
+  // length 表示未完成，即便已有正文也不能作为成功回合；预算问题不触发服务切换。
+  if (lastStopReason === 'length') throw new Error(OUTPUT_LIMIT_ERROR)
   if (!full) {
     markProviderFailure(prepared.target.providerId)
-    if (thinkingEnabled) {
-      // 开了思考但没正文：几乎都是输出上限被思考吃光（推理模型共享 maxTokens）
-      throw new Error(
-        '模型把输出上限全用在思考上了，没有留下正文。请调高「输出上限」，或把「思考模式」调低/关闭。'
-      )
-    }
-    // 停止原因是 length：输出上限/上下文窗口太小，连一句话都放不下
-    throw new Error(
-      lastStopReason === 'length'
-        ? '回复被输出上限截断了（连正文都没留下）。请调高「输出上限」，或核对「上下文窗口」是否填得太小。'
-        : 'LLM 返回为空'
-    )
+    throw new Error('LLM 返回为空')
   }
   markProviderSuccess(prepared.target.providerId)
   // totalTokens 缺失时用输入+输出兜底（部分兼容端点不返回 total）

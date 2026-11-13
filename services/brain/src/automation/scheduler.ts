@@ -233,27 +233,17 @@ class AutomationScheduler {
       this.running.delete(row.id)
     }
 
-    // 下次触发：到点触发按调度重算；手动运行保持原有下次时间
-    let nextRunAt = manual ? row.nextRunAt : null
-    if (!manual) {
-      if (row.schedule === 'once') {
-        nextRunAt = null
-      } else {
-        nextRunAt = computeNextRun({
-          schedule: row.schedule,
-          intervalMinutes: row.intervalMinutes,
-          timeOfDay: row.timeOfDay,
-          runAt: row.runAt
-        })
-        // 运行超时导致算出的下一次仍在过去：继续往后排，避免补跑风暴
-        if (nextRunAt !== null && nextRunAt <= Date.now() && row.schedule === 'interval') {
-          nextRunAt = Date.now() + Math.max(1, row.intervalMinutes) * 60_000
-        }
-      }
-    }
-    const disableOnce = row.schedule === 'once' && !manual
-    await db
-      .finishAutomationRun({
+    try {
+      const latest = await db.getAutomation(row.id)
+      if (!latest) return
+      const planChanged = (
+        ['trigger', 'schedule', 'intervalMinutes', 'timeOfDay', 'runAt', 'enabled', 'nextRunAt'] as const
+      ).some((key) => latest[key] !== row[key])
+      // 运行中用户改过计划时保留最新排期；只有原定时计划未变才续排/停用 once
+      const advance = !manual && !planChanged && latest.enabled && latest.trigger === 'schedule'
+      const nextRunAt = advance ? computeNextRun(latest) : latest.nextRunAt
+      const disableOnce = advance && latest.schedule === 'once'
+      await db.finishAutomationRun({
         id: row.id,
         status,
         error: errorText.slice(0, 2000),
@@ -262,9 +252,9 @@ class AutomationScheduler {
         trigger: triggerText ?? (row.trigger === 'schedule' ? '定时触发' : '手动运行'),
         ...(disableOnce ? { enabled: false } : {})
       })
-      .catch((error) => {
-        console.warn('[automation] 写回运行结果失败：', error instanceof Error ? error.message : error)
-      })
+    } catch (error) {
+      console.warn('[automation] 写回运行结果失败：', error instanceof Error ? error.message : error)
+    }
   }
 }
 

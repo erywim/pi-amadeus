@@ -28,6 +28,8 @@ proactive 调度器
 ```
 
 - 问候是一条普通助手消息，没有伪造的用户消息；会话历史里能看到它。
+- 「最近」指未归档 desktop 会话里 `updatedAt` 最新的一段，与列表的置顶优先顺序无关，
+  不写入其它渠道或已归档会话。没有可用会话时新建「主动问候」；原 `proactive-<userId>` 已存在且归档时使用新 ID，不隐式恢复归档。
 - 生成失败只写日志并短暂退避，不会改动 `last_greeted_at`，也不影响其它功能。
 - 手动「立即问候」绕过时间窗/空闲检查（用于预览与 E2E），仍然使用真实模型。
 
@@ -70,6 +72,9 @@ proactive 调度器
 ## 7. 验证
 
 ```bash
+# 独立回归：旧置顶/新活动/已归档/其它渠道，使用临时 SQLite 与模型 mock
+node scripts/e2e-regression-contracts.mjs
+
 npm run dev:brain
 npx --prefix apps/desktop electron-vite dev --remoteDebuggingPort 9333
 

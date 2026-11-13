@@ -15,7 +15,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { resolve } from 'node:path'
 
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 // 同 e2e-mic：9222 可能被 Chrome 占用，换端口时用 CDP_HTTP 指过来
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
 const brainLogPath = process.argv[2] ?? ''

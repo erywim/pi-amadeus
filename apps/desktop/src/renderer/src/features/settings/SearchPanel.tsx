@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Globe, LoaderCircle, RefreshCw, Search, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
@@ -23,31 +23,55 @@ export function SearchPanel(): React.JSX.Element {
   const [testing, setTesting] = useState(false)
   const [result, setResult] = useState<SearchTestResponse | null>(null)
 
+  const checkRequest = useRef<AbortController | null>(null)
+  const testRequest = useRef<AbortController | null>(null)
+
   async function check(): Promise<void> {
+    // 重查替代旧探测：卸载/再次检查时旧响应不能回写新面板。
+    checkRequest.current?.abort()
+    const controller = new AbortController()
+    checkRequest.current = controller
     setChecking(true)
     try {
-      setStatus(await fetchSearchStatus())
+      const next = await fetchSearchStatus(controller.signal)
+      if (!controller.signal.aborted) setStatus(next)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
+      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : String(error))
     } finally {
-      setChecking(false)
+      if (checkRequest.current === controller) {
+        checkRequest.current = null
+        setChecking(false)
+      }
     }
   }
 
   useEffect(() => {
     void check()
+    return () => {
+      // 退出设置时取消网络工作；StrictMode 再挂载会另起新请求。
+      checkRequest.current?.abort()
+      testRequest.current?.abort()
+    }
   }, [])
 
   async function runTest(): Promise<void> {
     const trimmed = query.trim()
-    if (!trimmed) return
+    // ref 同步锁住按钮与 Enter：React 尚未提交 testing 时也不能起并发试搜。
+    if (!trimmed || testRequest.current) return
+    const controller = new AbortController()
+    testRequest.current = controller
     setTesting(true)
+    setResult(null)
     try {
-      setResult(await testSearchApi(trimmed))
+      const next = await testSearchApi(trimmed, undefined, controller.signal)
+      if (!controller.signal.aborted) setResult(next)
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
+      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : String(error))
     } finally {
-      setTesting(false)
+      if (testRequest.current === controller) {
+        testRequest.current = null
+        setTesting(false)
+      }
     }
   }
 
@@ -115,7 +139,7 @@ export function SearchPanel(): React.JSX.Element {
 
       {status && (
         <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-          {t('settings.search.orderHint')}
+          {t('settings.search.orderHint')} {t(`settings.search.network.${status.network}`)}
         </p>
       )}
 
@@ -128,6 +152,8 @@ export function SearchPanel(): React.JSX.Element {
           <Input
             data-testid="search-test-input"
             value={query}
+            disabled={testing}
+            maxLength={2000}
             placeholder={t('settings.search.testPlaceholder')}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -145,7 +171,8 @@ export function SearchPanel(): React.JSX.Element {
         </div>
 
         {result && (
-          <div data-testid="search-test-result" className="mt-3 rounded-md border border-border bg-card p-3">
+          <div data-testid="search-test-result" data-status={result.status} className="mt-3 rounded-md border border-border bg-card p-3">
+            <p className="mb-2 text-xs font-medium">{t('settings.search.resultFor', { query: result.query })}</p>
             <div className="flex flex-wrap items-center gap-2 text-[11.5px] text-muted-foreground">
               {result.engine ? (
                 <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
@@ -158,7 +185,7 @@ export function SearchPanel(): React.JSX.Element {
                   variant="outline"
                   className="border-destructive/40 px-1.5 py-0 text-[10px] text-destructive"
                 >
-                  {t('settings.search.allFailed')}
+                  {t(result.status === 'empty' ? 'settings.search.empty' : 'settings.search.allFailed')}
                 </Badge>
               )}
               <span className="font-mono">{result.elapsedMs}ms</span>
@@ -181,7 +208,7 @@ export function SearchPanel(): React.JSX.Element {
             )}
             {result.errors.length > 0 && (
               <p className="mt-2 font-mono text-[10.5px] leading-relaxed text-muted-foreground">
-                {result.errors.map((e) => `${e.engine}: ${e.detail ?? e.error ?? ''}`).join(' · ')}
+                {result.errors.map((e) => `${e.engine}: ${e.error}`).join(' · ')}
               </p>
             )}
           </div>

@@ -375,7 +375,10 @@
       "testRun": "Search",
       "hitEngine": "via {{engine}}",
       "hitCount": "{{count}} results",
-      "allFailed": "All engines failed",
+      "allFailed": "Search unavailable (not zero matches)",
+      "empty": "Search complete, no matches",
+      "resultFor": "Query: {{query}}",
+      "network": { "direct": "Effective route: direct.", "proxy": "Effective route: proxy." },
       "toolHintTitle": "How the assistant uses it",
       "toolHint": "search returns titles, links and snippets; when it needs the body, the assistant opens the page with fetch_url. The fetch tool only allows public http(s) URLs — localhost and private ranges are rejected.",
       "engine": {

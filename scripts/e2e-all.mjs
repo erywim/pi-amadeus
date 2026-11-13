@@ -44,7 +44,7 @@ async function checkPreconditions() {
 
 const files = (await readdir(here))
   .filter((f) => /^e2e(-[\w-]+)?\.mjs$/.test(f))
-  .filter((f) => join(here, f) !== self)
+  .filter((f) => join(here, f) !== self && f !== 'e2e-isolated.mjs')
   .filter((f) => !filter || f.includes(filter))
   .sort()
 

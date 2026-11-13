@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { open, readdir, realpath, stat } from 'node:fs/promises'
-import { basename, extname, resolve, sep } from 'node:path'
+import { basename, extname, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   WorkspaceDiff,
@@ -208,15 +208,21 @@ export async function workspaceTree(root: string): Promise<WorkspaceEntry[]> {
   return entries
 }
 
-/** 相对路径 → 绝对路径，拒绝越界（词法 + 符号链接两层校验） */
+/** 读取与 diff 共用入口：词法路径和符号链接目标都必须通过列表的隐私过滤。 */
 async function resolveInside(root: string, relativePath: string): Promise<string> {
   const rel = normalizeGitPath(relativePath)
   if (!isSafeRelative(rel)) throw new Error('路径越界')
-  const full = resolve(root, rel)
-  if (full !== root && !full.startsWith(root + sep)) throw new Error('路径越界')
-  const realRoot = await realpath(root).catch(() => root)
+  const rootPath = resolve(root)
+  const full = resolve(rootPath, rel)
+  if (full !== rootPath && !full.startsWith(rootPath + sep)) throw new Error('路径越界')
+  if (isSensitive(rel) || isInternal(normalizeGitPath(relative(rootPath, full)))) {
+    throw new Error('不能访问敏感或内部文件')
+  }
+  const realRoot = await realpath(rootPath).catch(() => rootPath)
   const realFull = await realpath(full).catch(() => full)
   if (realFull !== realRoot && !realFull.startsWith(realRoot + sep)) throw new Error('路径越界')
+  const target = normalizeGitPath(relative(realRoot, realFull))
+  if (isSensitive(target) || isInternal(target)) throw new Error('不能访问敏感或内部文件')
   return full
 }
 
@@ -370,15 +376,22 @@ async function synthesizeUntrackedDiff(root: string, path: string): Promise<Work
 
 export async function workspaceDiff(root: string, relativePath: string): Promise<WorkspaceDiff> {
   const path = normalizeGitPath(relativePath)
-  await resolveInside(root, path)
-  const tracked = (await tryGit(root, ['ls-files', '--error-unmatch', '--', path])) !== null
+  const full = await resolveInside(root, path)
+  const info = await stat(full).catch((error: NodeJS.ErrnoException) => {
+    // 删除的普通文件仍可看 Git diff；其它读取失败不能当成「文件不存在」。
+    if (error.code === 'ENOENT') return null
+    throw error
+  })
+  if (info && !info.isFile()) throw new Error('不是文件')
+  const tracked = (await tryGit(root, ['--literal-pathspecs', 'ls-files', '--error-unmatch', '--', path])) !== null
+  if (!tracked && !info) throw new Error('不是文件')
   if (!tracked) return synthesizeUntrackedDiff(root, path)
 
-  let diff = (await tryGit(root, ['diff', '--no-color', '--unified=3', 'HEAD', '--', path])) ?? ''
+  let diff = (await tryGit(root, ['--literal-pathspecs', 'diff', '--no-color', '--unified=3', 'HEAD', '--', path])) ?? ''
   if (!diff) {
     // 还没有首个提交：HEAD 不存在，分别看暂存区与工作区
-    const staged = (await tryGit(root, ['diff', '--no-color', '--unified=3', '--cached', '--', path])) ?? ''
-    const unstaged = (await tryGit(root, ['diff', '--no-color', '--unified=3', '--', path])) ?? ''
+    const staged = (await tryGit(root, ['--literal-pathspecs', 'diff', '--no-color', '--unified=3', '--cached', '--', path])) ?? ''
+    const unstaged = (await tryGit(root, ['--literal-pathspecs', 'diff', '--no-color', '--unified=3', '--', path])) ?? ''
     diff = `${staged}${unstaged}`
   }
   const binary = /^Binary files /m.test(diff)

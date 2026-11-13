@@ -172,8 +172,8 @@ export class SlackAdapter implements PlatformAdapter {
   private onEvent(envelope: SlackEnvelope): void {
     const event = envelope.payload?.event
     if (!event || event.type !== 'message') return
-    // 忽略编辑/删除/加入频道等子类型，以及机器人自己的消息与其它 bot
-    if (event.subtype) return
+    // file_share 也是用户消息；编辑/删除/加入频道等事件不能触发新回合
+    if (event.subtype && event.subtype !== 'file_share') return
     if (event.bot_id) return
     if (event.user && this.selfId && event.user === this.selfId) return
     const text = event.text ?? ''

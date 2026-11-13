@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { KnowledgeBase, KnowledgeDoc } from '@pi-amadeus/shared'
 import type { Db, KnowledgeBaseRow, KnowledgeDocRow } from '../db.ts'
 import { DOC_MAX_CHARS, importKnowledgeDoc, searchKnowledge } from '../knowledge/index.ts'
+import { readPublicPage } from '../tools/fetchUrl.ts'
 
 /** 知识库：增删改查 + 文档导入（粘贴 / 上传 / URL）+ 检索预览 */
 export function knowledgeRoutes(db: Db): Hono {
@@ -126,35 +127,24 @@ export function knowledgeRoutes(db: Db): Hono {
     const rawUrl = typeof body?.url === 'string' ? body.url.trim() : ''
     if (!/^https?:\/\//i.test(rawUrl)) return c.json({ error: '请输入 http(s) 地址' }, 400)
 
-    let fetched: Response
     try {
-      fetched = await fetch(rawUrl, {
-        signal: AbortSignal.timeout(20_000),
-        headers: { 'user-agent': 'Amadeus-Knowledge/0.1', accept: 'text/html,text/plain,*/*' }
+      const page = await readPublicPage(rawUrl, {
+        signal: c.req.raw.signal,
+        maxBytes: DOC_MAX_CHARS * 4,
+        maxChars: DOC_MAX_CHARS
       })
-    } catch (error) {
-      return c.json({ error: `抓取失败：${error instanceof Error ? error.message : String(error)}` }, 400)
-    }
-    if (!fetched.ok) return c.json({ error: `抓取失败：HTTP ${fetched.status}` }, 400)
-    const contentType = fetched.headers.get('content-type') ?? ''
-    if (/^(image|audio|video|application\/pdf|application\/zip)/i.test(contentType)) {
-      return c.json({ error: `不支持的内容类型：${contentType}` }, 400)
-    }
-    const raw = await fetched.text()
-    if (raw.length > DOC_MAX_CHARS * 4) {
-      return c.json({ error: '页面内容过大（上限约 400K 字符）' }, 400)
-    }
-    const text = /html/i.test(contentType) ? htmlToText(raw) : raw
-    const name =
-      typeof body?.name === 'string' && body.name.trim()
-        ? body.name.trim()
-        : new URL(rawUrl).hostname + new URL(rawUrl).pathname
-    try {
+      // 抓取已截断时从读取转为拒绝导入，不能把半篇文档当作完整知识来源持久化。
+      if (page.truncated) return c.json({ error: '页面内容过大，已截断；请缩小内容后重新导入' }, 400)
+      const finalUrl = new URL(page.url)
+      const name =
+        typeof body?.name === 'string' && body.name.trim()
+          ? body.name.trim()
+          : finalUrl.hostname + finalUrl.pathname
       const doc = await importKnowledgeDoc(db, {
         kbId: base.base.id,
         name,
-        content: text,
-        source: rawUrl
+        content: page.text,
+        source: page.url
       })
       return c.json({ ok: true, doc: toDocItem({ ...doc, kbId: base.base.id }) })
     } catch (error) {

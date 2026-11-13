@@ -8,7 +8,7 @@
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 
 // 飞书路由只在 FEISHU_ENABLED=true 时挂载：没启用时明确跳过（退出码 2），
 // 别把它报成「challenge 不回显」这种看起来像 bug 的失败

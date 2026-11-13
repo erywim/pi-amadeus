@@ -39,7 +39,7 @@ interface DiscordMessage {
 
 /**
  * Discord 机器人适配器：Gateway WebSocket 接收（v10）+ REST 发送。
- * 只处理文本消息；忽略其它机器人（含自己）的消息，避免回声。
+ * 处理文本与附件消息；忽略其它机器人（含自己）的消息，避免回声。
  * 断线自动重连（Discord 的 op 7 / 连接关闭都走同一条重连路径）。
  */
 export class DiscordAdapter implements PlatformAdapter {
@@ -214,7 +214,8 @@ export class DiscordAdapter implements PlatformAdapter {
     }
     if (payload.t !== 'MESSAGE_CREATE') return
     const message = payload.d as DiscordMessage | undefined
-    if (!message?.content || !message.channel_id) return
+    if (!message?.channel_id) return
+    if (!message.content?.trim() && (message.attachments?.length ?? 0) === 0) return
     if (message.author?.bot) return
     if (message.author?.id && message.author.id === this.selfId) return
     void this.handleMessage(message)

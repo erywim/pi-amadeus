@@ -95,15 +95,21 @@ export async function generateProactiveGreeting(
           systemPrompt,
           messages: [{ role: 'user', content: prompt, timestamp: now }]
         },
-        { maxTokens: 220, temperature: 0.85 }
+        { maxTokens: 220, temperature: 0.85, thinkingLevel: 'off' }
       )
     ).trim()
     if (!content) return null
 
-    // 落到用户最近的桌面会话；没有就建一个「主动问候」会话
+    // 问候只进入最近活跃且未归档的桌面会话，不能因置顶顺序唤回旧会话
     const sessions = await db.listSessions(userId)
-    const session = sessions.find((item) => item.channel === 'desktop') ?? null
-    const sessionId = session?.id ?? `proactive-${userId}`
+    const session = sessions
+      .filter((item) => item.channel === 'desktop' && !item.archived)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null
+    const fallbackId = `proactive-${userId}`
+    // 原问候会话已归档时新建，归档不能被下一次问候隐式撤销
+    const sessionId = session?.id ?? (sessions.some((item) => item.id === fallbackId)
+      ? `${fallbackId}-${randomUUID()}`
+      : fallbackId)
     await db.touchSession({ id: sessionId, userId, channel: 'desktop' })
     const messageId = randomUUID()
     await db.appendMessage({

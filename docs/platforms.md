@@ -32,9 +32,14 @@
 ## 2. 身份绑定
 
 - 未绑定：按 `<kind>-<externalUserId>` 自动建档（每个外部账号一个用户）。
-- 已绑定：在平台里发 `/bind <绑定码>`（绑定码在「设置 → 飞书」生成），之后消息都记在该桌面用户名下。
-  绑定后该会话的归属会转移到绑定用户，桌面端立刻能在列表里看到并继续。
+- 已绑定：在平台里发 `/bind <绑定码>`（绑定码在「设置 → 飞书」生成），外部账号之后使用该桌面身份。
+  在私聊内绑定会立即迁移这段私聊；在群里绑定不会迁移群，绑定者下次进入自己的私聊时才迁移该私聊。
+  不按用户名批量搬迁，也不迁移其它人的私聊。
 - 群聊与私聊使用各自的会话；同一用户在不同群里的上下文互不串。
+- **群 owner 策略**：已有群会话保持现有 owner；新群由首个创建会话的回合确定 owner。
+  后续换说话人、成员 `/bind`，甚至 owner 自己绑定新身份，都不会转走整群历史。
+  群回合的配置、记忆/好感度与指标继续归同一 owner；不新增群权限或跨成员记忆合并。
+  owner 在会话串行队列内读取，避免并发首轮先按各自身份准备上下文。
 
 ## 3. 适配器细节
 
@@ -64,7 +69,8 @@
 - 回复走 REST `POST /channels/:id/messages`，按 1900 字分段，并带
   `allowed_mentions: { parse: [] }`——模型输出里的 `@everyone` 不会真的 ping 全群。
 - 忽略所有 `author.bot`（含自己）的消息，避免回声；op 7 / op 9 与连接关闭都走同一套 3s 重连。
-- 附件 URL 会下载为图片 / 音频 / 文件；`referenced_message` 作为引用上下文；回复带 `message_reference`。
+- 附件 URL 会下载为图片 / 音频 / 文件；正文为空但有附件的 `MESSAGE_CREATE` 同样进入管线。
+  `referenced_message` 作为引用上下文；回复带 `message_reference`。
 - 可配置 `gatewayUrl` / `apiBaseUrl` 指向本地 mock（E2E 用它验证完整协议链路）。
 
 ### 微信公众号
@@ -87,7 +93,7 @@
 
 - 启动时 `auth.test` 校验 bot token 并拿到 bot user id；`apps.connections.open`（app token）换取 WebSocket 地址。
 - 收到 `events_api` 信封时**先回 `{ envelope_id }` ack** 再处理（Slack 3 秒内收不到 ack 会重投同一条事件）。
-- 只处理 `event.type = message` 且没有 `subtype` / `bot_id` 的消息；自己发的消息不会再次触发回合。
+- 处理 `event.type = message`、无 subtype 或 `subtype = file_share` 的文本/纯文件消息；忽略其它 subtype、`bot_id` 与自己发的消息，编辑/删除事件不会再次触发回合。
 - 回复走 `chat.postMessage`（`mrkdwn: false`，不让模型输出被 Slack 解析成富文本副作用）。
 - 断线后重新 `apps.connections.open`，失败继续退避重连。
 - 文件（`files[].url_private`）用 bot token 下载为附件；线程消息的回复写回同一 `thread_ts`。
@@ -124,9 +130,29 @@
 ## 6. 安全边界
 
 - 平台 Token / Access Token / AppSecret / Webhook secret 存在本机 SQLite，不出现在列表接口、日志、截图中。
-- 微信公众号回调必须通过签名校验；Webhook 入站支持共享密钥；未配置密钥时任何能访问大脑端口的人都能投递消息——生产环境请配置密钥或限制监听地址。
+- 微信公众号回调必须通过签名校验；Webhook 入站支持共享密钥；未配置密钥时任何能访问大脑端口的人都能投递消息——公网暴露前请配置密钥或用防火墙/代理限制来源；本次边界收紧不自动创建、替换或修改已有密钥。
 - 附件落盘在 `data/media`，媒体接口用随机 UUID 访问；原始文件名只作展示，不参与路径。
 - 同一平台连接只应由一个 brain 进程持有（Telegram 长轮询、OneBot、QQ 网关都会抢占同一账号）。
+
+### brain HTTP 管理面
+
+真实入口在 `services/brain/src/index.ts`；`services/brain/src/http/access.ts` 的 `createHttpApp` 在任何 `/api/*` 处理器之前校验请求，避免只删 CORS 响应头但简单 POST 仍执行命令。配置由 `services/brain/src/config.ts` 的 `loadConfig` 只读环境变量，不落入用户设置、不回传密钥、不添加登录弹窗。
+
+| 环境变量 | 默认与边界 |
+| --- | --- |
+| `BRAIN_HOST` | `127.0.0.1`，仅本机 IPv4 loopback；公网/LAN 回调必须显式设为 `0.0.0.0` 或所需接口地址，IPv6 本机可设 `::1`。不设置时不再监听全部接口。 |
+| `BRAIN_ALLOWED_HOSTS` | 逗号分隔的额外精确 HTTP Host（非 URL，含非默认端口，例如 `brain.example:3002`）。本机 `localhost` / `127.0.0.1` / `[::1]` 加 `PORT` 始终允许；无通配符，不做 DNS 解析，不信任相似后缀或 `X-Forwarded-Host`。 |
+| `BRAIN_ALLOWED_ORIGINS` | 默认精确允许 `http://localhost:5173,http://127.0.0.1:5173,http://[::1]:5173`。配置时替换此列表；Vite 换端口时显式列入真实 Origin，不可用 `*`、路径或 `null`。 |
+| `BRAIN_ALLOW_FILE_ORIGIN` | 默认 `true`。仅真实 loopback 对端且 UA 带 `Electron/` 时兼容打包 `file://` 的 `Origin: null` 或无 Origin 资源；可设 `false` 禁用。普通浏览器 sandbox/data 的 `null` Origin 拒绝。 |
+| `BRAIN_ADMIN_TOKEN` | 默认为空，非 loopback 管理请求一律 403。配置后，远端客户端须逐次带 `Authorization: Bearer <token>`，仍不能绕过 Host / Origin 校验；本机前端不需要 token。 |
+
+- 对端身份只取 Node socket 的实际 `remoteAddress`（含 IPv4-mapped IPv6），忽略 `Forwarded` / `X-Forwarded-For`。没有连接元数据时按远端处理，不回落成「本机」。
+- 浏览器明确带 Origin 时必须在精确列表中；不因持有 Bearer 就允许任意网站。不带 Origin 的 cross-site / 非可信 same-site 请求也拒绝。Vite 媒体标签的无 Origin 只读 GET/HEAD 需 Referer 的 Origin 在列表中；本机无浏览器来源的 CLI 正常可用。可信配置 Origin 的跨端口/跨 loopback 地址调用仍兼容。
+- 预检仅为允许的 Origin 返回精确 CORS，不返回 `*`；远端 Bearer 预检可不携带 token，但随后的实际请求仍必须验证。公开回调不授予浏览器管理面 CORS。
+- **仅以下精确方法与路径不走管理面 Host / Origin / 本机限制**：`GET/POST /api/platforms/:id/wechat`、`POST /api/platforms/:id/webhook`、`POST /api/automations/:id/trigger`。它们继续使用各自既有签名 / `x-amadeus-secret`，不把平台列表、编辑、测试发送等管理接口一起公开。通用 Webhook 的 secret 可选，旧自动化的空 secret 也不会在本次修复中被更改；这类配置没有匿名公网安全保证。
+- **legacy 飞书** `POST /api/feishu/webhook` 当前没有既有签名校验，因此保留本机原入口，但不豁免匿名公网。若原来公网直连飞书，收紧后会返回 403，需要迁移到带验签的入口/受控认证代理，或由受控客户端显式使用管理 Bearer；不能直接把整个 API 反向代理成「本机」。本次未新增飞书验签或修改用户凭据。
+- **代理部署约束**：从 loopback 连接的反向代理/隧道与本机程序不可区分。代理必须只转发上述公开回调，并保留外部 Host；禁止把整个 `/api` 改写为 `Host: localhost:<PORT>` 后无鉴权公开，否则会重新打开本机信任边界。远端管理应使用 HTTPS、显式 Host/Origin 与 Bearer，并在代理层限制来源。
+- **保护范围**：loopback + Host / Origin 主要拦远程直连、普通恶意网页和 DNS rebinding，不是本机恶意程序防护，也不是多用户隔离。原生程序可伪造 UA/请求头；Electron 内任意不可信页面同样不是受隔离的身份。不要在受信 Electron renderer 或允许的开发 Origin 下加载不可信内容。
 
 ## 7. 已知限制（与成熟多平台方案的差距）
 
@@ -158,6 +184,12 @@
 ## 8. 验证
 
 ```bash
+# HTTP 边界独立回归（无已运行服务/CDP前置；不打开真实 DB，不启动 MCP）
+node scripts/e2e-http-boundary.mjs
+
+# 独立业务回归（临时 SQLite + 本地 HTTP/WS mock，无真实账号/桌面/模型依赖）
+node scripts/e2e-regression-contracts.mjs
+
 # 终端 1：大脑（读取 services/brain/.env）
 npm run dev:brain
 

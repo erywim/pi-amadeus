@@ -41,8 +41,9 @@ export async function handlePlatformMessage(opts: {
   if (!text && media.length === 0) return
   // 引用内容作为上下文前缀；回复时 adapter 会用 messageId 做真正的引用
   const content = inbound.quote ? `> 引用：${inbound.quote}\n\n${text}` : text
+  const sessionId = `${platform.id}-${inbound.chatType}-${inbound.chatId}`
 
-  // /bind <绑定码>：把外部账号绑到桌面端用户，之后记忆与好感度都记在该用户上
+  // /bind <绑定码>：绑定外部账号；只允许私聊历史随身份迁移，群历史保持原 owner
   const bind = /^\/(?:bind|绑定)\s+(\S+)/i.exec(text)
   if (bind) {
     const code = bind[1]!
@@ -51,17 +52,15 @@ export async function handlePlatformMessage(opts: {
       await reply('绑定码无效或已过期。请在桌面端「设置 → 飞书」生成绑定码后再试。')
       return
     }
-    await db.upsertPlatformAccount(platform.id, inbound.externalUserId, target.id)
-    await reply(`绑定成功，之后会以「${target.username}」的身份继续。`)
+    await enqueue(sessionId, async () => {
+      await db.upsertPlatformAccount(platform.id, inbound.externalUserId, target.id)
+      if (inbound.chatType === 'private') {
+        // 私聊绑定在队列中迁移，避免前一回合把历史继续记到旧身份
+        await db.reassignSession(sessionId, target.id)
+      }
+      await reply(`绑定成功，之后会以「${target.username}」的身份继续。`)
+    })
     return
-  }
-
-  const user = await resolvePlatformUser(db, platform, inbound.externalUserId)
-  const sessionId = `${platform.id}-${inbound.chatType}-${inbound.chatId}`
-  // 账号被 /bind 到桌面用户后，会话归属跟着转移：桌面端才能在列表里看到并继续这段对话
-  const existingSession = await db.getSession(sessionId)
-  if (existingSession && existingSession.userId !== user.id) {
-    await db.reassignSession(sessionId, user.id)
   }
 
   let attachments
@@ -78,10 +77,18 @@ export async function handlePlatformMessage(opts: {
   await enqueue(sessionId, async () => {
     const startedAt = Date.now()
     try {
+      const user = await resolvePlatformUser(db, platform, inbound.externalUserId)
+      const existingSession = await db.getSession(sessionId)
+      // 群会话沿用首位 owner（含记忆/指标），换人或绑定都不能接管整群历史
+      const userId = inbound.chatType === 'group' ? existingSession?.userId ?? user.id : user.id
+      if (inbound.chatType === 'private' && existingSession && existingSession.userId !== userId) {
+        // 私聊绑定后沿用新身份；不影响同一账号参加的群或其它人的私聊
+        await db.reassignSession(sessionId, userId)
+      }
       const run = runAgentTurn({
         cfg,
         db,
-        userId: user.id,
+        userId,
         sessionId,
         channel: platform.kind,
         mode: 'text',
@@ -109,7 +116,7 @@ export async function handlePlatformMessage(opts: {
       }
       await finishTurn(db, {
         sessionId,
-        userId: user.id,
+        userId,
         channel: platform.kind,
         mode: 'text',
         content: full,
@@ -121,7 +128,7 @@ export async function handlePlatformMessage(opts: {
       })
       await recordTurnMetric(db, {
         sessionId,
-        userId: user.id,
+        userId,
         channel: platform.kind,
         startedAt,
         model: turn.target.model,

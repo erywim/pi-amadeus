@@ -27,7 +27,7 @@ const wavB64 = readFileSync(WAV_PATH).toString('base64')
 // 9222 常被本机 Chrome 占用：用 --remoteDebuggingPort 换端口后靠 CDP_HTTP 指过来，
 // 硬编码会把 Chrome 页面当成桌面端测（前置检查通过却测错对象）
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 
 const results = []
 function report(name, ok, detail = '') {

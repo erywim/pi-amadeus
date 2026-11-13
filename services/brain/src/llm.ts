@@ -3,6 +3,16 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
 import type { Context, Model, MutableModels, ThinkingLevel } from '@earendil-works/pi-ai'
 import type { StreamFn } from '@earendil-works/pi-agent-core'
+import { validateModelRuntimeOptions } from '@pi-amadeus/shared'
+import { assertContextBudget, CONTEXT_TOO_LONG_PREFIX } from './contextBudget.ts'
+
+export const OUTPUT_LIMIT_ERROR = '回复被输出上限截断了。请调高「输出上限」、降低/关闭思考模式，或核对「上下文窗口」是否填得太小。'
+
+/** 请求参数/输出预算问题不是服务故障；保留鉴权、连接等真实故障的冷却行为。 */
+export function shouldCooldownProvider(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message !== OUTPUT_LIMIT_ERROR && !message.startsWith(CONTEXT_TOO_LONG_PREFIX) && !/^400\b/.test(message)
+}
 
 /**
  * pi-ai 接入层：把用户配置（baseUrl/apiKey/model）映射为一个
@@ -38,7 +48,7 @@ export interface StreamOptions {
   temperature?: number
   maxTokens?: number
   /** 思考级别；不传时用 target 上的配置 */
-  thinkingLevel?: ThinkingLevel
+  thinkingLevel?: ThinkingLevel | 'off'
 }
 
 interface LlmEntry {
@@ -66,6 +76,8 @@ export function supportsVision(modelId: string): boolean {
 const cache = new Map<string, LlmEntry>()
 
 export function getLlm(target: LlmTarget): LlmEntry {
+  const error = validateModelRuntimeOptions(target)
+  if (error) throw new Error(error)
   const baseUrl = target.baseUrl.replace(/\/+$/, '')
   const contextWindow = target.contextWindow && target.contextWindow > 0 ? target.contextWindow : DEFAULT_CONTEXT_WINDOW
   const maxTokens = target.maxTokens && target.maxTokens > 0 ? target.maxTokens : DEFAULT_MAX_TOKENS
@@ -153,7 +165,10 @@ export async function* streamText(
   onUsage?: (usage: { input: number; output: number; total: number }) => void,
   onThinking?: (delta: string) => void
 ): AsyncGenerator<string> {
+  const error = validateModelRuntimeOptions(options ?? {})
+  if (error) throw new Error(error)
   const { models, model } = getLlm(target)
+  assertContextBudget(context, model.contextWindow)
   const reasoning = options?.thinkingLevel ?? target.thinkingLevel
   const stream = models.streamSimple(model, context, {
     apiKey: target.apiKey,
@@ -161,18 +176,23 @@ export async function* streamText(
     temperature: options?.temperature,
     // stream() 不会回落到 model.maxTokens：必须显式给出，否则上限形同虚设
     maxTokens: options?.maxTokens ?? model.maxTokens,
-    ...(reasoning ? { reasoning } : {}),
+    reasoning: reasoning === 'off' ? undefined : reasoning,
     ...(target.proxy ? { fetch: proxyFetch(target.proxy) } : {})
   })
   for await (const event of stream) {
     if (event.type === 'text_delta') yield event.delta
     else if (event.type === 'thinking_delta') onThinking?.(event.delta)
-    else if (event.type === 'done' && onUsage) {
-      onUsage({
+    else if (event.type === 'error') {
+      // pi-ai 将鉴权/上游失败编码成事件；必须从生成中转为失败，不能冒充空回复。
+      throw new Error(event.error.errorMessage || (event.reason === 'aborted' ? 'LLM 请求已中止' : 'LLM 请求失败'))
+    } else if (event.type === 'done') {
+      onUsage?.({
         input: event.message.usage.input ?? 0,
         output: event.message.usage.output ?? 0,
         total: event.message.usage.totalTokens ?? 0
       })
+      // 即使已有正文，length 也代表未完成；先回传真实用量，再告知调用方截断。
+      if (event.reason === 'length') throw new Error(OUTPUT_LIMIT_ERROR)
     }
   }
 }
@@ -194,9 +214,11 @@ export async function completeText(
  * 都会携带 context.tools 与 options.signal（回合 abort），这里透传即可。
  */
 export function createAgentStreamFn(target: LlmTarget, opts?: StreamOptions): StreamFn {
+  const error = validateModelRuntimeOptions(opts ?? {})
+  if (error) throw new Error(error)
   const { models } = getLlm(target)
-  const fallbackReasoning = opts?.thinkingLevel ?? target.thinkingLevel
   return (model, context, options) => {
+    assertContextBudget(context, model.contextWindow)
     const base = {
       ...options,
       apiKey: target.apiKey,
@@ -205,14 +227,14 @@ export function createAgentStreamFn(target: LlmTarget, opts?: StreamOptions): St
       maxTokens: opts?.maxTokens ?? options?.maxTokens ?? model.maxTokens,
       ...(target.proxy ? { fetch: proxyFetch(target.proxy) } : {})
     }
-    // Agent 循环把 thinkingLevel 放在 options.reasoning（SimpleStreamOptions），
-    // 只有 streamSimple 会把它映射成供应商参数。回合内的级别优先，
-    // 没有时回落到目标模型的配置。走 streamSimple 还有第二个理由：
-    // 它会用 model.contextWindow 把输出上限裁进窗口，避免 输入+输出 超窗。
-    const reasoning = options?.reasoning ?? fallbackReasoning
+    // 显式调用参数（含 off）优先于 Agent 状态，再回落模型配置；否则 off 会被继承值覆盖。
+    // streamSimple 负责供应商协议映射与上下文窗口内的输出裁剪。
+    const reasoning = opts?.thinkingLevel ?? options?.reasoning ?? target.thinkingLevel
+    const error = validateModelRuntimeOptions({ ...base, thinkingLevel: reasoning })
+    if (error) throw new Error(error)
     return models.streamSimple(model, context, {
       ...base,
-      ...(reasoning ? { reasoning } : {})
+      reasoning: reasoning === 'off' ? undefined : reasoning
     })
   }
 }

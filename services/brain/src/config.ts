@@ -10,6 +10,14 @@ const env = (name: string, fallback = ''): string => process.env[name] ?? fallba
 
 export interface BrainConfig {
   port: number
+  /** 默认只监听 IPv4 loopback；只有显式 BRAIN_HOST 才扩展监听范围 */
+  host: string
+  httpAccess: {
+    allowedHosts: string[]
+    allowedOrigins: string[]
+    allowFileOrigin: boolean
+    adminToken: string
+  }
   /** SQLite 单文件路径（自动建库建表，无需数据库服务） */
   db: { path: string }
   llm: { apiKey: string; baseUrl: string; model: string }
@@ -18,6 +26,8 @@ export interface BrainConfig {
   feishu: { enabled: boolean; appId: string; appSecret: string; domain: 'feishu' | 'lark' }
   tools: {
     tavilyKey: string
+    /** 独立搜索/网页代理；未设时继承实际模型目标的代理，空字符串显式直连。 */
+    searchProxy?: string
     confirmTimeoutMs: number
     bashCwd: string
     /** 搜索端点覆盖（未设置的引擎走官方地址）；E2E 用它指向本地 mock */
@@ -42,6 +52,16 @@ export function loadConfig(): BrainConfig {
   const bashCwd = resolve(env('BASH_TOOL_CWD') || repoRoot)
   return {
     port: Number(env('PORT', '3002')) || 3002,
+    host: env('BRAIN_HOST').trim() || '127.0.0.1',
+    httpAccess: {
+      // 配置列表是精确值，不支持通配符；安全配置只读环境变量，不写入用户配置/密钥。
+      allowedHosts: env('BRAIN_ALLOWED_HOSTS').split(',').map((host) => host.trim()).filter(Boolean),
+      allowedOrigins: env('BRAIN_ALLOWED_ORIGINS',
+        'http://localhost:5173,http://127.0.0.1:5173,http://[::1]:5173'
+      ).split(',').map((origin) => origin.trim()).filter(Boolean),
+      allowFileOrigin: env('BRAIN_ALLOW_FILE_ORIGIN', 'true') === 'true',
+      adminToken: env('BRAIN_ADMIN_TOKEN')
+    },
     db: {
       // 默认 services/brain/data/amadeus.db；DB_PATH 相对路径按启动目录解析
       path: env('DB_PATH') ? resolve(env('DB_PATH')) : resolve(import.meta.dirname, '../data/amadeus.db')
@@ -73,6 +93,7 @@ export function loadConfig(): BrainConfig {
     },
     tools: {
       tavilyKey: env('TAVILY_API_KEY'),
+      ...(process.env.SEARCH_PROXY !== undefined ? { searchProxy: env('SEARCH_PROXY').trim() } : {}),
       confirmTimeoutMs: Number(env('TOOL_CONFIRM_TIMEOUT_MS', '60000')) || 60000,
       bashCwd,
       // 引擎端点可用环境变量覆盖（镜像站 / 自建代理 / E2E 本地 mock）；

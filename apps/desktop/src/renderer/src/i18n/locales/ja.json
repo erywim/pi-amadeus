@@ -375,7 +375,10 @@
       "testRun": "検索",
       "hitEngine": "{{engine}} 経由",
       "hitCount": "{{count}} 件",
-      "allFailed": "全エンジン失敗",
+      "allFailed": "検索は利用不可（該当なしとは別）",
+      "empty": "検索完了・該当なし",
+      "resultFor": "検索語：{{query}}",
+      "network": { "direct": "実際の経路：直接接続。", "proxy": "実際の経路：プロキシ。" },
       "toolHintTitle": "アシスタントの使い方",
       "toolHint": "search はタイトル・リンク・抜粋のみを返します。本文が必要なときは fetch_url でページを開きます。取得ツールは公開 http(s) のみ許可し、localhost とプライベート網は拒否します。",
       "engine": {

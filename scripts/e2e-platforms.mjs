@@ -1034,7 +1034,8 @@ try {
       })()`
 
     const uiName = `E2E UI Webhook ${Date.now()}`
-    await evalJs(`location.href = 'http://localhost:5173/settings'; true`)
+    const origin = await evalJs('location.origin')
+    await cdp.call('Page.navigate', { url: `${origin}/settings` })
     await sleep(2000)
     await waitCdp(`document.body.innerText.includes('通讯平台')`, 20000, '进入设置')
     await evalJs(`(() => { const b=[...document.querySelectorAll('nav button')].find(x=>x.textContent.includes('通讯平台')); b?.click(); return !!b })()`)

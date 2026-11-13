@@ -1,9 +1,8 @@
 import { serve } from '@hono/node-server'
-import { Hono } from 'hono'
-import { cors } from 'hono/cors'
 import { automationScheduler } from './automation/scheduler.ts'
 import { loadConfig } from './config.ts'
 import { createDb } from './db.ts'
+import { createHttpApp } from './http/access.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { platformManager } from './platforms/manager.ts'
 import { proactiveScheduler } from './proactive/index.ts'
@@ -31,6 +30,7 @@ import { voiceRoutes } from './routes/voice.ts'
 import { workspaceRoutes } from './routes/workspace.ts'
 
 const cfg = loadConfig()
+const app = createHttpApp(cfg)
 const db = createDb(cfg.db)
 await db.init()
 
@@ -47,11 +47,6 @@ void automationScheduler.init(cfg, db).catch((error) => {
 // 主动问候：每 60 秒检查一次空闲用户（是否真的问候由 proactive/index.ts 判断）
 proactiveScheduler.init(cfg, db)
 
-const app = new Hono()
-
-// 开发期 CORS（渲染层 dev server 517x 跨源访问）
-app.use('/api/*', cors({ origin: '*' }))
-
 app.get('/api/health', (c) =>
   c.json({ ok: true, service: 'pi-amadeus-brain', time: Date.now(), feishuEnabled: cfg.feishu.enabled })
 )
@@ -66,7 +61,7 @@ app.route('/api', frameRoutes())
 app.route('/api', skillRoutes(cfg))
 app.route('/api', pluginRoutes(cfg, db))
 app.route('/api', providerRoutes(db))
-app.route('/api', searchRoutes(cfg))
+app.route('/api', searchRoutes(cfg, db))
 app.route('/api', platformRoutes(db))
 app.route('/api', memoryRoutes(db))
 app.route('/api', knowledgeRoutes(db))
@@ -80,8 +75,9 @@ if (cfg.feishu.enabled) {
   app.route('/api', feishuRoutes(cfg, db))
 }
 
-serve({ fetch: app.fetch, port: cfg.port }, (info) => {
-  console.log(`[brain] pi-amadeus 大脑服务已启动: http://localhost:${info.port}`)
+// 从未监听进入显式绑定状态：默认 loopback，公网回调需要主动设置 BRAIN_HOST。
+serve({ fetch: app.fetch, port: cfg.port, hostname: cfg.host }, (info) => {
+  console.log(`[brain] pi-amadeus 大脑服务已启动: ${info.address}:${info.port}`)
   console.log(`[brain] LLM: ${cfg.llm.model} @ ${cfg.llm.baseUrl}`)
   console.log(`[brain] SQLite: ${cfg.db.path}`)
   console.log(`[brain] 飞书: ${cfg.feishu.enabled ? '启用' : '停用'}`)

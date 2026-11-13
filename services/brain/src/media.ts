@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import {
   ATTACHMENT_LIMITS,
@@ -137,6 +137,30 @@ export function saveAttachment(
     extractedText:
       opts?.extractedText !== undefined ? opts.extractedText : extractText(buffer, name, mimeType)
   }
+}
+
+/** 编辑分支独占附件文件与 ID；沿用已保存的文本/语音转写，不重复抽取或 STT。 */
+export function copyAttachments(items: SavedAttachment[], dir: string): SavedAttachment[] {
+  const copies: SavedAttachment[] = []
+  try {
+    for (const item of items) {
+      const id = randomUUID()
+      const path = join(dir, `${id}${extensionOf(item.name, item.mimeType)}`)
+      mkdirSync(dir, { recursive: true })
+      copyFileSync(item.path, path)
+      copies.push({ ...item, id, path })
+    }
+    return copies
+  } catch (error) {
+    // 复制中途失败时回滚本轮副本，不能留下半批附件或碰原件
+    removeAttachmentCopies(copies)
+    throw error
+  }
+}
+
+/** 仅用于尚未提交的编辑副本；原消息的附件不能经过此清理路径。 */
+export function removeAttachmentCopies(items: SavedAttachment[]): void {
+  for (const item of items) rmSync(item.path, { force: true })
 }
 
 /** 读取已落盘附件（媒体路由用） */
