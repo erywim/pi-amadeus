@@ -1,24 +1,20 @@
+import { Worker } from 'node:worker_threads'
 import vm from 'node:vm'
+import { ScriptError, WorkflowAbortedError } from './errors.ts'
 import type { WorkflowHooks, WorkflowMeta } from './types.ts'
 
 /**
- * 工作流脚本的解析与执行（对应参考实现的 engine/script.ts）。
+ * 工作流脚本的解析与执行。
  *
- * 脚本是 AsyncFunction 的函数体：`agent` / `parallel` / `pipeline` / `phase` /
- * `log` / `args` 由引擎注入，用 `return` 交出结果；不是 ESM 模块，也不做 TS 转译。
+ * 执行在**独立 worker 线程**里（`sandbox.ts`），不是主线程的 new Function：
+ * 沙箱里没有任何宿主对象（JSON/Math/Date 等都是 vm 自己的 realm），宿主与脚本
+ * 之间只传 JSON 字符串，脚本碰不到 `process` / `require` / 网络 / 文件。
+ * 超时或取消时直接 `worker.terminate()`——同步死循环与 await 之后的死循环都能杀掉。
  *
- * 安全边界：这是**本地桌面应用**，脚本由用户自己的模型生成。仍按最小权限跑：
- * - node:vm 独立上下文，不暴露 require / process / fetch / fs
- * - codeGeneration.strings=false：堵住 Function / eval 逃逸
- * - 同步执行部分有 timeout（防死循环）；异步整体超时由引擎的 Promise.race 兜底
+ * 仍然要说清楚边界：这是"无宿主能力 + 无对象泄漏"的隔离，不是经过审计的
+ * 安全容器。它与主进程共享同一个 Node 二进制；若 vm 本身出现逃逸漏洞，
+ * 沙箱仍可能被突破。真正的强隔离需要独立进程/容器级别的方案。
  */
-
-export class ScriptError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'ScriptError'
-  }
-}
 
 export interface ParsedScript {
   meta: WorkflowMeta
@@ -141,46 +137,138 @@ function assertScriptBody(body: string): void {
 
 export interface RunScriptOptions {
   hooks: WorkflowHooks
-  /** 脚本通过 `args` 拿到实参 */
+  /** 脚本通过 `args` 拿到实参（必须是可 JSON 序列化的值） */
   args?: unknown
   /** 同步执行段（首个 await 之前）的超时 */
   syncTimeoutMs?: number
+  /** 取消 / 整体超时：直接终止 worker */
+  signal?: AbortSignal
 }
 
+type WorkerOutMessage =
+  | { t: 'agent'; id: number; prompt: string; optsJson: string }
+  | { t: 'phase'; title: string }
+  | { t: 'log'; message: string }
+  | { t: 'done'; valueJson: string }
+  | { t: 'error'; message: string }
+
 /**
- * 执行脚本，返回脚本 `return` 的值。
- * 异步阶段不设 vm 级超时（vm 的 timeout 只覆盖同步执行），由调用方用
- * Promise.race + AbortSignal 控制整体时长。
+ * 在独立 worker 里执行脚本体，返回脚本 `return` 的值。
+ * 脚本与宿主之间只传 JSON 字符串：脚本拿不到任何宿主对象，也就没有
+ * `obj.constructor.constructor('return process')` 这条逃逸链。
  */
 export async function runScript(body: string, options: RunScriptOptions): Promise<unknown> {
-  const sandbox: Record<string, unknown> = {
-    agent: options.hooks.agent,
-    parallel: options.hooks.parallel,
-    pipeline: options.hooks.pipeline,
-    phase: options.hooks.phase,
-    log: options.hooks.log,
-    args: options.args,
-    // 常用内置对象显式提供（vm 上下文里默认没有这些全局）
-    JSON,
-    Math,
-    Date,
-    Array,
-    Object,
-    String,
-    Number,
-    Boolean,
-    Map,
-    Set,
-    Promise,
-    Error,
-    TypeError,
-    console: { log: options.hooks.log, warn: options.hooks.log, error: options.hooks.log }
-  }
-  const context = vm.createContext(sandbox, {
-    codeGeneration: { strings: false, wasm: false }
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./sandbox.ts', import.meta.url), {
+      workerData: {
+        body,
+        argsJson: safeStringify(options.args ?? null),
+        syncTimeoutMs: options.syncTimeoutMs ?? 5_000
+      },
+      // 沙箱线程不继承环境变量（里面有 LLM 密钥）与 CLI 参数
+      env: {},
+      execArgv: [],
+      stdout: true,
+      stderr: true
+    })
+
+    let settled = false
+    const finish = (action: () => void): void => {
+      if (settled) return
+      settled = true
+      options.signal?.removeEventListener('abort', onAbort)
+      action()
+      void worker.terminate()
+    }
+    const onAbort = (): void => finish(() => reject(new WorkflowAbortedError()))
+    if (options.signal?.aborted) {
+      onAbort()
+      return
+    }
+    options.signal?.addEventListener('abort', onAbort, { once: true })
+
+    worker.on('message', (raw: WorkerOutMessage) => {
+      switch (raw.t) {
+        case 'agent': {
+          // 宿主侧执行子代理；结果以 JSON 字符串回传
+          const opts = parseOpts(raw.optsJson)
+          void options.hooks
+            .agent(raw.prompt, opts)
+            .then(
+              (value) =>
+                worker.postMessage({
+                  t: 'agentResult',
+                  id: raw.id,
+                  ok: true,
+                  valueJson: safeStringify(value ?? null)
+                }),
+              (error: unknown) =>
+                worker.postMessage({
+                  t: 'agentResult',
+                  id: raw.id,
+                  ok: false,
+                  error: error instanceof Error ? error.message : String(error),
+                  abort: options.signal?.aborted === true
+                })
+            )
+          return
+        }
+        case 'phase':
+          options.hooks.phase(raw.title)
+          return
+        case 'log':
+          options.hooks.log(raw.message)
+          return
+        case 'done':
+          finish(() => {
+            try {
+              resolve(JSON.parse(raw.valueJson) as unknown)
+            } catch {
+              resolve(undefined)
+            }
+          })
+          return
+        case 'error':
+          finish(() => reject(scriptRuntimeError(raw.message)))
+          return
+        default:
+          return
+      }
+    })
+    worker.on('error', (error) => finish(() => reject(error)))
+    worker.on('exit', (code) => {
+      // 正常完成时 worker 也会退出；settled 已置位则忽略
+      if (settled) return
+      finish(() => reject(new WorkflowAbortedError(`沙箱线程意外退出（code ${code}）`)))
+    })
   })
-  // 顶层 return 只能出现在函数体里：包一层 async IIFE
-  const script = new vm.Script(`(async () => {\n${body}\n})()`, { filename: 'workflow.js' })
-  const result = script.runInContext(context, { timeout: options.syncTimeoutMs ?? 5_000 })
-  return await (result as Promise<unknown>)
+}
+
+/** 脚本传来的 opts：只接受普通对象，其余（null / 数组 / 非对象）一律当未传 */
+function parseOpts(text: string): Record<string, unknown> | undefined {
+  if (!text) return undefined
+  try {
+    const value = JSON.parse(text) as unknown
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function scriptRuntimeError(message: string): Error {
+  const error = new Error(message)
+  error.name = 'ScriptRuntimeError'
+  return error
+}
+
+/** 序列化：失败时降级成一个可读的占位（不把异常抛回沙箱） */
+function safeStringify(value: unknown): string {
+  try {
+    const text = JSON.stringify(value)
+    return text === undefined ? 'null' : text
+  } catch {
+    return JSON.stringify({ __unserializable: true })
+  }
 }

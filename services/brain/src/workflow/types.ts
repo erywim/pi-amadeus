@@ -89,14 +89,14 @@ export interface WorkflowRunResult {
   stats: WorkflowRunStats
 }
 
-/** 脚本里可以拿到的钩子（与参考实现同名同语义） */
+/**
+ * 引擎提供给沙箱的宿主能力（脚本可见的 API 见 sandbox.ts 的 bootstrap）。
+ *
+ * 只有这三项需要跨线程：`parallel` / `pipeline` 是纯编排，在沙箱内部用
+ * 脚本自己的函数实现（返回数组必须是沙箱 realm 的对象，否则又成了逃逸链）。
+ */
 export interface WorkflowHooks {
   agent: (prompt: string, opts?: Record<string, unknown>) => Promise<unknown>
-  parallel: <T>(thunks: Array<() => Promise<T>>) => Promise<Array<T | null>>
-  pipeline: <T, R>(
-    items: readonly T[],
-    ...stages: Array<(prev: unknown, item: T, index: number) => Promise<unknown>>
-  ) => Promise<Array<R | null>>
   phase: (title: string) => void
   log: (message: string) => void
 }

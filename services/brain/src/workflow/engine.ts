@@ -2,7 +2,8 @@ import type { WorkflowLevel } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
 import type { LlmTarget } from '../llm.ts'
 import { runWorkflowAgent } from './agent.ts'
-import { parseScript, runScript, ScriptError } from './script.ts'
+import { ScriptError, WorkflowAbortedError, WorkflowError } from './errors.ts'
+import { parseScript, runScript } from './script.ts'
 import {
   workflowLimitsOf,
   type AgentRunResult,
@@ -23,21 +24,6 @@ import {
  * - 输出 token 预算只统计成功的 agent
  * 差异：没有跨运行 journal 重放（每次工具调用都是全新运行）。
  */
-
-/** 单次运行的内部错误（脚本可以捕获；不应被 parallel/pipeline 吞掉的那类） */
-class WorkflowError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'WorkflowError'
-  }
-}
-
-class WorkflowAbortedError extends Error {
-  constructor() {
-    super('工作流已取消')
-    this.name = 'WorkflowAbortedError'
-  }
-}
 
 /** 可中断的 FIFO 信号量 */
 class Semaphore {
@@ -196,46 +182,10 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
     }
   }
 
+  // parallel / pipeline 在沙箱内部实现（见 sandbox.ts）：它们的返回值必须是
+  // 沙箱 realm 的对象，宿主只负责 agent / phase / log 这三件跨线程的事
   const hooks: WorkflowHooks = {
     agent: agentHook,
-    parallel: async <T>(thunks: Array<() => Promise<T>>): Promise<Array<T | null>> => {
-      if (!Array.isArray(thunks)) throw new WorkflowError('parallel(thunks) 需要函数数组')
-      if (thunks.length > 4096) throw new WorkflowError('parallel 一次最多 4096 项')
-      const results = await Promise.all(
-        thunks.map(async (thunk) => {
-          try {
-            return await thunk()
-          } catch (error) {
-            // 取消要冒泡，让整次运行标记为 killed；其余错误降级为 null（与参考实现一致）
-            if (error instanceof WorkflowAbortedError || signal.aborted) throw error
-            emit({ type: 'log', message: `parallel 中的一项失败：${errorText(error)}` })
-            return null
-          }
-        })
-      )
-      return results
-    },
-    pipeline: async <T, R>(
-      items: readonly T[],
-      ...stages: Array<(prev: unknown, item: T, index: number) => Promise<unknown>>
-    ): Promise<Array<R | null>> => {
-      if (!Array.isArray(items)) throw new WorkflowError('pipeline(items, ...stages) 需要数组')
-      if (items.length > 4096) throw new WorkflowError('pipeline 一次最多 4096 项')
-      const results = await Promise.all(
-        items.map(async (item, index) => {
-          let previous: unknown = item
-          try {
-            for (const stage of stages) previous = await stage(previous, item, index)
-            return previous as R
-          } catch (error) {
-            if (error instanceof WorkflowAbortedError || signal.aborted) throw error
-            emit({ type: 'log', message: `pipeline 第 ${index + 1} 项失败：${errorText(error)}` })
-            return null
-          }
-        })
-      )
-      return results
-    },
     phase: (title: string): void => {
       if (typeof title !== 'string' || !title.trim()) return
       closePhase()
@@ -251,7 +201,8 @@ export async function runWorkflow(options: RunWorkflowOptions): Promise<Workflow
   let status: WorkflowRunStats['status'] = 'completed'
   let error: string | undefined
   try {
-    returnValue = await runScript(parsed.body, { hooks, args: options.args })
+    // 沙箱跑在独立 worker 里：signal 一断就 terminate，超时/取消都能真正停下
+    returnValue = await runScript(parsed.body, { hooks, args: options.args, signal })
   } catch (caught) {
     if (signal.aborted || caught instanceof WorkflowAbortedError) {
       status = 'aborted'

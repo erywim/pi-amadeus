@@ -7,6 +7,7 @@
  *  D 结构化输出：agent(..., { schema }) 拿回校验过的对象
  *  E 非法脚本：缺 meta 的错误回给模型（可自我修正），不炸回合
  *  F 档位上限：超过 maxAgents 的脚本明确失败并说明上限
+ *  G 沙箱：脚本拿不到 process/require，constructor 链逃逸全部被拦
  *
  * 断言口径：mock LLM 记录的真实请求体 + 模型收到的工具结果。
  *
@@ -200,6 +201,31 @@ return out
     const text = messageText(toolResult)
     assert.ok(text.includes('最多执行 12 个子代理'), `应说明上限：${text.slice(0, 300)}`)
     assert.ok(text.includes('失败'), '结果状态应为失败')
+  })
+
+  await check('G 沙箱：没有 process/require，constructor 逃逸全被拦', async () => {
+    const script = `
+export const meta = { name: '沙箱探测', description: '尝试逃逸沙箱' }
+const results = {}
+results.processType = typeof process
+results.requireType = typeof require
+results.globalProcess = typeof globalThis.process
+try { results.agentCtor = await agent.constructor('return typeof process')() } catch (e) { results.agentCtor = 'blocked:' + e.name }
+try { results.parallelCtor = await parallel.constructor('return typeof process')() } catch (e) { results.parallelCtor = 'blocked:' + e.name }
+try { results.argsCtor = await args.constructor.constructor('return typeof process')() } catch (e) { results.argsCtor = 'blocked:' + e.name }
+try { results.jsonCtor = await JSON.parse.constructor('return typeof process')() } catch (e) { results.jsonCtor = 'blocked:' + e.name }
+return results
+`
+    const { turn } = await runScenario({ level: 'standard', script, args: { topic: 'x' } })
+    assert.equal(turn.error, undefined, `回合报错：${turn.error}`)
+    const followUp = mock.mainRequests().at(-1)
+    const text = messageText(toolResultsOf(followUp.body).at(-1))
+    assert.ok(text.includes('"processType": "undefined"'), `process 不应可见：${text.slice(0, 400)}`)
+    assert.ok(text.includes('"requireType": "undefined"'), `require 不应可见：${text.slice(0, 400)}`)
+    assert.ok(text.includes('"globalProcess": "undefined"'), `globalThis.process 不应可见：${text.slice(0, 400)}`)
+    for (const key of ['agentCtor', 'parallelCtor', 'argsCtor', 'jsonCtor']) {
+      assert.ok(text.includes(`"${key}": "blocked:EvalError"`), `${key} 逃逸未被拦截：${text.slice(0, 500)}`)
+    }
   })
 } finally {
   await brain.stop()
