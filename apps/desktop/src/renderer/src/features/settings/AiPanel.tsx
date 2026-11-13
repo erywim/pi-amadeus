@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
-import type { OutputLanguage, UserConfig } from '@pi-amadeus/shared'
+import type { CompactionLevel, OutputLanguage, UserConfig, WorkflowLevel } from '@pi-amadeus/shared'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
@@ -156,6 +156,42 @@ export function AiPanel(): React.JSX.Element {
             checked={form.tools?.enabled ?? true}
             onCheckedChange={(checked) => updateForm({ ...form, tools: { enabled: checked } })}
           />
+        </div>
+        {/* 上下文压缩档位：关闭 = 旧行为（最近 40 条），均衡/激进 = 超阈值时摘要旧历史 */}
+        <div className="space-y-2">
+          <Label>{t('settings.ai.compactionTitle')}</Label>
+          <Select
+            value={form.compaction?.level ?? 'balanced'}
+            onValueChange={(v) => updateForm({ ...form, compaction: { level: v as CompactionLevel } })}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">{t('settings.ai.compactionOff')}</SelectItem>
+              <SelectItem value="balanced">{t('settings.ai.compactionBalanced')}</SelectItem>
+              <SelectItem value="aggressive">{t('settings.ai.compactionAggressive')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{t('settings.ai.compactionDesc')}</p>
+        </div>
+        {/* 动态工作流档位：关闭时不注册 workflow 工具，模型完全看不到它 */}
+        <div className="space-y-2">
+          <Label>{t('settings.ai.workflowTitle')}</Label>
+          <Select
+            value={form.workflow?.level ?? 'off'}
+            onValueChange={(v) => updateForm({ ...form, workflow: { level: v as WorkflowLevel } })}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">{t('settings.ai.workflowOff')}</SelectItem>
+              <SelectItem value="standard">{t('settings.ai.workflowStandard')}</SelectItem>
+              <SelectItem value="max">{t('settings.ai.workflowMax')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{t('settings.ai.workflowDesc')}</p>
         </div>
         <Button onClick={save} disabled={!userId || !configLoaded || saving}>
           {t('settings.ai.save')}

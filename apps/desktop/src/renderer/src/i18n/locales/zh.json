@@ -151,7 +151,9 @@
       "weather": "天气查询",
       "search": "联网搜索",
       "bash": "终端命令",
-      "use_skill": "读取技能"
+      "use_skill": "读取技能",
+      "workflow": "动态工作流",
+      "compact": "上下文压缩"
     },
     "toolStatus": {
       "running": "执行中",
@@ -168,7 +170,8 @@
     "toolApprove": "允许执行",
     "toolReject": "拒绝",
     "toolConfirmExpires": "{{seconds}} 秒后自动拒绝",
-    "toolConfirmExpired": "已超时，命令未执行"
+    "toolConfirmExpired": "已超时，命令未执行",
+    "compactNotice": "已把较早的 {{count}} 条对话折叠成摘要（{{before}} → {{after}} tokens）"
   },
   "companion": {
     "charName": "牧濑红莉栖",
@@ -274,7 +277,17 @@
       "loginRequired": "请先在陪伴模式登录后配置",
       "toolsEnable": "工具调用",
       "toolsDesc": "允许助手使用时间/计算器/天气/搜索/终端命令等工具（危险命令会被安全策略拦截）",
-      "fallbackHint": "以下内置配置仅在没有任何激活的模型服务时生效。"
+      "fallbackHint": "以下内置配置仅在没有任何激活的模型服务时生效。",
+      "compactionTitle": "上下文压缩",
+      "compactionDesc": "历史接近模型上下文上限时，把较早的对话折叠成结构化摘要（关闭 = 只按最近 40 条截断）",
+      "compactionOff": "关闭",
+      "compactionBalanced": "均衡（推荐）",
+      "compactionAggressive": "激进",
+      "workflowTitle": "动态工作流",
+      "workflowDesc": "允许助手写 JS 脚本编排多个子代理并行处理复杂任务；会并发调用模型、消耗更多 token，默认关闭",
+      "workflowOff": "关闭",
+      "workflowStandard": "标准档",
+      "workflowMax": "大档"
     },
     "feishu": {
       "title": "飞书",

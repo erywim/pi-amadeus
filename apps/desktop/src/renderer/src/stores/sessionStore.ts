@@ -10,6 +10,7 @@ import {
   startChatTurn,
   startRegenerate
 } from '@renderer/lib/api'
+import i18n from '@renderer/i18n'
 import { useLive2dStore } from './live2dStore'
 import { useLive2dSpeechStore } from './live2dSpeechStore'
 import { useMemoryStore } from './memoryStore'
@@ -119,6 +120,28 @@ export const useSessionStore = create<SessionState>()((set, get) => {
             ...s.stream,
             streaming: true,
             draft: { ...draft, content: draft.content + event.delta }
+          }
+        }))
+        return
+      case 'compact':
+        // 上下文压缩是本回合的准备工作，记进工作卡（与工具活动同一套展示）
+        set((s) => ({
+          stream: {
+            ...s.stream,
+            tools: [
+              ...s.stream.tools,
+              {
+                toolCallId: `compact-${event.turnId}`,
+                toolName: 'compact',
+                args: {},
+                status: 'success',
+                summary: i18n.t('chat.compactNotice', {
+                  count: event.summarizedMessages,
+                  before: event.tokensBefore,
+                  after: event.tokensAfter
+                })
+              }
+            ]
           }
         }))
         return

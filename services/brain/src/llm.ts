@@ -3,6 +3,7 @@ import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completio
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
 import type { Context, Model, MutableModels } from '@earendil-works/pi-ai'
 import type { StreamFn } from '@earendil-works/pi-agent-core'
+import { CONTEXT_WINDOW_TOKENS, MAX_OUTPUT_TOKENS } from './context/limits.ts'
 
 /**
  * pi-ai 接入层：把用户配置（baseUrl/apiKey/model）映射为一个
@@ -68,8 +69,8 @@ export function getLlm(target: LlmTarget): LlmEntry {
     reasoning: false,
     input: target.vision ? ['text', 'image'] : ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128_000,
-    maxTokens: 8192
+    contextWindow: CONTEXT_WINDOW_TOKENS,
+    maxTokens: MAX_OUTPUT_TOKENS
   }
   // ambient-only auth 仅满足 createProvider 的必填结构；真实密钥每次请求显式传入
   const provider = createProvider({

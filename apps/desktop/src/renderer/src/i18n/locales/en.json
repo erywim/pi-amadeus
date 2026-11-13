@@ -151,7 +151,9 @@
       "weather": "Weather",
       "search": "Web Search",
       "bash": "Terminal",
-      "use_skill": "Read Skill"
+      "use_skill": "Read Skill",
+      "workflow": "Dynamic Workflow",
+      "compact": "Context compaction"
     },
     "toolStatus": {
       "running": "Running",
@@ -168,7 +170,8 @@
     "toolApprove": "Allow",
     "toolReject": "Reject",
     "toolConfirmExpires": "Auto-rejected in {{seconds}}s",
-    "toolConfirmExpired": "Timed out — command was not executed"
+    "toolConfirmExpired": "Timed out — command was not executed",
+    "compactNotice": "Folded {{count}} earlier messages into a summary ({{before}} → {{after}} tokens)"
   },
   "companion": {
     "charName": "Kurisu Makise",
@@ -274,7 +277,17 @@
       "loginRequired": "Log in on the Companion page first",
       "toolsEnable": "Tool Calling",
       "toolsDesc": "Let the assistant use tools: time, calculator, weather, web search, terminal commands (dangerous commands are blocked by the safety policy)",
-      "fallbackHint": "The built-in config below is used only when no model service is active."
+      "fallbackHint": "The built-in config below is used only when no model service is active.",
+      "compactionTitle": "Context Compaction",
+      "compactionDesc": "When history nears the model context window, fold earlier turns into a structured summary (off = keep only the latest 40 messages)",
+      "compactionOff": "Off",
+      "compactionBalanced": "Balanced (recommended)",
+      "compactionAggressive": "Aggressive",
+      "workflowTitle": "Dynamic Workflow",
+      "workflowDesc": "Let the assistant orchestrate sub-agents in parallel with a JS script for complex tasks; calls the model concurrently and costs more tokens (off by default)",
+      "workflowOff": "Off",
+      "workflowStandard": "Standard",
+      "workflowMax": "Max"
     },
     "feishu": {
       "title": "Feishu",

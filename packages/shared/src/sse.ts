@@ -17,6 +17,7 @@ export type SseEventType =
   | 'tool_update'
   | 'tool_end'
   | 'tool_confirm'
+  | 'compact'
 
 /** 工具执行状态（渲染端展示用） */
 export type ToolStatus = 'running' | 'success' | 'error' | 'denied' | 'timeout' | 'blocked'
@@ -117,6 +118,21 @@ export interface SseToolConfirmEvent extends SseEventBase {
   expiresAt: number
 }
 
+/**
+ * 上下文压缩发生（本回合开始前把较早的历史折叠成摘要）。
+ * 只在真正做了摘要时发一次；关闭压缩或未达阈值时没有这个事件。
+ */
+export interface SseCompactEvent extends SseEventBase {
+  type: 'compact'
+  turnId: string
+  /** 被折叠进摘要的消息条数 */
+  summarizedMessages: number
+  /** 压缩前历史估算 token */
+  tokensBefore: number
+  /** 压缩后上下文估算 token */
+  tokensAfter: number
+}
+
 export type SseEvent =
   | SseDeltaEvent
   | SseDoneEvent
@@ -129,3 +145,4 @@ export type SseEvent =
   | SseToolUpdateEvent
   | SseToolEndEvent
   | SseToolConfirmEvent
+  | SseCompactEvent

@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import type { Channel, SseEvent, TurnMode, UserConfig } from '@pi-amadeus/shared'
+import type { Channel, CompactionLevel, SseEvent, TurnMode, UserConfig } from '@pi-amadeus/shared'
 import type { BrainConfig } from './config.ts'
+import { buildHistory, type CompactionReport } from './context/compact.ts'
+import { summaryMessageContent } from './context/prompt.ts'
 import type { Db } from './db.ts'
 import { streamText, supportsVision, toContextMessages, type LlmTarget } from './llm.ts'
 import { memorySystemPrompt, onTurnFinished, recallMemories, summarizeAffinity } from './memory/index.ts'
@@ -59,7 +61,11 @@ export function defaultUserConfig(cfg: BrainConfig): UserConfig {
     outputLanguage: 'zh',
     systemPrompt: '',
     temperature: 0.8,
-    tools: { enabled: true }
+    tools: { enabled: true },
+    // 缺省 balanced：只在接近上下文上限时才摘要，普通会话无额外开销
+    compaction: { level: 'balanced' },
+    // 缺省 off：动态工作流会并发调用多个子代理，必须由用户显式开启档位
+    workflow: { level: 'off' }
   }
 }
 
@@ -71,6 +77,8 @@ export interface TurnContext {
   channel: Channel
   mode: TurnMode
   content: string
+  /** 回合取消信号：中断上下文压缩的摘要请求（不写边界） */
+  signal?: AbortSignal
   /** 语音模式附加的视觉帧（仅本次 LLM 请求，不落库） */
   frames?: string[]
   /**
@@ -89,6 +97,14 @@ export interface PreparedTurn {
   messages: ReturnType<typeof toContextMessages>
   /** prepareTurn 已读取的用户配置（工具开关等，避免调用方二次 DB 读） */
   userConfig: UserConfig | null
+  /** 本回合新做的上下文压缩（未压缩时为 undefined；调用方据此发提示事件） */
+  compaction?: CompactionReport
+}
+
+/** 压缩档位：配置缺省按 balanced（与 UI 默认一致）；非法值回落缺省 */
+export function compactionLevelOf(config: UserConfig | null): CompactionLevel {
+  const level = config?.compaction?.level
+  return level === 'off' || level === 'aggressive' || level === 'balanced' ? level : 'balanced'
 }
 
 /** 会话上下文准备：懒建会话行、保存用户消息、组装 LLM 上下文 */
@@ -97,21 +113,31 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   const appendUserMessage = ctx.appendUserMessage !== false
   await db.touchSession({ id: sessionId, userId, channel })
 
+  // 用户配置与目标模型先解析：压缩档位来自配置，摘要请求需要 target
+  const storedConfig = await db.getUserConfig(userId)
+  const target = await resolveTarget(cfg, db, userId)
+  const compactionLevel = compactionLevelOf(storedConfig)
+
   // 先读历史再落库本次用户消息：避免当前消息在 LLM 上下文里出现两次
   // （一次纯文本历史、一次带视觉帧）
   // 记忆召回与好感度摘要都来自真实数据；没有记录时返回空，不会凭空生成
-  const [storedConfig, allHistoryRows, recalledMemories, affinity] = await Promise.all([
-    db.getUserConfig(userId),
-    db.listMessages(sessionId, 40),
+  const [prepared, recalledMemories, affinity] = await Promise.all([
+    buildHistory({
+      db,
+      target,
+      sessionId,
+      level: compactionLevel,
+      signal: ctx.signal,
+      omitMessageId: ctx.omitMessageId
+    }),
     recallMemories(db, userId, content),
     summarizeAffinity(db, userId)
   ])
 
   // 重新生成：旧助手回答既不进上下文、也不删——等新回答成功落库时再替换，
   // 生成失败时旧回答仍在，用户不会因为一次失败丢掉上一版回复。
-  const historyRows = ctx.omitMessageId
-    ? allHistoryRows.filter((row) => row.id !== ctx.omitMessageId)
-    : allHistoryRows
+  // （buildHistory 已按 omitMessageId 过滤过，这里的末尾就是真实上下文末尾）
+  const historyRows = prepared.rows
 
   if (appendUserMessage) {
     await db.appendMessage({
@@ -123,12 +149,16 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     })
   }
 
-  const target = await resolveTarget(cfg, db, userId)
   const systemPrompt =
     buildSystemPrompt(storedConfig?.systemPrompt, mode) + memorySystemPrompt(recalledMemories, affinity)
+
   const messages = toContextMessages(
     historyRows.map((m) => ({ role: m.role, content: m.content, createdAt: m.createdAt }))
   )
+  // 摘要放在历史最前面：它是背景，不是本轮用户请求
+  if (prepared.summary) {
+    messages.unshift({ role: 'user', content: summaryMessageContent(prepared.summary), timestamp: 0 })
+  }
 
   // 语音模式：本次用户消息附加最近 2 帧视觉输入（image content 块）。
   // 纯文本模型（如 deepseek-v4-pro）收到 image 块会直接 400——按模型能力门控
@@ -156,7 +186,7 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     throw new Error('重新生成失败：会话末尾没有用户消息')
   }
 
-  return { target, systemPrompt, messages, userConfig: storedConfig }
+  return { target, systemPrompt, messages, userConfig: storedConfig, compaction: prepared.report }
 }
 
 /** 保存助手消息 + 首轮触发异步标题生成 */
@@ -237,7 +267,8 @@ export async function* runVoiceTurn(
   ttsConfig: TtsConfig,
   onUsage?: (usage: { input: number; output: number; total: number }) => void
 ): AsyncGenerator<SseEvent, { cn: string; jp: string }> {
-  const { target, systemPrompt, messages } = await prepareTurn(ctx)
+  // 语音回合同样走压缩（长会话的语音对话也会撞上限）；signal 用于中断摘要请求
+  const { target, systemPrompt, messages } = await prepareTurn({ ...ctx, signal })
 
   const parser = new BilingualParser()
   const jpQueue = new AsyncQueue<string>()

@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { Agent } from '@earendil-works/pi-agent-core'
-import type { AgentEvent, BeforeToolCallContext } from '@earendil-works/pi-agent-core'
+import type { AgentEvent, AgentMessage, BeforeToolCallContext } from '@earendil-works/pi-agent-core'
 import type { Channel, SseEvent, TurnMode } from '@pi-amadeus/shared'
 import { AsyncQueue } from './bilingual.ts'
 import type { BrainConfig } from './config.ts'
-import { prepareTurn } from './conversation.ts'
+import { compactionLevelOf, prepareTurn } from './conversation.ts'
+import { estimateAgentMessagesTokens, microCompactMessages } from './context/micro.ts'
+import { INPUT_BUDGET_TOKENS, policyOf } from './context/limits.ts'
 import type { Db } from './db.ts'
 import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
 import { mcpManager } from './mcp/manager.ts'
@@ -13,6 +15,9 @@ import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/inde
 import { deniedMessage, rejectAllForTurn, requestBashConfirm } from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
 import { buildToolRegistry } from './tools/index.ts'
+import { workflowPrompt } from './workflow/prompt.ts'
+import { createWorkflowTool } from './workflow/tool.ts'
+import { workflowLevelOf } from './workflow/types.ts'
 
 /**
  * 工具版回合核心（chat 与 feishu 共用）：prepareTurn 复用 →
@@ -88,6 +93,7 @@ export async function* runAgentTurn(
     channel: opts.channel,
     mode: opts.mode,
     content: opts.content,
+    signal: opts.signal,
     appendUserMessage: opts.appendUserMessage,
     omitMessageId: opts.omitMessageId
   })
@@ -97,6 +103,16 @@ export async function* runAgentTurn(
 
   const toolsEnabled = prepared.userConfig?.tools?.enabled !== false
   const queue = new AsyncQueue<SseEvent>()
+  // 本回合开始前发生了上下文压缩：先上屏一条提示（在正文 delta 之前）
+  if (prepared.compaction) {
+    queue.push({
+      type: 'compact',
+      turnId,
+      summarizedMessages: prepared.compaction.summarizedMessages,
+      tokensBefore: prepared.compaction.tokensBefore,
+      tokensAfter: prepared.compaction.tokensAfter
+    })
+  }
   let full = ''
   // 指标：工具循环里每次 LLM 调用都会带 usage，逐次累加才是本回合真实消耗
   const usage: AgentTurnUsage = { input: 0, output: 0, total: 0 }
@@ -141,6 +157,13 @@ export async function* runAgentTurn(
   }
   // MCP 插件工具：只取当前已连接的服务，连接失败不阻塞本回合
   if (toolsEnabled) tools.push(...mcpManager.listAgentTools())
+
+  // 动态工作流：档位开启才注册工具（关=LLM 完全看不到这个工具）；随档位注入编排手册
+  const workflowLevel = workflowLevelOf(prepared.userConfig)
+  if (toolsEnabled && workflowLevel !== 'off') {
+    tools.push(createWorkflowTool({ cfg: opts.cfg, target: prepared.target, level: workflowLevel }))
+  }
+
   const labelOf = new Map(tools.map((t) => [t.name, t.label]))
 
   // 安全第一道：pi 原生 beforeToolCall 权限钩子——高危 bash 命令直接拦截
@@ -155,9 +178,31 @@ export async function* runAgentTurn(
     return undefined
   }
 
+  // 回合内微压缩（对应 Claude Code 的 microCompact）：工具循环把上下文撑大时，
+  // 只把较早的工具结果换成占位说明，不动用户消息与助手回复。
+  // 契约要求 transformContext 绝不抛错——任何异常都原样返回，宁可 context 大一点。
+  const microPolicy = policyOf(compactionLevelOf(prepared.userConfig))
+  const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
+    if (!microPolicy) return messages
+    try {
+      const tokens = estimateAgentMessagesTokens(messages)
+      if (tokens <= INPUT_BUDGET_TOKENS * microPolicy.microTriggerRatio) return messages
+      return microCompactMessages(messages, {
+        keepRecentToolResults: microPolicy.keepRecentToolResults
+      })
+    } catch (error) {
+      console.warn('[compact] 回合内微压缩失败，保留原上下文：', error instanceof Error ? error.message : error)
+      return messages
+    }
+  }
+
   const agent = new Agent({
     initialState: {
-      systemPrompt: prepared.systemPrompt + skillsPrompt(skillBundle.skills),
+      // 工具总开关关闭时工作流也不可用：手册一并省略，避免模型调用不存在的工具
+      systemPrompt:
+        prepared.systemPrompt +
+        skillsPrompt(skillBundle.skills) +
+        workflowPrompt(toolsEnabled ? workflowLevel : 'off'),
       model: getLlm(prepared.target).model,
       // 历史不含当前用户消息——prompt() 会自行 append，否则上下文里出现两次
       messages: prepared.messages.slice(0, -1),
@@ -167,7 +212,8 @@ export async function* runAgentTurn(
       temperature: opts.temperature,
       maxTokens: opts.maxTokens
     }),
-    beforeToolCall
+    beforeToolCall,
+    transformContext
   })
 
   const unsubscribe = agent.subscribe((event: AgentEvent): void => {

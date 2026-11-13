@@ -25,6 +25,8 @@
 | 12 | 插件中心 + 数据看板 | ✅ | 四类插件（技能/指令/主题/MCP）、MCP 工具接入、快捷指令、主题切换、回合指标看板 |
 | 13 | 记忆/好感度 + 多模型服务 | ✅ | 长期记忆提取与召回、关系阶段、多服务切换与真实连通性测试 |
 | 14 | 通讯平台接入 | ✅ | Telegram / OneBot v11（QQ）/ 通用 Webhook，共用会话、记忆与指标 |
+| 15 | 上下文压缩 | ✅ | 参考 Claude Code：会话级摘要压缩（三档）+ 回合内工具结果微压缩，见 `docs/context-compaction.md` |
+| 16 | 动态工作流 | ✅ | 参考 Claude Code：模型写 JS 脚本编排子代理（parallel / pipeline / schema），按档位开启，见 `docs/dynamic-workflow.md` |
 
 ## 3. 架构约束
 

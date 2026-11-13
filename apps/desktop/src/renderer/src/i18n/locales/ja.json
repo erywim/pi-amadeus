@@ -151,7 +151,9 @@
       "weather": "天気",
       "search": "ウェブ検索",
       "bash": "ターミナル",
-      "use_skill": "スキル読込"
+      "use_skill": "スキル読込",
+      "workflow": "動的ワークフロー",
+      "compact": "コンテキスト圧縮"
     },
     "toolStatus": {
       "running": "実行中",
@@ -168,7 +170,8 @@
     "toolApprove": "許可する",
     "toolReject": "拒否する",
     "toolConfirmExpires": "{{seconds}} 秒後に自動拒否",
-    "toolConfirmExpired": "タイムアウトしました。コマンドは実行されていません"
+    "toolConfirmExpired": "タイムアウトしました。コマンドは実行されていません",
+    "compactNotice": "古い会話 {{count}} 件を要約に畳み込みました（{{before}} → {{after}} tokens）"
   },
   "companion": {
     "charName": "牧瀬紅莉栖",
@@ -274,7 +277,17 @@
       "loginRequired": "先にコンパニオンモードでログインしてください",
       "toolsEnable": "ツール呼び出し",
       "toolsDesc": "アシスタントに時刻・計算機・天気・検索・ターミナルコマンドなどのツール使用を許可（危険なコマンドは安全ポリシーでブロック）",
-      "fallbackHint": "以下の内蔵設定は、有効なモデルサービスがない場合にのみ使われます。"
+      "fallbackHint": "以下の内蔵設定は、有効なモデルサービスがない場合にのみ使われます。",
+      "compactionTitle": "コンテキスト圧縮",
+      "compactionDesc": "履歴がモデルのコンテキスト上限に近づくと、古い会話を構造化要約に畳み込みます（オフ = 直近 40 件のみ保持）",
+      "compactionOff": "オフ",
+      "compactionBalanced": "バランス（推奨）",
+      "compactionAggressive": "積極的",
+      "workflowTitle": "動的ワークフロー",
+      "workflowDesc": "JS スクリプトで複数のサブエージェントを並列に編成し、複雑なタスクを処理できるようにします。モデルを並行呼び出しするため token 消費が増えます（既定はオフ）",
+      "workflowOff": "オフ",
+      "workflowStandard": "標準",
+      "workflowMax": "最大"
     },
     "feishu": {
       "title": "飛書",
