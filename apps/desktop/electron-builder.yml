@@ -1,5 +1,6 @@
 appId: com.pi-amadeus.desktop
 productName: Amadeus
+electronVersion: 43.4.0
 directories:
   buildResources: build
   output: release
