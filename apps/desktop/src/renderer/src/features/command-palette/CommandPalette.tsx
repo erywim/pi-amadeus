@@ -10,6 +10,7 @@ import {
   CornerDownLeft,
   Download,
   GitBranch,
+  Keyboard,
   MessageSquare,
   Moon,
   Plus,
@@ -146,6 +147,15 @@ export function CommandPalette(): React.JSX.Element | null {
         subtitle: t('palette.settingsHint'),
         icon: Settings,
         run: () => navigate('/settings')
+      },
+      {
+        id: 'action:shortcuts',
+        section: 'action',
+        title: t('shortcuts.title'),
+        subtitle: t('palette.shortcutsHint'),
+        icon: Keyboard,
+        run: () => useUiStore.getState().setShortcutsOpen(true)
+
       }
     ]
     if (activeSession) {
@@ -170,6 +180,7 @@ export function CommandPalette(): React.JSX.Element | null {
     }
     return items
   }, [t, theme, activeSession, createSession, navigate, setTheme, setBranchTreeOpen])
+  // run 闭包依赖 t / activeSession；actions 的 useMemo 已把它们列入依赖
 
   const pages = useMemo<PaletteItem[]>(
     () => [

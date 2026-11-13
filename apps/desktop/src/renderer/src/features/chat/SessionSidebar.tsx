@@ -1,6 +1,17 @@
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { MessageSquare, Pin, PinOff, Plus, Search, Trash2, X } from 'lucide-react'
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronRight,
+  MessageSquare,
+  Pin,
+  PinOff,
+  Plus,
+  Search,
+  Trash2,
+  X
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import { DAY_GROUP_ORDER, dayGroupOf, type MessageSearchHit, type Session } from '@pi-amadeus/shared'
@@ -28,16 +39,21 @@ function SessionItem({
   session,
   active,
   running,
+  archivedView = false,
   onSelect,
   onDelete,
-  onTogglePin
+  onTogglePin,
+  onToggleArchive
 }: {
   session: Session
   active: boolean
   running: boolean
+  /** 处于「已归档」分区：操作按钮改为恢复 */
+  archivedView?: boolean
   onSelect: () => void
   onDelete: () => void
   onTogglePin: () => void
+  onToggleArchive: () => void
 }): React.JSX.Element {
   const { t } = useTranslation()
   const turns = Math.ceil((session.messageCount ?? 0) / 2)
@@ -58,22 +74,40 @@ function SessionItem({
         </span>
         <button
           type="button"
-          data-testid="session-pin"
-          title={session.pinned ? t('chat.unpin') : t('chat.pin')}
-          aria-label={session.pinned ? t('chat.unpin') : t('chat.pin')}
+          data-testid="session-archive"
+          title={archivedView ? t('chat.unarchive') : t('chat.archive')}
+          aria-label={archivedView ? t('chat.unarchive') : t('chat.archive')}
           onClick={(e) => {
             e.stopPropagation()
-            onTogglePin()
+            onToggleArchive()
           }}
           className={cn(
-            'shrink-0 rounded p-0.5 transition-colors hover:text-primary',
-            session.pinned
-              ? 'text-primary'
-              : 'hidden text-muted-foreground group-hover:inline-flex'
+            'shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-primary',
+            archivedView ? 'inline-flex' : 'hidden group-hover:inline-flex'
           )}
         >
-          {session.pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}
+          {archivedView ? <ArchiveRestore className="size-3" /> : <Archive className="size-3" />}
         </button>
+        {!archivedView && (
+          <button
+            type="button"
+            data-testid="session-pin"
+            title={session.pinned ? t('chat.unpin') : t('chat.pin')}
+            aria-label={session.pinned ? t('chat.unpin') : t('chat.pin')}
+            onClick={(e) => {
+              e.stopPropagation()
+              onTogglePin()
+            }}
+            className={cn(
+              'shrink-0 rounded p-0.5 transition-colors hover:text-primary',
+              session.pinned
+                ? 'text-primary'
+                : 'hidden text-muted-foreground group-hover:inline-flex'
+            )}
+          >
+            {session.pinned ? <PinOff className="size-3" /> : <Pin className="size-3" />}
+          </button>
+        )}
         <Badge
           variant="outline"
           className={cn(
@@ -120,6 +154,7 @@ export function SessionSidebar(): React.JSX.Element {
   const createSession = useSessionStore((s) => s.createSession)
   const deleteSession = useSessionStore((s) => s.deleteSession)
   const togglePin = useSessionStore((s) => s.togglePin)
+  const toggleArchive = useSessionStore((s) => s.toggleArchive)
   const streaming = useSessionStore((s) => s.stream.streaming)
   // 流全局只有一条：运行中指示按 stream.sessionId 归属，后台回合不串到别的会话行
   const streamSessionId = useSessionStore((s) => s.stream.sessionId)
@@ -129,14 +164,18 @@ export function SessionSidebar(): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [hits, setHits] = useState<MessageSearchHit[]>([])
   const [searching, setSearching] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
   // 标题过滤在本地做；正文搜索交给服务端一次 LIKE 查询（350ms 防抖）
   // 全局 ⌘K 由命令面板接管（面板里也能搜会话与消息），这里不再抢占快捷键
+  // 归档会话默认不混在主列表里：搜索时仍然参与（用户是主动在找），并标出来源
   const normalizedQuery = query.trim().toLowerCase()
-  const visibleSessions = normalizedQuery
+  const matched = normalizedQuery
     ? sessions.filter((s) => (s.title || '').toLowerCase().includes(normalizedQuery))
     : sessions
+  const archivedSessions = matched.filter((s) => s.archived)
+  const visibleSessions = matched.filter((s) => !s.archived)
 
   useEffect(() => {
     const trimmed = query.trim()
@@ -154,6 +193,12 @@ export function SessionSidebar(): React.JSX.Element {
     }, 350)
     return () => window.clearTimeout(timer)
   }, [query, userId])
+
+  function handleToggleArchive(id: string): void {
+    void toggleArchive(id).catch((error: unknown) =>
+      toast.error(error instanceof Error ? error.message : String(error))
+    )
+  }
 
   const pinnedSessions = visibleSessions.filter((s) => s.pinned)
   const groups = DAY_GROUP_ORDER.map((group) => ({
@@ -232,6 +277,7 @@ export function SessionSidebar(): React.JSX.Element {
                       toast.error(error instanceof Error ? error.message : String(error))
                     )
                   }}
+                  onToggleArchive={() => handleToggleArchive(session.id)}
                 />
               ))}
             </div>
@@ -256,11 +302,48 @@ export function SessionSidebar(): React.JSX.Element {
                       toast.error(error instanceof Error ? error.message : String(error))
                     )
                   }}
+                  onToggleArchive={() => handleToggleArchive(session.id)}
                 />
               ))}
             </div>
           </section>
         ))}
+
+        {/* 已归档：默认收起，展开后按更新时间列出；恢复后回到正常分组 */}
+        {archivedSessions.length > 0 && (
+          <section className="mb-2" data-testid="archived-sessions">
+            <button
+              type="button"
+              data-testid="archived-toggle"
+              aria-expanded={archiveOpen}
+              onClick={() => setArchiveOpen((value) => !value)}
+              className="flex w-full items-center gap-1 px-3 py-1 text-left font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ChevronRight
+                className={cn('size-3 transition-transform', archiveOpen && 'rotate-90')}
+              />
+              <Archive className="size-2.5" />
+              {t('chat.archived')} {archivedSessions.length}
+            </button>
+            {archiveOpen && (
+              <div className="space-y-0.5">
+                {archivedSessions.map((session) => (
+                  <SessionItem
+                    key={session.id}
+                    session={session}
+                    active={session.id === activeSessionId}
+                    running={streaming && session.id === streamSessionId}
+                    archivedView
+                    onSelect={() => selectSession(session.id)}
+                    onDelete={() => handleDelete(session.id)}
+                    onTogglePin={() => undefined}
+                    onToggleArchive={() => handleToggleArchive(session.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* 正文命中：标题没匹配上，但消息内容里有 */}
         {normalizedQuery && (
@@ -304,11 +387,14 @@ export function SessionSidebar(): React.JSX.Element {
             {t('chat.empty')}
           </p>
         )}
-        {sessions.length > 0 && visibleSessions.length === 0 && hits.length === 0 && (
-          <p className="px-3 py-8 text-center text-xs leading-relaxed text-muted-foreground">
-            {t('chat.searchEmpty')}
-          </p>
-        )}
+        {sessions.length > 0 &&
+          visibleSessions.length === 0 &&
+          archivedSessions.length === 0 &&
+          hits.length === 0 && (
+            <p className="px-3 py-8 text-center text-xs leading-relaxed text-muted-foreground">
+              {t('chat.searchEmpty')}
+            </p>
+          )}
       </div>
       {/* 底部：用户卡 + 世界线彩蛋读数 */}
       <div className="flex items-center gap-2 border-t border-border px-4 py-3">

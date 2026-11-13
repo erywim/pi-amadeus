@@ -204,7 +204,10 @@
     "branchNext": "Next branch",
     "exportMarkdown": "Export as Markdown",
     "exported": "Exported {{name}}",
-    "exportUser": "You"
+    "exportUser": "You",
+    "archive": "Archive session",
+    "unarchive": "Unarchive",
+    "archived": "Archived"
   },
   "companion": {
     "charName": "Kurisu Makise",
@@ -298,7 +301,10 @@
     "welcomeHint": "Create a new task to talk to the agent, or switch to Companion mode for Kurisu",
     "defaultUser": "Hououin Kyouma",
     "userRole": "Future Gadget Lab member",
-    "currentWorldLine": "World line"
+    "currentWorldLine": "World line",
+    "changedFiles": "{{count}} files changed this turn",
+    "changedFilesHint": "real git status",
+    "viewDiff": "View diff"
   },
   "settings": {
     "title": "Settings",
@@ -786,7 +792,8 @@
     "settingsHint": "Models, platforms and appearance",
     "treeHint": "See every retained message branch",
     "exportHint": "Save this session as Markdown",
-    "sessionSubtitle": "{{count}} turns"
+    "sessionSubtitle": "{{count}} turns",
+    "shortcutsHint": "See every key binding"
   },
   "branchTree": {
     "open": "Message branch tree",
@@ -846,5 +853,25 @@
     "sent": "Greeting generated",
     "arrived": "She sent you a message",
     "loginRequired": "Sign in to use proactive greetings"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "subtitle": "Everything currently wired up",
+    "groupGeneral": "General",
+    "groupComposer": "Composer",
+    "groupChat": "Sessions",
+    "commandPalette": "Open the command palette (actions / pages / sessions / messages)",
+    "newSession": "Start a new session",
+    "thisDialog": "Open this cheat sheet",
+    "escape": "Close overlays / stop generating / clear search",
+    "send": "Send (queues while generating)",
+    "newline": "New line",
+    "mention": "Reference a workspace file",
+    "commands": "Open the command menu (built-ins and prompt shortcuts)",
+    "saveEdit": "Save and resend an edited message",
+    "menuNavigate": "Move through an open menu",
+    "search": "Search sessions and message text",
+    "renameTitle": "Double-click a session title to rename",
+    "footer": "⌘ means Ctrl on Windows / Linux. This sheet is also listed in the command palette."
   }
 }

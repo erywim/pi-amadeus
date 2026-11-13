@@ -34,6 +34,7 @@ import {
   fetchWorkspaceTree
 } from '@renderer/lib/api'
 import { cn } from '@renderer/lib/utils'
+import { useUiStore } from '@renderer/stores/uiStore'
 
 type Tab = 'files' | 'changes'
 type Preview =
@@ -63,6 +64,8 @@ export function WorkspaceView(): React.JSX.Element {
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<Preview | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
+  const diffRequest = useUiStore((s) => s.workspaceDiffRequest)
+  const clearDiffRequest = useUiStore((s) => s.clearWorkspaceDiffRequest)
 
   async function loadAll(): Promise<void> {
     setLoading(true)
@@ -86,6 +89,18 @@ export function WorkspaceView(): React.JSX.Element {
   useEffect(() => {
     void loadAll()
   }, [])
+
+  // 消息里的「改动卡」请求打开某个文件的 diff：切到变更页并直接打开预览
+  useEffect(() => {
+    if (!diffRequest) return
+    clearDiffRequest()
+    setTab('changes')
+    setPreviewLoading(true)
+    fetchWorkspaceDiff(diffRequest.path)
+      .then((diff) => setPreview({ kind: 'diff', diff }))
+      .catch((error) => toast.error(error instanceof Error ? error.message : String(error)))
+      .finally(() => setPreviewLoading(false))
+  }, [diffRequest, clearDiffRequest])
 
   const visibleEntries = useMemo(() => {
     if (collapsed.size === 0) return entries

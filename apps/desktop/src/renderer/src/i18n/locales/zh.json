@@ -204,7 +204,10 @@
     "branchNext": "下一个分支",
     "exportMarkdown": "导出为 Markdown",
     "exported": "已导出 {{name}}",
-    "exportUser": "你"
+    "exportUser": "你",
+    "archive": "归档会话",
+    "unarchive": "取消归档",
+    "archived": "已归档"
   },
   "companion": {
     "charName": "牧濑红莉栖",
@@ -298,7 +301,10 @@
     "welcomeHint": "新建任务开始与智能体对话，或切换到陪伴模式找红莉栖聊聊",
     "defaultUser": "凤凰院凶真",
     "userRole": "未来道具研究所 成员",
-    "currentWorldLine": "当前世界线"
+    "currentWorldLine": "当前世界线",
+    "changedFiles": "本回合改动 {{count}} 个文件",
+    "changedFilesHint": "真实 git 状态",
+    "viewDiff": "查看 diff"
   },
   "settings": {
     "title": "设置",
@@ -786,7 +792,8 @@
     "settingsHint": "模型、平台与外观",
     "treeHint": "查看所有保留的消息分支",
     "exportHint": "把当前会话保存为 Markdown",
-    "sessionSubtitle": "{{count}} 轮对话"
+    "sessionSubtitle": "{{count}} 轮对话",
+    "shortcutsHint": "查看所有键位"
   },
   "branchTree": {
     "open": "消息分支树",
@@ -846,5 +853,25 @@
     "sent": "已生成一条主动问候",
     "arrived": "她主动发来一条消息",
     "loginRequired": "登录后可以使用主动问候"
+  },
+  "shortcuts": {
+    "title": "快捷键",
+    "subtitle": "当前已实现的键盘与鼠标操作",
+    "groupGeneral": "通用",
+    "groupComposer": "输入区",
+    "groupChat": "会话",
+    "commandPalette": "打开命令面板（动作 / 页面 / 会话 / 消息）",
+    "newSession": "新建会话",
+    "thisDialog": "打开这张速查表",
+    "escape": "关闭弹层 / 停止当前生成 / 清空搜索",
+    "send": "发送消息（生成中则加入队列）",
+    "newline": "换行",
+    "mention": "引用工作区文件",
+    "commands": "打开指令菜单（内置命令与快捷指令）",
+    "saveEdit": "保存并重发编辑后的消息",
+    "menuNavigate": "在弹出菜单里上下选择",
+    "search": "搜索会话与消息正文",
+    "renameTitle": "双击会话标题改名",
+    "footer": "⌘ 在 Windows / Linux 上对应 Ctrl；速查表本身也列在命令面板里。"
   }
 }

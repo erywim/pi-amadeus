@@ -133,6 +133,20 @@ export async function setSessionPinnedApi(
   if (!res.ok) throw new Error(`置顶失败: HTTP ${res.status}`)
 }
 
+/** 归档 / 取消归档（不刷新 updated_at） */
+export async function setSessionArchivedApi(
+  sessionId: string,
+  archived: boolean,
+  userId: string
+): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ archived, userId })
+  })
+  if (!res.ok) throw new Error(await readError(res, '归档失败'))
+}
+
 /** 跨会话消息搜索（正文命中） */
 export async function searchMessagesApi(userId: string, q: string): Promise<MessageSearchHit[]> {
   const params = new URLSearchParams({ userId, q })

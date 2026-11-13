@@ -204,7 +204,10 @@
     "branchNext": "次のブランチ",
     "exportMarkdown": "Markdown として書き出す",
     "exported": "{{name}} を書き出しました",
-    "exportUser": "あなた"
+    "exportUser": "あなた",
+    "archive": "セッションをアーカイブ",
+    "unarchive": "アーカイブを解除",
+    "archived": "アーカイブ済み"
   },
   "companion": {
     "charName": "牧瀬紅莉栖",
@@ -298,7 +301,10 @@
     "welcomeHint": "「新しいタスク」でエージェントと会話するか、コンパニオンモードで紅莉栖と話しましょう",
     "defaultUser": "鳳凰院凶真",
     "userRole": "未来ガジェット研究所 メンバー",
-    "currentWorldLine": "現在の世界線"
+    "currentWorldLine": "現在の世界線",
+    "changedFiles": "このターンで {{count}} ファイル変更",
+    "changedFilesHint": "実際の git 状態",
+    "viewDiff": "diff を見る"
   },
   "settings": {
     "title": "設定",
@@ -786,7 +792,8 @@
     "settingsHint": "モデル・プラットフォーム・外観",
     "treeHint": "保持されているすべての分岐を表示",
     "exportHint": "このセッションを Markdown で保存",
-    "sessionSubtitle": "{{count}} ターン"
+    "sessionSubtitle": "{{count}} ターン",
+    "shortcutsHint": "すべてのキー割り当てを表示"
   },
   "branchTree": {
     "open": "メッセージ分岐ツリー",
@@ -846,5 +853,25 @@
     "sent": "挨拶を生成しました",
     "arrived": "彼女からメッセージが届きました",
     "loginRequired": "ログインすると利用できます"
+  },
+  "shortcuts": {
+    "title": "キーボードショートカット",
+    "subtitle": "現在実装されているキー操作とマウス操作",
+    "groupGeneral": "全般",
+    "groupComposer": "入力欄",
+    "groupChat": "セッション",
+    "commandPalette": "コマンドパレットを開く（アクション / ページ / セッション / メッセージ）",
+    "newSession": "新しいセッションを開始",
+    "thisDialog": "この一覧を開く",
+    "escape": "オーバーレイを閉じる / 生成を停止 / 検索をクリア",
+    "send": "送信（生成中はキューに追加）",
+    "newline": "改行",
+    "mention": "ワークスペースのファイルを参照",
+    "commands": "コマンドメニューを開く（内蔵コマンドとショートカット）",
+    "saveEdit": "編集したメッセージを保存して再送信",
+    "menuNavigate": "開いているメニューを上下に移動",
+    "search": "セッションとメッセージ本文を検索",
+    "renameTitle": "セッション名をダブルクリックで変更",
+    "footer": "⌘ は Windows / Linux では Ctrl です。この一覧はコマンドパレットからも開けます。"
   }
 }

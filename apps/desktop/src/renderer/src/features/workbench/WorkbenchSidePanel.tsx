@@ -3,6 +3,7 @@ import { ChevronRight, FolderTree, GitBranch, Shapes, SquareTerminal } from 'luc
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import { useArtifactStore } from '@renderer/stores/artifactStore'
+import { useUiStore } from '@renderer/stores/uiStore'
 import { ArtifactsView } from './ArtifactsView'
 import { RunGraph } from './RunGraph'
 import { TerminalView } from './TerminalView'
@@ -17,12 +18,18 @@ type Tab = 'graph' | 'terminal' | 'workspace' | 'artifacts'
 export function WorkbenchSidePanel({ onCollapse }: { onCollapse: () => void }): React.JSX.Element {
   const { t } = useTranslation()
   const artifact = useArtifactStore((s) => s.artifact)
+  const diffRequest = useUiStore((s) => s.workspaceDiffRequest)
   const [tab, setTab] = React.useState<Tab>('graph')
 
   // 预览入口在聊天里：选中工件就自动切到工件页，否则用户看不到反馈
   React.useEffect(() => {
     if (artifact) setTab('artifacts')
   }, [artifact])
+
+  // 回合改动卡点文件名：直接切到文件页并打开该文件的 diff
+  React.useEffect(() => {
+    if (diffRequest) setTab('workspace')
+  }, [diffRequest])
 
   const tabs: { key: Tab; icon: typeof GitBranch; label: string }[] = [
     { key: 'graph', icon: GitBranch, label: t('workbench.panel.graph') },

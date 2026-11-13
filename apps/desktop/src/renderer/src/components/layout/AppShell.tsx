@@ -14,6 +14,7 @@ import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { BranchTreeDialog } from '@renderer/features/chat/BranchTreeDialog'
 import { CommandPalette } from '@renderer/features/command-palette/CommandPalette'
+import { ShortcutsDialog } from '@renderer/features/shortcuts/ShortcutsDialog'
 import { cn } from '@renderer/lib/utils'
 import { setTtsMuted } from '@renderer/lib/ttsPlayer'
 import { useMemoryStore } from '@renderer/stores/memoryStore'
@@ -74,13 +75,19 @@ export default function AppShell(): React.JSX.Element {
     setTtsMuted(ttsMuted)
   }, [ttsMuted])
 
-  // 全局命令面板：⌘/Ctrl+K 打开或收起（输入框里也一样，面板本身就是搜索）
+  // 全局快捷键：⌘/Ctrl+K 命令面板；⌘/Ctrl+/ 快捷键速查
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      if (!(event.metaKey || event.ctrlKey)) return
+      const ui = useUiStore.getState()
+      if (event.key.toLowerCase() === 'k') {
         event.preventDefault()
-        const ui = useUiStore.getState()
         ui.setCommandPaletteOpen(!ui.commandPaletteOpen)
+        return
+      }
+      if (event.key === '/') {
+        event.preventDefault()
+        ui.setShortcutsOpen(!ui.shortcutsOpen)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -197,6 +204,7 @@ export default function AppShell(): React.JSX.Element {
 
       <CommandPalette />
       <BranchTreeDialog />
+      <ShortcutsDialog />
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { BRAIN_URL } from '@renderer/lib/api'
 import { copyText } from '@renderer/lib/clipboard'
 import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
+import { ChangedFilesCard } from './ChangedFilesCard'
 import { Markdown } from './Markdown'
 import { WorkProcessCard } from './WorkProcessCard'
 
@@ -342,6 +343,9 @@ function AssistantNode({
       </div>
       <div className="flex min-w-0 flex-col gap-2 text-[15px] leading-relaxed">
         {!streaming && workLog && <WorkProcessCard log={workLog} />}
+        {!streaming && (message.changedFiles?.length ?? 0) > 0 && (
+          <ChangedFilesCard files={message.changedFiles!} />
+        )}
         <div className="break-words">
           <Markdown content={message.content} />
           {streaming && (

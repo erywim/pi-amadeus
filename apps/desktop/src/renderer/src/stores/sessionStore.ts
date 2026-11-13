@@ -16,6 +16,7 @@ import {
   fetchMessages,
   fetchSessions,
   renameSessionApi,
+  setSessionArchivedApi,
   setSessionPinnedApi,
   startChatTurn,
   switchBranchApi,
@@ -117,6 +118,8 @@ interface SessionState {
   editMessage: (messageId: string, content: string) => void
   /** 置顶 / 取消置顶（乐观更新；失败回滚） */
   togglePin: (id: string) => Promise<void>
+  /** 归档 / 取消归档（乐观更新；失败回滚） */
+  toggleArchive: (id: string) => Promise<void>
   /** 消息分支切换：-1 上一个分支 / 1 下一个分支 */
   switchBranch: (messageId: string, direction: -1 | 1) => Promise<void>
   stopStreaming: () => void
@@ -519,6 +522,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         title: '',
         createdAt: now,
         updatedAt: now,
+        pinned: false,
+        archived: false,
         messageCount: 0
       }
       set((s) => ({
@@ -669,6 +674,28 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         set((s) => ({
           sessions: s.sessions.map((session) =>
             session.id === id ? { ...session, pinned: prev } : session
+          )
+        }))
+        throw error
+      }
+    },
+
+    toggleArchive: async (id) => {
+      const { userId, sessions } = get()
+      if (!userId) return
+      const prev = sessions.find((session) => session.id === id)?.archived ?? false
+      const next = !prev
+      set((s) => ({
+        sessions: s.sessions.map((session) =>
+          session.id === id ? { ...session, archived: next } : session
+        )
+      }))
+      try {
+        await setSessionArchivedApi(id, next, userId)
+      } catch (error) {
+        set((s) => ({
+          sessions: s.sessions.map((session) =>
+            session.id === id ? { ...session, archived: prev } : session
           )
         }))
         throw error
