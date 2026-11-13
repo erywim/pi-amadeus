@@ -323,7 +323,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         title: '',
         createdAt: now,
         updatedAt: now,
-        messageCount: 0
+        messageCount: 0,
+        localOnly: true
       }
       set((s) => ({
         sessions: [session, ...s.sessions],

@@ -1,4 +1,5 @@
 import toast from 'react-hot-toast'
+import { normalizeEmotion } from '@pi-amadeus/shared'
 import type { ProactiveMessageEvent } from '@pi-amadeus/shared'
 import { BRAIN_URL } from './api'
 import { useCompanionStore } from '@renderer/stores/companionStore'
@@ -35,12 +36,14 @@ export function handleProactiveMessage(message: ProactiveMessageEvent): void {
   useCompanionStore.getState().showProactive()
   // 回合进行中不抢对话文本（问候仍已落库，稍后能在消息列表看到）
   if (!isTurnActive()) useUiStore.getState().setDialogText(message.text)
-  if (message.emotion) useLive2dStore.getState().setEmotion(message.emotion)
+  const emotion = normalizeEmotion(message.emotion)
+  if (emotion) useLive2dStore.getState().setEmotion(emotion)
 
-  // 服务端已把问候写进会话：刷新后回到窗口模式能直接看到并接着聊
+  // 服务端已把问候写进会话：无论当前是否正在看另一条会话，都先刷新目标缓存，
+  // 否则该会话如果之前加载过，selectSession 的懒加载会误以为缓存仍然最新。
   const session = useSessionStore.getState()
-  if (session.activeSessionId === message.sessionId) void session.refreshSession(message.sessionId)
-  else void session.refreshSessions()
+  void session.refreshSession(message.sessionId)
+  if (session.activeSessionId !== message.sessionId) void session.refreshSessions()
 
   // 桌宠窗口里对话框会自己出现；主窗口没有常驻对话气泡，用 toast 提示
   if (!isPetWindow) toast(message.text, { duration: 8000 })
@@ -50,15 +53,18 @@ export function bindProactive(): void {
   const api = window.api?.proactive
   if (!api) return
 
-  // 两个窗口都会上报，主进程按最后一次合并；内容没变就不发 IPC
+  // 两个窗口都会上报；内容没变就不发 IPC
   // （文本流式期间 store 每次增量都会触发订阅，这里做去重）
   let lastPayload = ''
   const report = (): void => {
     const session = useSessionStore.getState()
+    const active = session.sessions.find((item) => item.id === session.activeSessionId)
+    const persistedDesktopSession =
+      active && active.channel === 'desktop' && !active.localOnly ? active.id : null
     const payload = {
       enabled: useSettingsStore.getState().proactiveEnabled,
       userId: session.userId,
-      sessionId: session.activeSessionId,
+      sessionId: persistedDesktopSession,
       brainUrl: BRAIN_URL,
       busy: isTurnActive()
     }

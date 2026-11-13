@@ -49,6 +49,7 @@ export type ProactiveOutcome =
   | 'foreground'
   | 'waiting'
   | 'busy'
+  | 'no-vision'
   | 'capturing'
   | 'delivered'
   | 'failed'
@@ -170,7 +171,10 @@ export class ProactiveWatcher {
   private firing = false
   private outcome: ProactiveOutcome = 'idle'
   private lastError = ''
+  /** 当前模型不支持视觉时暂停调度，直到渲染层上报模型/身份变化 */
+  private noVisionKey: string | null = null
   private lastAt = 0
+  private requestAbort: AbortController | null = null
   private deliveredCount = 0
   private notifiedCount = 0
   private loggedOutcome: string | null = null
@@ -193,6 +197,8 @@ export class ProactiveWatcher {
   }
 
   stop(): void {
+    this.requestAbort?.abort()
+    this.requestAbort = null
     if (!this.timer) return
     clearInterval(this.timer)
     this.timer = null
@@ -207,6 +213,19 @@ export class ProactiveWatcher {
     this.config = { ...prev, ...patch }
     if (prev.enabled !== this.config.enabled || prev.userId !== this.config.userId) {
       this.nextDueAt = null
+    }
+    // 模型切换通过 brainUrl 变化时解除 no_vision；同一 URL 下的用户切换也解除。
+    if (prev.userId !== this.config.userId || prev.brainUrl !== this.config.brainUrl) {
+      this.noVisionKey = null
+    }
+    if (
+      prev.enabled !== this.config.enabled ||
+      prev.userId !== this.config.userId ||
+      prev.sessionId !== this.config.sessionId ||
+      prev.brainUrl !== this.config.brainUrl ||
+      (!prev.busy && this.config.busy)
+    ) {
+      this.requestAbort?.abort()
     }
   }
 
@@ -253,6 +272,11 @@ export class ProactiveWatcher {
       this.nextDueAt = null
       return
     }
+    if (this.noVisionKey !== null) {
+      this.setState('no-vision')
+      this.nextDueAt = null
+      return
+    }
 
     const now = Date.now()
     if (this.nextDueAt === null) {
@@ -288,6 +312,11 @@ export class ProactiveWatcher {
       this.nextDueAt = null
       return this.status()
     }
+    if (this.noVisionKey !== null) {
+      this.setState('no-vision')
+      this.nextDueAt = null
+      return this.status()
+    }
     if (this.config.busy) {
       this.setState('busy')
       this.nextDueAt = Date.now() + RETRY_MS
@@ -305,7 +334,11 @@ export class ProactiveWatcher {
     if (this.firing) return
     this.firing = true
     const requestUserId = this.config.userId
+    const requestSessionId = this.config.sessionId
+    const requestBrainUrl = this.debugBrainUrl ?? this.config.brainUrl
     const startedAt = Date.now()
+    const requestController = new AbortController()
+    this.requestAbort = requestController
     try {
       this.setState('capturing')
       const frame = this.debugFrame ?? (await captureScreenJpeg())
@@ -315,26 +348,46 @@ export class ProactiveWatcher {
         return
       }
 
-      const brainUrl = this.debugBrainUrl ?? this.config.brainUrl
-      const res = await fetch(`${brainUrl}/api/proactive`, {
+      const res = await fetch(`${requestBrainUrl}/api/proactive`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: requestUserId,
-          ...(this.config.sessionId ? { sessionId: this.config.sessionId } : {}),
+          ...(requestSessionId ? { sessionId: requestSessionId } : {}),
           frame
         }),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+        signal: AbortSignal.any([
+          requestController.signal,
+          AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+        ])
       })
+      const body = await res.json().catch(() => null)
       if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        throw new Error(`大脑返回 ${res.status}：${text.slice(0, 200)}`)
+        if (res.status === 422 && isNoVisionResponse(body)) {
+          this.noVisionKey = `${requestUserId}|${requestSessionId ?? ''}|${requestBrainUrl}`
+          this.lastError = '当前模型不支持图像输入，请在模型设置中切换视觉模型'
+          this.nextDueAt = null
+          this.setState('no-vision')
+          return
+        }
+        const detail = body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string'
+          ? (body as { error: string }).error
+          : `HTTP ${res.status}`
+        throw new Error(`大脑返回 ${res.status}：${detail.slice(0, 200)}`)
       }
 
-      const greeting = parseGreeting(await res.json().catch(() => null))
+      const greeting = parseGreeting(body)
       if (!greeting) throw new Error('大脑返回的问候格式不合法')
-      // 请求期间用户登出/换号：这条问候不属于当前用户，丢弃
-      if (requestUserId !== this.config.userId) {
+      // 请求期间用户/会话/地址改变，或用户回到前台/开始对话：丢弃旧问候，
+      // 不把旧上下文的消息通知到新会话，也不让后台主动行为打断用户。
+      const stale =
+        requestUserId !== this.config.userId ||
+        requestSessionId !== this.config.sessionId ||
+        requestBrainUrl !== (this.debugBrainUrl ?? this.config.brainUrl) ||
+        !this.config.enabled ||
+        this.config.busy ||
+        !(this.debugEligible ?? this.isEligible())
+      if (stale) {
         this.setState('idle')
         return
       }
@@ -346,8 +399,13 @@ export class ProactiveWatcher {
       this.setState('delivered')
       this.deliver(greeting)
     } catch (error) {
+      if (requestController.signal.aborted) {
+        this.setState('idle')
+        return
+      }
       this.fail(error instanceof Error ? error.message : String(error), RETRY_MS, startedAt)
     } finally {
+      if (this.requestAbort === requestController) this.requestAbort = null
       this.firing = false
     }
   }
@@ -415,6 +473,11 @@ export class ProactiveWatcher {
         return this.status()
     }
   }
+}
+
+/** 视觉能力不可用是配置问题，不是网络故障；同一配置下暂停重复截屏。 */
+function isNoVisionResponse(body: unknown): boolean {
+  return !!body && typeof body === 'object' && (body as { code?: unknown }).code === 'no_vision'
 }
 
 /** 严格解析大脑响应：缺字段/空正文一律当失败，不让半截数据变成一条通知 */

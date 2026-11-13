@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { EMOTIONS, type Emotion, type ProactiveGreeting } from '@pi-amadeus/shared'
+import { EMOTIONS, normalizeEmotion, type Emotion, type ProactiveGreeting } from '@pi-amadeus/shared'
 import type { BrainConfig } from './config.ts'
 import type { Db } from './db.ts'
 import { resolveTarget } from './conversation.ts'
@@ -56,8 +56,7 @@ export function parseProactiveReply(raw: string): { text: string; emotion: Emoti
   const first = lines[0]?.trim() ?? ''
   const match = /^【情】\s*([a-zA-Z]+)\s*$/.exec(first)
   if (match) {
-    const name = match[1]!.toLowerCase()
-    if ((EMOTIONS as readonly string[]).includes(name)) emotion = name as Emotion
+    emotion = normalizeEmotion(match[1])
     lines.shift()
   }
   const text = lines
@@ -70,17 +69,23 @@ export function parseProactiveReply(raw: string): { text: string; emotion: Emoti
 export async function runProactiveGreeting(input: ProactiveInput): Promise<ProactiveOutcome> {
   const { cfg, db, userId, frame, signal } = input
 
-  // 指定会话必须存在且属于该用户；不指定则接最近一次对话，没有对话才新建。
-  // 归属校验先于任何 LLM 调用：不能拿别人的 sessionId 把问候写进别人的记录
+  // 用户归属校验必须先于模型解析与截图转发；否则未知 userId 会在落库时才触发外键 500，
+  // 还会白白把屏幕内容发给模型。
+  if (!(await db.getUser(userId))) {
+    return { ok: false, status: 404, code: 'user_not_found', error: '用户不存在' }
+  }
+
+  // 指定会话必须存在、属于该用户且是桌面会话；不指定则只接最近的桌面会话，
+  // 绝不能把桌面截图写入飞书或其它通讯平台的会话。
   let sessionId = input.sessionId ?? ''
   if (sessionId) {
     const session = await db.getSession(sessionId)
-    if (!session || session.userId !== userId) {
-      return { ok: false, status: 404, code: 'session_not_found', error: '会话不存在' }
+    if (!session || session.userId !== userId || session.channel !== 'desktop') {
+      return { ok: false, status: 404, code: 'session_not_found', error: '桌面会话不存在' }
     }
   } else {
     const sessions = await db.listSessions(userId)
-    sessionId = sessions[0]?.id ?? randomUUID()
+    sessionId = sessions.find((session) => session.channel === 'desktop')?.id ?? randomUUID()
   }
 
   const target = await resolveTarget(cfg, db, userId)

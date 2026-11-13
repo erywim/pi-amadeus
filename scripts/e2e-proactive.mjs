@@ -357,6 +357,15 @@ try {
   console.log('\n=== A. 大脑契约 ===')
   const textUser = await resolveUser(BRAIN, 'proactive-text-e2e-user')
   const visionUser = await resolveUser(BRAIN, 'proactive-vision-e2e-user')
+  const unknownUser = '00000000-0000-4000-8000-000000000404'
+
+  const unknownBefore = stubRequests.length
+  const unknown = await postJson(`${BRAIN}/api/proactive`, { userId: unknownUser, frame: FRAME_B64 })
+  report(
+    '未知用户在模型调用前 → 404',
+    unknown.status === 404 && unknown.json?.code === 'user_not_found' && stubRequests.length === unknownBefore,
+    `status=${unknown.status} code=${unknown.json?.code}`
+  )
 
   const missing = await postJson(`${BRAIN}/api/proactive`, { userId: visionUser })
   report('缺 frame → 400', missing.status === 400, `status=${missing.status}`)

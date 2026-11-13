@@ -21,6 +21,10 @@ export function proactiveRoutes(cfg: BrainConfig, db: Db): Hono {
     const frame = typeof body?.frame === 'string' ? body.frame : ''
     const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
     if (!userId || !frame) return c.json({ error: 'userId/frame 必填' }, 400)
+    // 在解码/模型调用之前拒绝未知身份，避免截图被处理后才因外键失败
+    if (!(await db.getUser(userId))) {
+      return c.json({ error: '用户不存在', code: 'user_not_found' }, 404)
+    }
 
     const checked = checkFrame(frame)
     if (!checked.ok) return c.json({ error: checked.error }, 400)

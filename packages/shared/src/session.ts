@@ -37,6 +37,8 @@ export interface Session {
   updatedAt: number
   /** 服务端会话列表附带的消息数（历史页统计用；未加载消息时也可见） */
   messageCount?: number
+  /** 仅渲染层使用：首条消息尚未落库，不能作为 proactive 的 sessionId 发给服务端 */
+  localOnly?: boolean
 }
 
 /** 会话列表按天分组的组名（今天 / 昨天 / 本周 / 更早） */
