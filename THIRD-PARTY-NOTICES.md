@@ -8,6 +8,6 @@ The conversion feature adds the following independently sourced dependencies. Th
 - **fflate 0.8.3** — MIT. It is used for local image archives and as an OfficeParser dependency.
 - **yaml 2.9.1** — ISC. It is used for JSON/YAML conversion.
 
-The implementation intentionally does not copy or redistribute FlyingMouse Format source, binaries, resources, or its custom non-commercial license. FFmpeg, Poppler, LibreOffice, Tesseract, and Pandoc remain optional system executables and are not bundled by this change. If they are bundled later, add their exact versions, build flags, source offers, notices, codec/patent review, and platform packaging records here.
+The implementation intentionally does not copy or redistribute FlyingMouse Format source, binaries, resources, or its custom non-commercial license. FFmpeg, Poppler, LibreOffice, Tesseract, and Pandoc remain optional system executables and are not bundled. The production brain bundle includes the JavaScript portions of these conversion dependencies; Sharp's native platform package/libvips assets still require a platform-specific packaging audit and are not yet claimed as a release artifact. If native assets or external engines are bundled later, add their exact versions, build flags, source offers, notices, codec/patent review, and platform packaging records here.
 
 This file is an engineering inventory, not legal advice. Re-run the package and native-library license audit for every release artifact.
