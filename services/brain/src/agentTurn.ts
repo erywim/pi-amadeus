@@ -10,7 +10,7 @@ import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { disabledSkillNames } from './plugins/registry.ts'
 import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/index.ts'
-import { deniedMessage, rejectAllForTurn, requestBashConfirm } from './tools/confirm.ts'
+import { deniedMessage, rejectAllForTurn, requestBashConfirm, ToolDeniedError } from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
 import { buildToolRegistry } from './tools/index.ts'
 
@@ -37,6 +37,11 @@ export interface AgentTurnOptions {
   appendUserMessage?: boolean
   /** 重新生成时要排除的历史消息 id（旧助手回答） */
   omitMessageId?: string
+  /** 后台工作台任务隔离人格/记忆；普通聊天保持原路径。 */
+  isolated?: boolean
+  instructions?: string
+  model?: string
+  cwd?: string
 }
 
 export interface AgentTurnUsage {
@@ -89,8 +94,12 @@ export async function* runAgentTurn(
     mode: opts.mode,
     content: opts.content,
     appendUserMessage: opts.appendUserMessage,
-    omitMessageId: opts.omitMessageId
+    omitMessageId: opts.omitMessageId,
+    isolated: opts.isolated
   })
+  // 任务级覆盖只作用于本次执行，不回写用户模型或工作目录配置。
+  if (opts.model) prepared.target = { ...prepared.target, model: opts.model }
+  if (opts.instructions) prepared.systemPrompt += `\n\n任务角色说明：\n${opts.instructions}`
   if (opts.signal?.aborted) {
     return { full: '', target: prepared.target, usage: { input: 0, output: 0, total: 0 }, toolCalls: 0, toolNames: [] }
   }
@@ -104,6 +113,10 @@ export async function* runAgentTurn(
 
   // bash 确认握手：登记 pending → tool_confirm 事件上屏 → execute 内 await 放行
   const confirmRequest = async (toolCallId: string, command: string): Promise<boolean> => {
+    // 审批必须显示完整可执行内容；过大命令直接拒绝，不能截断后让用户批准隐藏前缀。
+    if (Buffer.byteLength(command, 'utf8') > 16 * 1024) {
+      throw new ToolDeniedError('blocked', blockReason('命令超过 16 KiB，请拆分为可完整审阅的命令'))
+    }
     const { promise, expiresAt } = requestBashConfirm({
       turnId,
       toolCallId,
@@ -125,7 +138,7 @@ export async function* runAgentTurn(
 
   const tools = toolsEnabled
     ? buildToolRegistry({
-        cfg: opts.cfg,
+        cfg: opts.cwd ? { ...opts.cfg, tools: { ...opts.cfg.tools, bashCwd: opts.cwd } } : opts.cfg,
         channel: opts.channel,
         target: prepared.target,
         confirmRequest

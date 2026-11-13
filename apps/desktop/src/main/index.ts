@@ -1,8 +1,13 @@
+import { resolve } from 'node:path'
 import { app, ipcMain } from 'electron'
 import { registerIpcHandlers } from './ipc'
+import { registerAgentIpc } from './agent-ipc'
 import { setMenuLanguage } from './labels'
 import { AppTray } from './tray'
 import { WindowManager } from './window-manager'
+
+// 测试显式提供隔离目录时不触碰用户真实登录态/摆位；正常启动仍沿用原 userData。
+if (process.env['AMADEUS_USER_DATA_DIR']) app.setPath('userData', resolve(process.env['AMADEUS_USER_DATA_DIR']))
 
 // 开发期开 CDP 调试端口，供自动化 E2E 验证驱动。
 // 命令行已指定时不覆盖（9222 被占用时可用 electron-vite dev --remoteDebuggingPort <port>）
@@ -30,6 +35,7 @@ app.whenReady().then(() => {
     })
   }
 
+  registerAgentIpc()
   windows.createMainWindow()
   tray.create()
 

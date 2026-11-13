@@ -15,8 +15,8 @@ import { resolve } from 'node:path'
 const WAV_PATH = resolve(import.meta.dirname, '../.tmp-mic-test.wav')
 const wavB64 = readFileSync(WAV_PATH).toString('base64')
 
-const CDP_HTTP = 'http://127.0.0.1:9222'
-const BRAIN = 'http://localhost:3002'
+const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 
 const results = []
 function report(name, ok, detail = '') {

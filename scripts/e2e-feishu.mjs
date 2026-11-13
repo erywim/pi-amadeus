@@ -8,7 +8,7 @@
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 const run = `feishu-e2e-${Date.now()}`
 const OPEN_ID_A = `ou_fake_${run}`
 const CHAT_ID_A = `oc_fake_${run}`

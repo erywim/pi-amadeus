@@ -13,6 +13,11 @@ export type DesktopApi = {
   setMode: (mode: AppMode) => void
   /** 订阅模式变化；返回取消订阅函数 */
   onModeChanged: (callback: (mode: AppMode) => void) => () => void
+  /** 原生管理桥：只允许本机工作台/设备接口，不暴露通用 HTTP 或 shell。 */
+  agents: {
+    request: (path: string, method: string, body?: unknown) => Promise<{ status: number; body: unknown }>
+    subscribe: (userId: string, after: number, onChunk: (chunk: string) => void, onEnd: () => void) => () => void
+  }
   /** 桌宠窗口专用 */
   pet: {
     /** 首帧已画完，可以显示 */

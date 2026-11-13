@@ -80,6 +80,8 @@ export interface TurnContext {
   appendUserMessage?: boolean
   /** 重新生成时要排除的历史消息 id（旧助手回答不进入上下文，成功后才被替换） */
   omitMessageId?: string
+  /** 后台任务不读取陪伴人格、长期记忆与好感度，避免把私人上下文带给编码任务。 */
+  isolated?: boolean
 }
 
 export interface PreparedTurn {
@@ -103,8 +105,8 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   const [storedConfig, allHistoryRows, recalledMemories, affinity] = await Promise.all([
     db.getUserConfig(userId),
     db.listMessages(sessionId, 40),
-    recallMemories(db, userId, content),
-    summarizeAffinity(db, userId)
+    ctx.isolated ? Promise.resolve([]) : recallMemories(db, userId, content),
+    ctx.isolated ? Promise.resolve(null) : summarizeAffinity(db, userId)
   ])
 
   // 重新生成：旧助手回答既不进上下文、也不删——等新回答成功落库时再替换，
@@ -124,8 +126,9 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   }
 
   const target = await resolveTarget(cfg, db, userId)
-  const systemPrompt =
-    buildSystemPrompt(storedConfig?.systemPrompt, mode) + memorySystemPrompt(recalledMemories, affinity)
+  const systemPrompt = ctx.isolated
+    ? '你是 Amadeus 工作台的任务执行 Agent。只处理本任务，不假定能访问其它会话。工具执行必须遵守审批与安全策略；报告实际完成的结果与未验证的边界。'
+    : buildSystemPrompt(storedConfig?.systemPrompt, mode) + memorySystemPrompt(recalledMemories, affinity!)
   const messages = toContextMessages(
     historyRows.map((m) => ({ role: m.role, content: m.content, createdAt: m.createdAt }))
   )

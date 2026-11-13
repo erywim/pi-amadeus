@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useEffect, useRef } from 'react'
-import { BarChart3, Blocks, Brain, Settings, Terminal, UserRound } from 'lucide-react'
+import { BarChart3, Blocks, Bot, Brain, Settings, Terminal, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { cn } from '@renderer/lib/utils'
@@ -12,7 +12,7 @@ import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
-const TAB_ROUTES = ['/companion', '/text', '/memory', '/plugins', '/dashboard'] as const
+const TAB_ROUTES = ['/companion', '/text', '/memory', '/plugins', '/dashboard', '/agents'] as const
 
 /**
  * 应用外壳（OpenDesign 原型结构）：56px 顶栏 = 品牌区 + 模式页签
@@ -90,12 +90,13 @@ export default function AppShell(): React.JSX.Element {
     { path: '/text', icon: Terminal, label: t('nav.text') },
     { path: '/memory', icon: Brain, label: t('nav.memory') },
     { path: '/plugins', icon: Blocks, label: t('nav.plugins') },
+    { path: '/agents', icon: Bot, label: t('nav.agents') },
     { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') }
   ]
 
   return (
     <div className="grid h-screen grid-rows-[auto_minmax(0,1fr)]">
-      <header className="flex h-14 items-center gap-4 border-b border-border bg-surface px-5">
+      <header className="flex h-14 min-w-0 items-center gap-3 border-b border-border bg-surface px-4">
         <div className="flex items-center gap-2">
           <span className="grid size-7 place-items-center rounded-[9px] bg-primary text-primary-foreground">
             <span className="font-serif text-[16px] font-bold italic leading-none">A</span>
@@ -106,7 +107,7 @@ export default function AppShell(): React.JSX.Element {
           </span>
         </div>
 
-        <nav role="tablist" aria-label={t('nav.modeSwitch')} className="mx-auto flex gap-0.5 rounded-xl border border-border bg-surface-soft p-[3px]">
+        <nav role="tablist" aria-label={t('nav.modeSwitch')} className="mx-auto flex min-w-0 gap-0.5 overflow-x-auto rounded-xl border border-border bg-surface-soft p-[3px]">
           {tabs.map(({ path, icon: Icon, label }) => {
             const selected = location.pathname === path
             return (
@@ -145,7 +146,7 @@ export default function AppShell(): React.JSX.Element {
           </button>
           <span
             title={t('topbar.modelChip')}
-            className="hidden max-w-60 items-center gap-2 rounded-full border border-border px-3 py-1 text-[12.5px] text-muted-foreground lg:flex"
+            className="hidden max-w-40 items-center gap-2 rounded-full border border-border px-3 py-1 text-[12.5px] text-muted-foreground xl:flex"
           >
             <span className={cn('size-1.5 shrink-0 rounded-full', modelLabel ? 'bg-mint' : 'bg-line-strong')} />
             <span className="overflow-hidden text-ellipsis whitespace-nowrap">

@@ -17,6 +17,25 @@ const api = {
   getMode: (): Promise<AppMode> => ipcRenderer.invoke('mode:get'),
   setMode: (mode: AppMode): void => ipcRenderer.send('mode:set', mode),
   onModeChanged: (callback: (mode: AppMode) => void): (() => void) => subscribe('mode:changed', callback),
+  agents: {
+    request: (path: string, method: string, body?: unknown): Promise<{ status: number; body: unknown }> =>
+      ipcRenderer.invoke('agents:request', path, method, body),
+    subscribe: (userId: string, after: number, onChunk: (chunk: string) => void, onEnd: () => void): (() => void) => {
+      const id = crypto.randomUUID()
+      const removeChunk = subscribe<{ id: string; chunk: string }>('agents:chunk', (payload) => {
+        if (payload.id === id) onChunk(payload.chunk)
+      })
+      const removeEnd = subscribe<{ id: string }>('agents:end', (payload) => {
+        if (payload.id === id) onEnd()
+      })
+      ipcRenderer.send('agents:subscribe', id, userId, after)
+      return () => {
+        removeChunk()
+        removeEnd()
+        ipcRenderer.send('agents:unsubscribe', id)
+      }
+    }
+  },
   pet: {
     ready: (): void => ipcRenderer.send('pet:ready'),
     openMenu: (): void => ipcRenderer.send('pet:menu'),

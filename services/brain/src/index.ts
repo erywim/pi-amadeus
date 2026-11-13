@@ -3,6 +3,11 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { loadConfig } from './config.ts'
 import { createDb } from './db.ts'
+import { AgentStore } from './agents/store.ts'
+import { AgentManager } from './agents/manager.ts'
+import { CollaborationManager } from './collaboration/manager.ts'
+import { agentRoutes } from './routes/agents.ts'
+import { collaborationRoutes } from './routes/collaboration.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { platformManager } from './platforms/manager.ts'
 import { syncMcpPlugins } from './plugins/registry.ts'
@@ -25,6 +30,10 @@ import { voiceRoutes } from './routes/voice.ts'
 const cfg = loadConfig()
 const db = createDb(cfg.db)
 await db.init()
+const agentStore = new AgentStore(cfg.db.path)
+const agents = new AgentManager(cfg, db, agentStore)
+await agents.init()
+const collaboration = new CollaborationManager(cfg, agents, agentStore)
 
 // 拉起已启用的 MCP 插件：npx 首次下载可能较慢，放后台，不阻塞 HTTP 服务可用
 void syncMcpPlugins(db)
@@ -42,6 +51,8 @@ app.get('/api/health', (c) =>
   c.json({ ok: true, service: 'pi-amadeus-brain', time: Date.now(), feishuEnabled: cfg.feishu.enabled })
 )
 
+app.route('/api', agentRoutes(agents, agentStore))
+app.route('/api', collaborationRoutes(collaboration))
 app.route('/api', chatRoutes(cfg, db))
 app.route('/api', voiceRoutes(cfg, db))
 app.route('/api', sessionRoutes(db))
@@ -60,19 +71,31 @@ if (cfg.feishu.enabled) {
   app.route('/api', feishuRoutes(cfg, db))
 }
 
-serve({ fetch: app.fetch, port: cfg.port }, (info) => {
+// 旧 API 没有远程鉴权，必须留在 loopback；多端连接走单独的受限配对网关。
+const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: cfg.port }, (info) => {
   console.log(`[brain] pi-amadeus 大脑服务已启动: http://localhost:${info.port}`)
   console.log(`[brain] LLM: ${cfg.llm.model} @ ${cfg.llm.baseUrl}`)
   console.log(`[brain] SQLite: ${cfg.db.path}`)
   console.log(`[brain] 飞书: ${cfg.feishu.enabled ? '启用' : '停用'}`)
 })
 
-// 优雅退出
+// 优雅退出：先停止接受任务与远程订阅，再等待自己启动的执行器退出，最后关库。
+let shuttingDown = false
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
-    // 先断开 MCP 子进程与平台连接，再关数据库：退出后不留孤儿连接
-    mcpManager.closeAll()
-    platformManager.stopAll()
-    void db.close().finally(() => process.exit(0))
+    if (shuttingDown) return
+    shuttingDown = true
+    server.close()
+    void (async () => {
+      await collaboration.shutdown()
+      await agents.shutdown()
+      mcpManager.closeAll()
+      platformManager.stopAll()
+      agentStore.close()
+      await db.close()
+    })().then(() => process.exit(0), (error: unknown) => {
+      console.error('[brain] 退出清理失败：', error)
+      process.exit(1)
+    })
   })
 }

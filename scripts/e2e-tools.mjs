@@ -11,7 +11,7 @@
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 const TURN_TIMEOUT = 180_000
 const results = []
 function report(name, ok, detail = '') {
