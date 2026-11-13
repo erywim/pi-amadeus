@@ -796,7 +796,13 @@ export function createDb(cfg: BrainConfig['db']): Db {
     },
 
     async setSessionTitle(id, title) {
-      run(getConn(), 'UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?', [title, Date.now(), id])
+      // 自动标题只补空标题：用户在首轮标题生成期间手动改名时，
+      // 后到的自动标题绝不能覆盖用户设的值（LESSONS：默认值不覆盖用户值）
+      run(getConn(), "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ? AND title = ''", [
+        title,
+        Date.now(),
+        id
+      ])
     },
 
     async renameSession(id, title) {
