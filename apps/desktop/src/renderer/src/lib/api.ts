@@ -4,7 +4,6 @@ import type {
   MemoryItem,
   MemoryKind,
   MemoryListResponse,
-  Message,
   PlatformInput,
   PlatformItem,
   PluginListResponse,
@@ -12,9 +11,11 @@ import type {
   ProviderItem,
   ProviderTestResult,
   Session,
+  SessionMessages,
   SseEvent,
   StatsResponse,
-  UserConfig
+  UserConfig,
+  WorldlineSummary
 } from '@pi-amadeus/shared'
 
 /**
@@ -75,11 +76,37 @@ export async function fetchSessions(userId: string): Promise<Session[]> {
   return json.sessions
 }
 
-export async function fetchMessages(sessionId: string): Promise<Message[]> {
+/** 活动世界线的消息页（消息 + 世界线元信息） */
+export async function fetchMessages(sessionId: string): Promise<SessionMessages> {
   const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}/messages`)
   if (!res.ok) throw new Error(`消息加载失败: HTTP ${res.status}`)
-  const json = (await res.json()) as { messages: Message[] }
-  return json.messages
+  return (await res.json()) as SessionMessages
+}
+
+/**
+ * 世界线跳跃 / 回退：toLeaf=true 跳到目标所在支路的最新状态；
+ * 省略则精确停在该消息（回退，之后发消息会分叉出新世界线）。
+ */
+export async function jumpWorldline(
+  sessionId: string,
+  messageId: string,
+  toLeaf: boolean
+): Promise<SessionMessages> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}/head`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageId, toLeaf })
+  })
+  if (!res.ok) throw new Error(`世界线跳转失败: HTTP ${res.status}`)
+  return (await res.json()) as SessionMessages
+}
+
+/** 世界线列表（跳转面板） */
+export async function fetchWorldlines(sessionId: string): Promise<WorldlineSummary[]> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}/worldlines`)
+  if (!res.ok) throw new Error(`世界线列表加载失败: HTTP ${res.status}`)
+  const json = (await res.json()) as { worldlines: WorldlineSummary[] }
+  return json.worldlines
 }
 
 export async function deleteSessionApi(sessionId: string): Promise<void> {

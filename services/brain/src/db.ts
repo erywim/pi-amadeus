@@ -19,10 +19,20 @@ export interface SessionRow {
 export interface MessageRow {
   id: string
   sessionId: string
+  /** 父消息 id（会话树；根消息为 null） */
+  parentId: string | null
   role: 'user' | 'assistant'
   content: string
   ttsText: string | null
   mode: TurnMode
+  createdAt: number
+}
+
+/** 树的轻量节点（不含正文）：算兄弟关系与世界线列表用 */
+export interface MessageTreeNode {
+  id: string
+  parentId: string | null
+  role: 'user' | 'assistant'
   createdAt: number
 }
 
@@ -143,14 +153,25 @@ export interface Db {
   renameSession(id: string, title: string): Promise<void>
   /** 会话换归属（平台账号绑定到桌面用户后，把该平台的会话交给绑定用户） */
   reassignSession(id: string, userId: string): Promise<void>
-  // messages
+  // messages（会话树 / 世界线）
+  /** 活动世界线的消息（从活动叶回溯到根，时间正序）；未设置活动叶时取最后一条 */
   listMessages(sessionId: string, limit?: number): Promise<MessageRow[]>
+  /** 会话整棵树的轻量节点（遍历世界线、算兄弟关系） */
+  listMessageTree(sessionId: string): Promise<MessageTreeNode[]>
+  /** 按 id 批量取消息（世界线列表的预览用） */
+  listMessagesByIds(ids: string[]): Promise<MessageRow[]>
+  /** 当前活动世界线的叶 id（空会话为 null） */
+  getActiveMessageId(sessionId: string): Promise<string | null>
+  /** 移动活动叶：跳世界线 / 回退 / 新消息落库后前移 */
+  setActiveMessage(sessionId: string, messageId: string | null): Promise<void>
   /** 会话最后一条消息（重新生成时定位用户消息与待替换的助手回复） */
   getLastMessage(sessionId: string): Promise<MessageRow | null>
   deleteMessage(id: string): Promise<void>
   appendMessage(input: {
     id: string
     sessionId: string
+    /** 父消息 id：新消息接在哪个节点后面（根消息传 null） */
+    parentId?: string | null
     role: 'user' | 'assistant'
     content: string
     ttsText?: string | null
@@ -319,6 +340,8 @@ export function createDb(cfg: BrainConfig['db']): Db {
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             channel TEXT NOT NULL,
             title TEXT NOT NULL DEFAULT '',
+            -- 当前活动世界线的末端消息 id（消息树里的一个节点；空会话为 NULL）
+            active_message_id TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
           );
@@ -326,6 +349,8 @@ export function createDb(cfg: BrainConfig['db']): Db {
           CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            -- 父消息 id：会话是一棵树，同一父节点下的多个子节点 = 世界线分叉
+            parent_id TEXT,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             tts_text TEXT,
@@ -439,6 +464,43 @@ export function createDb(cfg: BrainConfig['db']): Db {
           .all() as unknown as { name: string }[]
         if (!metricColumns.some((column) => column.name === 'provider')) {
           sqlite.exec("ALTER TABLE turn_metrics ADD COLUMN provider TEXT NOT NULL DEFAULT ''")
+        }
+
+        // 老库升级：会话树（世界线）。只在列首次出现时回填，绝不重跑覆盖用户数据。
+        // 回填规则：每条消息的父节点 = 同会话里时间上紧邻的前一条（把线性历史变成一条链），
+        // 会话的活动叶 = 最后一条消息。
+        const messageColumns = sqlite
+          .prepare('PRAGMA table_info(messages)')
+          .all() as unknown as { name: string }[]
+        if (!messageColumns.some((column) => column.name === 'parent_id')) {
+          sqlite.exec('ALTER TABLE messages ADD COLUMN parent_id TEXT')
+          sqlite.exec(`
+            UPDATE messages SET parent_id = (
+              SELECT prev.id FROM messages prev
+               WHERE prev.session_id = messages.session_id
+                 AND (prev.created_at < messages.created_at
+                      OR (prev.created_at = messages.created_at AND prev.rowid < messages.rowid))
+               ORDER BY prev.created_at DESC, prev.rowid DESC
+               LIMIT 1
+            )
+          `)
+        }
+        // 索引必须等列确定存在之后再建：老库的 messages 表建索引会因缺列直接报错
+        sqlite.exec('CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id)')
+        const sessionColumns = sqlite
+          .prepare('PRAGMA table_info(sessions)')
+          .all() as unknown as { name: string }[]
+        if (!sessionColumns.some((column) => column.name === 'active_message_id')) {
+          sqlite.exec('ALTER TABLE sessions ADD COLUMN active_message_id TEXT')
+          // 已有会话的活动叶 = 最后一条消息；没有消息的会话保持 NULL
+          sqlite.exec(`
+            UPDATE sessions SET active_message_id = (
+              SELECT m.id FROM messages m
+               WHERE m.session_id = sessions.id
+               ORDER BY m.created_at DESC, m.rowid DESC
+               LIMIT 1
+            )
+          `)
         }
         conn = sqlite
       } catch (error) {
@@ -643,31 +705,59 @@ export function createDb(cfg: BrainConfig['db']): Db {
     },
 
     async listMessages(sessionId, limit = 200) {
+      const sqlite = getConn()
+      // 活动叶：优先会话上记录的；老数据没记录时退回最后一条消息
+      const session = first<{ active_message_id: string | null }>(
+        sqlite,
+        'SELECT active_message_id FROM sessions WHERE id = ?',
+        [sessionId]
+      )
+      let leafId = session?.active_message_id ?? null
+      if (!leafId) {
+        const last = first<{ id: string }>(
+          sqlite,
+          'SELECT id FROM messages WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+          [sessionId]
+        )
+        leafId = last?.id ?? null
+      }
+      if (!leafId) return []
+
+      // 从叶向根回溯出整条世界线（递归 CTE），再取最近 limit 条
       const rows = all<{
         id: string
         session_id: string
+        parent_id: string | null
         role: 'user' | 'assistant'
         content: string
         tts_text: string | null
         mode: TurnMode
         created_ms: number
       }>(
-        getConn(),
-        `SELECT id, session_id, role, content, tts_text, mode, created_at AS created_ms
+        sqlite,
+        `WITH RECURSIVE path(id) AS (
+           SELECT id FROM messages WHERE id = ? AND session_id = ?
+           UNION ALL
+           SELECT m.parent_id FROM messages m JOIN path p ON m.id = p.id
+            WHERE m.parent_id IS NOT NULL
+         )
+         SELECT id, session_id, parent_id, role, content, tts_text, mode, created_ms
          FROM (
-           SELECT id, session_id, role, content, tts_text, mode, created_at, rowid AS seq
+           SELECT id, session_id, parent_id, role, content, tts_text, mode,
+                  created_at AS created_ms, rowid AS seq
            FROM messages
-           WHERE session_id = ?
+           WHERE id IN (SELECT id FROM path)
            ORDER BY created_at DESC, rowid DESC
            LIMIT ?
          ) t
-         ORDER BY created_at, seq`,
-        [sessionId, limit]
+         ORDER BY created_ms, seq`,
+        [leafId, sessionId, limit]
       )
       return rows.map(
         (row): MessageRow => ({
           id: row.id,
           sessionId: row.session_id,
+          parentId: row.parent_id ?? null,
           role: row.role,
           content: row.content,
           ttsText: row.tts_text ?? null,
@@ -677,10 +767,34 @@ export function createDb(cfg: BrainConfig['db']): Db {
       )
     },
 
-    async getLastMessage(sessionId) {
-      const row = first<{
+    async listMessageTree(sessionId) {
+      const rows = all<{
+        id: string
+        parent_id: string | null
+        role: 'user' | 'assistant'
+        created_ms: number
+      }>(
+        getConn(),
+        `SELECT id, parent_id, role, created_at AS created_ms
+         FROM messages WHERE session_id = ?
+         ORDER BY created_at, rowid`,
+        [sessionId]
+      )
+      return rows.map((row) => ({
+        id: row.id,
+        parentId: row.parent_id ?? null,
+        role: row.role,
+        createdAt: Number(row.created_ms)
+      }))
+    },
+
+    async listMessagesByIds(ids) {
+      if (ids.length === 0) return []
+      const placeholders = ids.map(() => '?').join(',')
+      const rows = all<{
         id: string
         session_id: string
+        parent_id: string | null
         role: 'user' | 'assistant'
         content: string
         tts_text: string | null
@@ -688,7 +802,52 @@ export function createDb(cfg: BrainConfig['db']): Db {
         created_ms: number
       }>(
         getConn(),
-        `SELECT id, session_id, role, content, tts_text, mode, created_at AS created_ms
+        `SELECT id, session_id, parent_id, role, content, tts_text, mode, created_at AS created_ms
+         FROM messages WHERE id IN (${placeholders})`,
+        ids
+      )
+      return rows.map(
+        (row): MessageRow => ({
+          id: row.id,
+          sessionId: row.session_id,
+          parentId: row.parent_id ?? null,
+          role: row.role,
+          content: row.content,
+          ttsText: row.tts_text ?? null,
+          mode: row.mode,
+          createdAt: Number(row.created_ms)
+        })
+      )
+    },
+
+    async getActiveMessageId(sessionId) {
+      const row = first<{ active_message_id: string | null }>(
+        getConn(),
+        'SELECT active_message_id FROM sessions WHERE id = ?',
+        [sessionId]
+      )
+      return row?.active_message_id ?? null
+    },
+
+    async setActiveMessage(sessionId, messageId) {
+      // 只移动活动叶，不动 updated_at：跳世界线不是一次新的对话活动，
+      // 不该把会话顶到列表最前
+      run(getConn(), 'UPDATE sessions SET active_message_id = ? WHERE id = ?', [messageId, sessionId])
+    },
+
+    async getLastMessage(sessionId) {
+      const row = first<{
+        id: string
+        session_id: string
+        parent_id: string | null
+        role: 'user' | 'assistant'
+        content: string
+        tts_text: string | null
+        mode: TurnMode
+        created_ms: number
+      }>(
+        getConn(),
+        `SELECT id, session_id, parent_id, role, content, tts_text, mode, created_at AS created_ms
          FROM messages
          WHERE session_id = ?
          ORDER BY created_at DESC, rowid DESC
@@ -699,6 +858,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
       return {
         id: row.id,
         sessionId: row.session_id,
+        parentId: row.parent_id ?? null,
         role: row.role,
         content: row.content,
         ttsText: row.tts_text ?? null,
@@ -714,9 +874,18 @@ export function createDb(cfg: BrainConfig['db']): Db {
     async appendMessage(input) {
       run(
         getConn(),
-        `INSERT INTO messages (id, session_id, role, content, tts_text, mode, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [input.id, input.sessionId, input.role, input.content, input.ttsText ?? null, input.mode, Date.now()]
+        `INSERT INTO messages (id, session_id, parent_id, role, content, tts_text, mode, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          input.id,
+          input.sessionId,
+          input.parentId ?? null,
+          input.role,
+          input.content,
+          input.ttsText ?? null,
+          input.mode,
+          Date.now()
+        ]
       )
     },
 

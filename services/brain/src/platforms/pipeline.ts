@@ -99,6 +99,7 @@ export async function handlePlatformMessage(opts: {
         ttsText: null,
         target: turn.target,
         userText: text,
+        userMessageId: turn.userMessageId,
         toolCalls: turn.toolCalls
       })
       await recordTurnMetric(db, {

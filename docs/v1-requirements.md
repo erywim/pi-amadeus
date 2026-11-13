@@ -27,6 +27,7 @@
 | 14 | 通讯平台接入 | ✅ | Telegram / OneBot v11（QQ）/ 通用 Webhook，共用会话、记忆与指标 |
 | 15 | 上下文压缩 | ✅ | 参考 Claude Code：会话级摘要压缩（三档）+ 回合内工具结果微压缩，见 `docs/context-compaction.md` |
 | 16 | 动态工作流 | ✅ | 参考 Claude Code：模型写 JS 脚本编排子代理（parallel / pipeline / schema），按档位开启，见 `docs/dynamic-workflow.md` |
+| 17 | 世界线（会话树） | ✅ | 分叉 / 回退 / 世界线跳跃，重新生成即分叉；按命运石之门的世界线概念做 UI，见 `docs/worldline.md` |
 
 ## 3. 架构约束
 

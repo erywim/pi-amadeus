@@ -519,5 +519,21 @@
       "empty": "还没有互动记录",
       "footnote": "好感度只来自真实发生的回合与记忆：每轮 +1 起，认真倾诉、深入交流、一起完成任务会更多。"
     }
+  },
+  "worldline": {
+    "badge": "世界线 {{index}}/{{total}}",
+    "badgeHint": "世界线：点开可跳跃到其他分支",
+    "rewound": "回退中",
+    "panelTitle": "世界线",
+    "loading": "读取中…",
+    "empty": "还没有世界线",
+    "emptyLine": "（空）",
+    "current": "当前",
+    "prev": "上一条世界线",
+    "next": "下一条世界线",
+    "switchHint": "这里发生过世界线分叉，左右切换",
+    "rewind": "回到这条世界线",
+    "rewindHint": "从这条消息重新开始；之后的内容会留在原来的世界线",
+    "readingSteiner": "跨世界线保留的只有长期记忆（阅读斯坦纳）"
   }
 }

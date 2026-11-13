@@ -1,11 +1,21 @@
 import { create } from 'zustand'
-import type { Message, Session, SseEvent, StreamState, ToolActivityItem, ToolStatus } from '@pi-amadeus/shared'
+import type {
+  Message,
+  Session,
+  SessionMessages,
+  SseEvent,
+  StreamState,
+  ToolActivityItem,
+  ToolStatus,
+  WorldlineInfo
+} from '@pi-amadeus/shared'
 import {
   confirmTool,
   deleteSessionApi,
   fetchCurrentUser,
   fetchMessages,
   fetchSessions,
+  jumpWorldline,
   renameSessionApi,
   startChatTurn,
   startRegenerate
@@ -44,6 +54,8 @@ interface SessionStreamState extends StreamState {
 interface SessionState {
   sessions: Session[]
   messages: Record<string, Message[]>
+  /** sessionId → 当前活动世界线（序号 / 总数 / 变动率 / 是否回退中） */
+  worldlines: Record<string, WorldlineInfo>
   activeSessionId: string | null
   stream: SessionStreamState
   userId: string | null
@@ -77,6 +89,12 @@ interface SessionState {
   /** 手动重命名（乐观更新；失败回滚并抛出，由调用方提示） */
   renameSession: (id: string, title: string) => Promise<void>
   dismissTurnError: (sessionId: string) => void
+  /** 切换兄弟消息（世界线跳跃）：跳到该支路的最新状态 */
+  switchSibling: (messageId: string, direction: -1 | 1) => void
+  /** 回退到某条消息（时间跳跃）：之后发消息会从那里分叉出新世界线 */
+  rewindTo: (messageId: string) => void
+  /** 直接跳到某条世界线的叶子（世界线面板用） */
+  jumpToWorldline: (leafId: string) => void
 }
 
 export const useSessionStore = create<SessionState>()((set, get) => {
@@ -250,6 +268,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         abortTurn = null
         // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
         void get().refreshSessions()
+        // 拉一次服务端权威页面：本地追加的消息没有 parentId / siblingIds，
+        // 只有服务端的活动世界线才知道这次回复是不是分叉（标题栏与箭头要用）
+        void get().refreshSession(sessionId)
         // 回合结束后好感度会变：刷新侧栏的关系读数（服务端按真实事件累计）
         const { userId } = get()
         if (userId) void useMemoryStore.getState().refreshAffinity(userId)
@@ -267,9 +288,35 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     }
   }
 
+  /** 把服务端返回的世界线页面写进缓存（消息 + 世界线元信息） */
+  function applyPage(sessionId: string, page: SessionMessages): void {
+    set((s) => ({
+      messages: { ...s.messages, [sessionId]: page.messages },
+      worldlines: { ...s.worldlines, [sessionId]: page.worldline }
+    }))
+  }
+
+  /**
+   * 世界线跳跃（异步）：成功后整体替换页面。
+   * 跳线后旧世界线的错误卡与停止快照不再适用，一并清掉——否则用户会在
+   * 另一条世界线上看到上一段分支的报错，误以为是当前这段出了问题。
+   */
+  async function jump(sessionId: string, messageId: string, toLeaf: boolean): Promise<void> {
+    const page = await jumpWorldline(sessionId, messageId, toLeaf)
+    applyPage(sessionId, page)
+    set((s) => {
+      const turnErrors = { ...s.turnErrors }
+      delete turnErrors[sessionId]
+      const stoppedLogs = { ...s.stoppedLogs }
+      delete stoppedLogs[sessionId]
+      return { turnErrors, stoppedLogs }
+    })
+  }
+
   return {
     sessions: [],
     messages: {},
+    worldlines: {},
     activeSessionId: null,
     stream: { streaming: false, tools: [] },
     userId: null,
@@ -320,8 +367,10 @@ export const useSessionStore = create<SessionState>()((set, get) => {
 
     refreshSession: async (sessionId) => {
       try {
-        const messages = await fetchMessages(sessionId)
-        set((s) => ({ messages: { ...s.messages, [sessionId]: messages } }))
+        const page = await fetchMessages(sessionId)
+        // 流式进行中不覆盖：本地已有乐观消息，服务端页面里还没有它
+        if (get().stream.streaming && get().stream.sessionId === sessionId) return
+        applyPage(sessionId, page)
         void get().refreshSessions()
       } catch (error) {
         console.warn('[session] 会话消息刷新失败：', error)
@@ -351,6 +400,10 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       set((s) => ({
         sessions: [session, ...s.sessions],
         messages: { ...s.messages, [id]: [] },
+        worldlines: {
+          ...s.worldlines,
+          [id]: { headId: null, index: 0, total: 0, divergence: 1, rewound: false }
+        },
         activeSessionId: id
       }))
       return id
@@ -378,9 +431,12 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         for (const messageId of removedMessageIds) {
           delete workLogs[messageId]
         }
+        const worldlines = { ...s.worldlines }
+        delete worldlines[id]
         return {
           sessions,
           messages,
+          worldlines,
           stoppedLogs,
           workLogs,
           turnErrors,
@@ -404,7 +460,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         content: trimmed,
         ttsText: null,
         mode: 'text',
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        // 乐观显示用：接到当前世界线末端后面（服务端以它自己的活动叶为准）
+        parentId: get().worldlines[sessionId]?.headId ?? null
       }
       const draftId = `local-${Date.now()}-a`
       turnStartedAt = Date.now()
@@ -504,6 +562,37 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         const turnErrors = { ...s.turnErrors }
         delete turnErrors[sessionId]
         return { turnErrors }
+      })
+    },
+
+    switchSibling: (messageId, direction) => {
+      const { activeSessionId, stream, messages } = get()
+      // 回合进行中不允许跳线：流只属于当前世界线，跳走会让新内容落到看不见的分支上
+      if (stream.streaming || !activeSessionId) return
+      const message = (messages[activeSessionId] ?? []).find((m) => m.id === messageId)
+      const siblings = message?.siblingIds ?? []
+      if (siblings.length < 2) return
+      const index = siblings.indexOf(messageId)
+      const next = index + direction
+      if (index < 0 || next < 0 || next >= siblings.length) return
+      void jump(activeSessionId, siblings[next]!, true).catch((error) => {
+        console.warn('[session] 世界线跳转失败：', error)
+      })
+    },
+
+    rewindTo: (messageId) => {
+      const { activeSessionId, stream } = get()
+      if (stream.streaming || !activeSessionId) return
+      void jump(activeSessionId, messageId, false).catch((error) => {
+        console.warn('[session] 回退失败：', error)
+      })
+    },
+
+    jumpToWorldline: (leafId) => {
+      const { activeSessionId, stream } = get()
+      if (stream.streaming || !activeSessionId) return
+      void jump(activeSessionId, leafId, true).catch((error) => {
+        console.warn('[session] 世界线跳转失败：', error)
       })
     }
   }

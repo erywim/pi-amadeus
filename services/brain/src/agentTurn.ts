@@ -38,10 +38,8 @@ export interface AgentTurnOptions {
   /** LLM 采样参数（缺省不传 = 供应商默认） */
   temperature?: number
   maxTokens?: number
-  /** 是否把本次用户消息写入会话（重新生成传 false，历史里已有那条消息） */
+  /** 是否把本次用户消息写入会话（重新生成传 false，活动世界线末端已有那条消息） */
   appendUserMessage?: boolean
-  /** 重新生成时要排除的历史消息 id（旧助手回答） */
-  omitMessageId?: string
 }
 
 export interface AgentTurnUsage {
@@ -58,6 +56,8 @@ export interface AgentTurnResult {
   /** 本回合实际执行的工具次数与工具名（看板统计用） */
   toolCalls: number
   toolNames: string[]
+  /** 本回合用户消息 id（助手回复以它为父节点落库） */
+  userMessageId: string
 }
 
 /** 工具结果文本的 UI 上限（超出截断） */
@@ -94,11 +94,17 @@ export async function* runAgentTurn(
     mode: opts.mode,
     content: opts.content,
     signal: opts.signal,
-    appendUserMessage: opts.appendUserMessage,
-    omitMessageId: opts.omitMessageId
+    appendUserMessage: opts.appendUserMessage
   })
   if (opts.signal?.aborted) {
-    return { full: '', target: prepared.target, usage: { input: 0, output: 0, total: 0 }, toolCalls: 0, toolNames: [] }
+    return {
+      full: '',
+      target: prepared.target,
+      usage: { input: 0, output: 0, total: 0 },
+      toolCalls: 0,
+      toolNames: [],
+      userMessageId: prepared.userMessageId
+    }
   }
 
   const toolsEnabled = prepared.userConfig?.tools?.enabled !== false
@@ -298,11 +304,25 @@ export async function* runAgentTurn(
   }
 
   if (opts.signal?.aborted) {
-    return { full: '', target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
+    return {
+      full: '',
+      target: prepared.target,
+      usage,
+      toolCalls: toolNames.length,
+      toolNames,
+      userMessageId: prepared.userMessageId
+    }
   }
   if (agent.state.errorMessage) throw new Error(agent.state.errorMessage)
   if (!full) throw new Error('LLM 返回为空')
   // totalTokens 缺失时用输入+输出兜底（部分兼容端点不返回 total）
   if (usage.total === 0) usage.total = usage.input + usage.output
-  return { full, target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
+  return {
+    full,
+    target: prepared.target,
+    usage,
+    toolCalls: toolNames.length,
+    toolNames,
+    userMessageId: prepared.userMessageId
+  }
 }

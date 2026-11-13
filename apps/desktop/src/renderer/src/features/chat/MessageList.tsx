@@ -27,6 +27,11 @@ export function MessageList(): React.JSX.Element {
   const respondToolConfirm = useSessionStore((s) => s.respondToolConfirm)
   const regenerate = useSessionStore((s) => s.regenerate)
   const dismissTurnError = useSessionStore((s) => s.dismissTurnError)
+  const worldline = useSessionStore((s) =>
+    s.activeSessionId ? s.worldlines[s.activeSessionId] : undefined
+  )
+  const switchSibling = useSessionStore((s) => s.switchSibling)
+  const rewindTo = useSessionStore((s) => s.rewindTo)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
@@ -119,7 +124,10 @@ export function MessageList(): React.JSX.Element {
               key={m.id}
               message={m}
               isLastAssistant={m.id === lastAssistantId}
+              isHead={m.id === worldline?.headId}
               onRegenerate={regenerate}
+              onSwitchSibling={(direction) => switchSibling(m.id, direction)}
+              onRewind={() => rewindTo(m.id)}
             />
           ))}
 

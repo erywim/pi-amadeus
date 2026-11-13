@@ -39,6 +39,7 @@ export function voiceRoutes(cfg: BrainConfig, db: Db): Hono {
         const startedAt = Date.now()
         let cnFull = ''
         let jpFull = ''
+        let userMessageId = ''
         const usage = { input: 0, output: 0, total: 0 }
         try {
           const stream = runVoiceTurn(
@@ -57,6 +58,7 @@ export function voiceRoutes(cfg: BrainConfig, db: Db): Hono {
             if (r.done) {
               cnFull = r.value.cn
               jpFull = r.value.jp
+              userMessageId = r.value.userMessageId
               break
             }
             yield r.value
@@ -81,7 +83,8 @@ export function voiceRoutes(cfg: BrainConfig, db: Db): Hono {
           content: cnFull,
           ttsText: jpFull || null,
           target,
-          userText: text
+          userText: text,
+          userMessageId
         })
         // 语音回合同样计入真实指标（token 来自 pi-ai 的 done 事件）
         await recordTurnMetric(db, {

@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@renderer/components/ui/badge'
 import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
+import { WorldlineBadge } from './WorldlineBadge'
 
 /** 文本模式的标题栏：侧栏开关 + 标题（可重命名） + 渠道徽标 + 轮次统计 + 删除 */
 export function CodexTitlebar({
@@ -139,6 +140,7 @@ export function CodexTitlebar({
       >
         {t(`channels.${session.channel}`)}
       </Badge>
+      <WorldlineBadge />
       <span className="flex-1" />
       <span className="whitespace-nowrap text-[12.5px] text-muted-foreground">
         {t('codex.turns', { count: turns })}

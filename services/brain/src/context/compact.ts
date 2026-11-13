@@ -58,8 +58,6 @@ export interface BuildHistoryInput {
   level: CompactionLevel
   /** 用户中断 / 回合取消：中断摘要请求，不写边界 */
   signal?: AbortSignal
-  /** 重新生成时要排除的历史消息 id（旧助手回答） */
-  omitMessageId?: string
 }
 
 /** 摘要请求的超时上限：压缩不该把一个回合拖到无限久 */
@@ -80,8 +78,8 @@ const failureCounts = new Map<string, number>()
 export async function buildHistory(input: BuildHistoryInput): Promise<PreparedHistory> {
   const policy = policyOf(input.level)
   const limit = policy ? HISTORY_LOAD_LIMIT : HISTORY_FALLBACK_LIMIT
-  const all = await input.db.listMessages(input.sessionId, limit)
-  const rows = input.omitMessageId ? all.filter((row) => row.id !== input.omitMessageId) : all
+  // listMessages 只返回"活动世界线"这条路径：压缩永远作用于当前世界线
+  const rows = await input.db.listMessages(input.sessionId, limit)
 
   // 关闭压缩：保持旧行为（最近 40 条），不读摘要、不调 LLM
   if (!policy) return { rows, summary: null }

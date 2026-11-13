@@ -519,5 +519,21 @@
       "empty": "No interactions yet",
       "footnote": "Affinity comes only from real turns and memories: +1 per turn, more for opening up, deep conversation, or finishing a task together."
     }
+  },
+  "worldline": {
+    "badge": "Worldline {{index}}/{{total}}",
+    "badgeHint": "Worldline — open to jump to another branch",
+    "rewound": "rewound",
+    "panelTitle": "Worldlines",
+    "loading": "Loading…",
+    "empty": "No worldlines yet",
+    "emptyLine": "(empty)",
+    "current": "current",
+    "prev": "Previous worldline",
+    "next": "Next worldline",
+    "switchHint": "This is a divergence point — switch versions",
+    "rewind": "Return to this worldline",
+    "rewindHint": "Start again from this message; later messages stay on the original worldline",
+    "readingSteiner": "Only long-term memories carry across worldlines (Reading Steiner)"
   }
 }

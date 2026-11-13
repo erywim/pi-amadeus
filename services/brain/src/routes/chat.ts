@@ -67,6 +67,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           ttsText: null,
           target,
           userText: content,
+          userMessageId: result.userMessageId,
           toolCalls: result.toolCalls
         })
         await recordTurnMetric(db, {
@@ -110,11 +111,17 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
     const last = rows.at(-1)
     if (!last) return c.json({ error: '没有可重新生成的消息' }, 400)
 
-    // 旧助手回复待替换；生成失败时保留原样（finishTurn 成功前不删除）
-    const replaceMessageId = last.role === 'assistant' ? last.id : undefined
-    const lastUser = [...rows].reverse().find((m) => m.role === 'user')
+    // 重新生成 = 世界线分叉：把活动叶退回这条用户消息，新回复作为它的
+    // 第二个子节点落库，旧回复留在树上成为另一条世界线（不删除、不丢答案）
+    const lastUser =
+      last.role === 'user' ? last : [...rows].reverse().find((m) => m.role === 'user')
     if (!lastUser) return c.json({ error: '没有可重新生成的用户消息' }, 400)
     const userText = lastUser.content
+    if (last.role === 'assistant') {
+      // 活动叶退回到产生旧回复的那条用户消息；否则新回复会挂在旧回复下面成一条链
+      await db.setActiveMessage(sessionId, lastUser.id)
+      await db.clearCompaction(sessionId)
+    }
 
     return sseResponse(
       async function* (signal) {
@@ -132,9 +139,8 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             mode: 'text',
             content: userText,
             signal,
-            // 历史里已有这条用户消息；旧助手回复不进上下文
-            appendUserMessage: false,
-            omitMessageId: replaceMessageId
+            // 活动世界线末端已经有这条用户消息，不再写一条新的
+            appendUserMessage: false
           })
           let next = await run.next()
           while (!next.done) {
@@ -164,7 +170,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           ttsText: null,
           target,
           userText,
-          replaceMessageId,
+          userMessageId: result.userMessageId,
           toolCalls: result.toolCalls
         })
         await recordTurnMetric(db, {

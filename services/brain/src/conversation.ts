@@ -83,11 +83,9 @@ export interface TurnContext {
   frames?: string[]
   /**
    * 是否把本次用户消息写入会话。缺省 true（普通回合）；
-   * 重新生成时传 false——历史里已经有那条用户消息，再写一遍会重复两问一答。
+   * 重新生成时传 false——活动世界线末端已经有那条用户消息，再写一遍会重复两问一答。
    */
   appendUserMessage?: boolean
-  /** 重新生成时要排除的历史消息 id（旧助手回答不进入上下文，成功后才被替换） */
-  omitMessageId?: string
 }
 
 export interface PreparedTurn {
@@ -99,6 +97,8 @@ export interface PreparedTurn {
   userConfig: UserConfig | null
   /** 本回合新做的上下文压缩（未压缩时为 undefined；调用方据此发提示事件） */
   compaction?: CompactionReport
+  /** 本回合用户消息的 id（助手回复以它为父节点；重新生成时是已存在的那条） */
+  userMessageId: string
 }
 
 /** 压缩档位：配置缺省按 balanced（与 UI 默认一致）；非法值回落缺省 */
@@ -118,6 +118,9 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   const target = await resolveTarget(cfg, db, userId)
   const compactionLevel = compactionLevelOf(storedConfig)
 
+  // 当前世界线末端（活动叶）：新消息接在它后面；空会话为 null
+  const headId = await db.getActiveMessageId(sessionId)
+
   // 先读历史再落库本次用户消息：避免当前消息在 LLM 上下文里出现两次
   // （一次纯文本历史、一次带视觉帧）
   // 记忆召回与好感度摘要都来自真实数据；没有记录时返回空，不会凭空生成
@@ -127,26 +130,32 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
       target,
       sessionId,
       level: compactionLevel,
-      signal: ctx.signal,
-      omitMessageId: ctx.omitMessageId
+      signal: ctx.signal
     }),
     recallMemories(db, userId, content),
     summarizeAffinity(db, userId)
   ])
 
-  // 重新生成：旧助手回答既不进上下文、也不删——等新回答成功落库时再替换，
-  // 生成失败时旧回答仍在，用户不会因为一次失败丢掉上一版回复。
-  // （buildHistory 已按 omitMessageId 过滤过，这里的末尾就是真实上下文末尾）
   const historyRows = prepared.rows
 
+  // 状态转移：用户消息作为活动叶的子节点落库，活动叶前移到它。
+  // 重新生成（appendUserMessage=false）不写新消息，直接沿用已存在的末条用户消息。
+  let userMessageId: string
   if (appendUserMessage) {
+    userMessageId = randomUUID()
     await db.appendMessage({
-      id: randomUUID(),
+      id: userMessageId,
       sessionId,
+      parentId: headId,
       role: 'user',
       content,
       mode
     })
+    await db.setActiveMessage(sessionId, userMessageId)
+  } else {
+    const last = historyRows[historyRows.length - 1]
+    if (!last) throw new Error('重新生成失败：世界线上没有可用的用户消息')
+    userMessageId = last.id
   }
 
   const systemPrompt =
@@ -186,7 +195,14 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     throw new Error('重新生成失败：会话末尾没有用户消息')
   }
 
-  return { target, systemPrompt, messages, userConfig: storedConfig, compaction: prepared.report }
+  return {
+    target,
+    systemPrompt,
+    messages,
+    userConfig: storedConfig,
+    compaction: prepared.report,
+    userMessageId
+  }
 }
 
 /** 保存助手消息 + 首轮触发异步标题生成 */
@@ -201,24 +217,26 @@ export async function finishTurn(
     ttsText: string | null
     target: LlmTarget
     userText: string
-    /** 重新生成：新回答落库前替换掉的旧助手消息 id（生成失败时旧消息保留） */
-    replaceMessageId?: string
+    /** 本回合用户消息 id（助手回复以它为父节点） */
+    userMessageId: string
     /** 本回合工具调用次数（好感度事件用） */
     toolCalls?: number
   }
 ): Promise<string> {
   const assistantId = randomUUID()
   const countBefore = await db.countMessages(input.sessionId)
-  // 先删旧回答再写新回答：两步之间不对外暴露，读取方看到的始终是一条完整回答
-  if (input.replaceMessageId) await db.deleteMessage(input.replaceMessageId)
+  // 状态转移：助手回复作为用户消息的子节点落库，活动叶前移到它。
+  // 重新生成时旧回复不删——它成为同一父节点下的兄弟，也就是另一条世界线。
   await db.appendMessage({
     id: assistantId,
     sessionId: input.sessionId,
+    parentId: input.userMessageId,
     role: 'assistant',
     content: input.content,
     ttsText: input.ttsText,
     mode: input.mode
   })
+  await db.setActiveMessage(input.sessionId, assistantId)
   await db.touchSession({ id: input.sessionId, userId: input.userId, channel: input.channel })
 
   // 首轮问答（此前只有 1 条用户消息）→ 异步生成标题，不阻塞 done
@@ -266,9 +284,9 @@ export async function* runVoiceTurn(
   signal: AbortSignal,
   ttsConfig: TtsConfig,
   onUsage?: (usage: { input: number; output: number; total: number }) => void
-): AsyncGenerator<SseEvent, { cn: string; jp: string }> {
+): AsyncGenerator<SseEvent, { cn: string; jp: string; userMessageId: string }> {
   // 语音回合同样走压缩（长会话的语音对话也会撞上限）；signal 用于中断摘要请求
-  const { target, systemPrompt, messages } = await prepareTurn({ ...ctx, signal })
+  const { target, systemPrompt, messages, userMessageId } = await prepareTurn({ ...ctx, signal })
 
   const parser = new BilingualParser()
   const jpQueue = new AsyncQueue<string>()
@@ -325,5 +343,5 @@ export async function* runVoiceTurn(
     yield { type: 'audio', data: audio.data, sampleRate: audio.sampleRate }
   }
 
-  return { cn: parser.cn, jp: parser.jp }
+  return { cn: parser.cn, jp: parser.jp, userMessageId }
 }

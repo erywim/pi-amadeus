@@ -27,9 +27,11 @@ async function freePort() {
   })
 }
 
-export async function startTestBrain() {
+export async function startTestBrain(options = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), 'pi-amadeus-e2e-'))
   const dbPath = join(dataDir, 'test.db')
+  // 启动前预置数据库（模拟老库 / 造历史数据），在 schema 初始化之前执行
+  if (typeof options.setup === 'function') await options.setup(dbPath)
   const port = await freePort()
   const logs = []
   const child = spawn(process.execPath, ['src/index.ts'], {
@@ -174,14 +176,19 @@ export async function seedMessages(dbPath, sessionId, userId, messages) {
     db.prepare(
       'INSERT INTO sessions (id, user_id, channel, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(sessionId, userId, 'desktop', 'seed', now, now)
+    // 会话是树：直接造历史也要按线性对话接成一条链，并把活动叶指向最后一条，
+    // 否则 listMessages（只走活动世界线）只会看到最后一条
     const insert = db.prepare(
-      'INSERT INTO messages (id, session_id, role, content, tts_text, mode, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?)'
+      'INSERT INTO messages (id, session_id, parent_id, role, content, tts_text, mode, created_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)'
     )
     let offset = 0
+    let parentId = null
     for (const message of messages) {
-      insert.run(message.id, sessionId, message.role, message.content, 'text', now + offset)
+      insert.run(message.id, sessionId, parentId, message.role, message.content, 'text', now + offset)
+      parentId = message.id
       offset += 1
     }
+    db.prepare('UPDATE sessions SET active_message_id = ? WHERE id = ?').run(parentId, sessionId)
   } finally {
     db.close()
   }

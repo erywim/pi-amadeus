@@ -121,6 +121,7 @@ export function feishuRoutes(cfg: BrainConfig, db: Db): Hono {
       ttsText: null,
       target,
       userText: text,
+      userMessageId: result.userMessageId,
       toolCalls: result.toolCalls
     })
     // 飞书回合同样计入真实看板：渠道维度会显示 feishu
