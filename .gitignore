@@ -159,3 +159,4 @@ services/brain/data/
 Thumbs.db
 Desktop.ini
 .vscode/
+.idea

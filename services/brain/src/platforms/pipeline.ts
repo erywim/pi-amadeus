@@ -13,14 +13,13 @@ const sessionQueues = new Map<string, Promise<void>>()
 async function enqueue(key: string, task: () => Promise<void>): Promise<void> {
   const previous = sessionQueues.get(key) ?? Promise.resolve()
   const next = previous.then(task, task)
-  sessionQueues.set(
-    key,
-    next.catch(() => {})
-  )
+  const queued = next.catch(() => {})
+  sessionQueues.set(key, queued)
   try {
     await next
   } finally {
-    if (sessionQueues.get(key) === next) sessionQueues.delete(key)
+    // 本轮结束且没有后继时才释放队列；比较入表的同一 Promise，避免残留或提前清掉后继。
+    if (sessionQueues.get(key) === queued) sessionQueues.delete(key)
   }
 }
 

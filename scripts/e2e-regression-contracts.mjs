@@ -1,6 +1,6 @@
 /**
  * 业务回归契约（来源：本轮已核实的群归属 / 附件入口 / 调度覆盖 / 问候会话报告）。
- * 操作序列：群内换人和绑定；纯附件网关事件；卡住运行 → PATCH 计划 → 放行；置顶/归档后问候。
+ * 操作序列：群内换人和绑定；队首成功/失败 → 后继阻塞时继续入队 → 排空清理；纯附件网关事件；卡住运行 → PATCH 计划 → 放行；置顶/归档后问候。
  * 直接运行：node scripts/e2e-regression-contracts.mjs
  * 临时 SQLite + 本地 HTTP/WS 平台，模型/记忆边界用 mock；不启动桌面、不读取 .env、不访问真实账号。
  */
@@ -88,8 +88,14 @@ const mockedModules = new Map([
   ['memory/index.ts', ['recallMemories', 'summarizeAffinity', 'memorySystemPrompt']],
   ['persona.ts', ['buildSystemPrompt']]
 ].map(([file, exports]) => [new URL(`../services/brain/src/${file}`, import.meta.url).href, exports]))
+const pipelineUrl = new URL('../services/brain/src/platforms/pipeline.ts', import.meta.url).href
 const hooks = registerHooks({
   load(url, context, nextLoad) {
+    if (url === pipelineUrl) {
+      const loaded = nextLoad(url, context)
+      // 仅让测试观察队列资源生命周期；生产入口不增加调试导出或管理接口。
+      return { ...loaded, source: `${loaded.source}\nexport { sessionQueues };` }
+    }
     const exports = mockedModules.get(url)
     if (!exports) return nextLoad(url, context)
     return {
@@ -104,7 +110,7 @@ let sql
 let scheduler
 const resources = []
 try {
-  const [{ createDb }, { handlePlatformMessage }, { automationScheduler }, { automationRoutes },
+  const [{ createDb }, { handlePlatformMessage, sessionQueues }, { automationScheduler }, { automationRoutes },
     { generateProactiveGreeting }, { computeNextRun }, { DiscordAdapter }, { SlackAdapter }] = await Promise.all([
     import('../services/brain/src/db.ts'),
     import('../services/brain/src/platforms/pipeline.ts'),
@@ -191,6 +197,81 @@ try {
     assert.match(replies[0], /无效/)
     assert.deepEqual(await db.findPlatformAccount(platform.id, 'alpha'), accountBefore)
   })
+
+  await test('队列释放：多会话成功后不保留已完成的 Promise', async () => {
+    const before = sessionQueues.size
+    for (let index = 0; index < 12; index += 1) {
+      const chatId = `queue-complete-${index}`
+      await inbound('alpha', 'private', chatId)
+      assert.equal(sessionQueues.has(sessionId('private', chatId)), false)
+    }
+    assert.equal(sessionQueues.size, before)
+  })
+
+  await test('队列释放：绑定回复失败保留原错误，后续消息仍能执行', async () => {
+    const chatId = 'queue-reject'
+    await assert.rejects(handlePlatformMessage({
+      cfg, db, platform,
+      inbound: { externalUserId: 'alpha', chatType: 'private', chatId, text: '/bind contract-bind' },
+      reply: async () => { throw new Error('注入的绑定回复失败') }
+    }), /注入的绑定回复失败/)
+    assert.equal(sessionQueues.has(sessionId('private', chatId)), false)
+    assert.deepEqual(await inbound('alpha', 'private', chatId), ['契约测试回复'])
+    assert.equal(sessionQueues.has(sessionId('private', chatId)), false)
+  })
+
+  for (const failFirst of [false, true]) {
+    await test(`队列并发：队首${failFirst ? '失败' : '成功'}不清掉后继，新消息不越过等待中的回复`, async () => {
+      const chatId = `queue-pending-${failFirst}`
+      const id = sessionId('private', chatId)
+      const firstStarted = deferred()
+      const firstRelease = deferred()
+      const secondStarted = deferred()
+      const secondRelease = deferred()
+      const order = []
+      const dispatch = (name, started, release, fail = false) => handlePlatformMessage({
+        cfg, db, platform,
+        inbound: { externalUserId: 'alpha', chatType: 'private', chatId, text: '/bind contract-bind' },
+        reply: async () => {
+          order.push(`${name}:start`)
+          started?.resolve()
+          if (release) await release.promise
+          if (fail) throw new Error('注入的队首失败')
+          order.push(`${name}:end`)
+        }
+      })
+      const first = dispatch('first', firstStarted, firstRelease, failFirst)
+      const outcome = first.then(() => null, (error) => error)
+      let second
+      let third
+      try {
+        await within(firstStarted.promise, '队首绑定回复')
+        second = dispatch('second', secondStarted, secondRelease)
+        await nextLoop()
+        assert.deepEqual(order, ['first:start'])
+        const pending = sessionQueues.get(id)
+        assert.ok(pending)
+        firstRelease.resolve()
+        await within(secondStarted.promise, '后继绑定回复')
+        const error = await outcome
+        if (failFirst) assert.match(error?.message ?? '', /注入的队首失败/)
+        else assert.equal(error, null)
+        assert.equal(sessionQueues.get(id), pending, '已结束的队首不能删除尚未完成的后继')
+        third = dispatch('third')
+        await nextLoop()
+        const beforeRelease = failFirst ? ['first:start', 'second:start'] : ['first:start', 'first:end', 'second:start']
+        assert.deepEqual(order, beforeRelease, '第三条消息必须继续等待第二条')
+        secondRelease.resolve()
+        await Promise.all([second, third])
+        assert.deepEqual(order, [...beforeRelease, 'second:end', 'third:start', 'third:end'])
+        assert.equal(sessionQueues.has(id), false, '排空后释放队列条目')
+      } finally {
+        firstRelease.resolve()
+        secondRelease.resolve()
+        await Promise.allSettled([first, second, third])
+      }
+    })
+  }
 
   async function adapterHarness(kind, Adapter) {
     const received = []
