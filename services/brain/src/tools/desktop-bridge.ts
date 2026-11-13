@@ -72,7 +72,10 @@ export class DesktopBridge {
     ) {
       return { ok: false, status: 'invalid' }
     }
-    if (!result.approved && !result.error) {
+    if (!result.approved && (!result.error || result.screenshot)) {
+      return { ok: false, status: 'invalid' }
+    }
+    if (result.approved && !result.error && !validScreenshot(result.screenshot)) {
       return { ok: false, status: 'invalid' }
     }
     this.settle(result.requestId, undefined, result)
@@ -123,6 +126,21 @@ export function unregisterDesktopBridge(turnId: string): void {
 export function resolveDesktopResult(result: ComputerResult): { ok: true } | { ok: false; status: 'notFound' | 'invalid' } {
   const bridge = bridges.get(result.turnId)
   return bridge ? bridge.resolve(result) : { ok: false, status: 'notFound' }
+}
+
+function validScreenshot(screenshot: ComputerResult['screenshot']): boolean {
+  if (!screenshot) return false
+  return (
+    (screenshot.mimeType === 'image/jpeg' || screenshot.mimeType === 'image/png') &&
+    screenshot.surface === 'window' &&
+    Number.isInteger(screenshot.width) &&
+    screenshot.width > 0 &&
+    Number.isInteger(screenshot.height) &&
+    screenshot.height > 0 &&
+    typeof screenshot.data === 'string' &&
+    screenshot.data.length > 0 &&
+    screenshot.data.length <= 8_000_000
+  )
 }
 
 function bridgeId(bridge: DesktopBridge): string {
