@@ -310,7 +310,10 @@
       "themeHint": "陪伴模式始终使用暗色实验台主题",
       "defaultMode": "启动默认模式",
       "defaultMute": "陪伴模式默认静音",
-      "defaultMuteDesc": "开启后进入陪伴模式时语音播报静音（HUD 可随时取消）"
+      "defaultMuteDesc": "开启后进入陪伴模式时语音播报静音（HUD 可随时取消）",
+      "proactive": "后台主动问候",
+      "proactiveDesc": "窗口在后台或桌宠模式下，每 10~15 分钟看一眼当前屏幕，主动找你搭话。截图只用于这一次识别，不保存，也不发给除你配置的模型服务以外的任何地方",
+      "proactivePermission": "系统未授予屏幕录制权限：主动问候暂时看不到屏幕。请在 系统设置 → 隐私与安全性 → 屏幕录制 中允许 Amadeus"
     },
     "providers": {
       "title": "模型服务",

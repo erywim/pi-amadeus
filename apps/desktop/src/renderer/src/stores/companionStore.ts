@@ -12,19 +12,27 @@ interface CompanionState {
   tapNoticeUntil: number
   /** 首次发言后收起快速话题 */
   quickTopicsDismissed: boolean
+  /**
+   * 主动问候的序号：主进程推来一条问候就 +1。
+   * 桌宠对话框据此把这次问候当成新一轮（手动收起过的对话框也会重新出现）。
+   */
+  proactiveSeq: number
 
   setPendingUser: (text: string | null) => void
   /** 点红莉栖：临时状态文案持续 1.6s */
   pokeNotice: () => void
   dismissQuickTopics: () => void
+  showProactive: () => void
 }
 
 export const useCompanionStore = create<CompanionState>()((set) => ({
   pendingUserText: null,
   tapNoticeUntil: 0,
   quickTopicsDismissed: false,
+  proactiveSeq: 0,
 
   setPendingUser: (pendingUserText) => set({ pendingUserText }),
   pokeNotice: () => set({ tapNoticeUntil: Date.now() + 1600 }),
-  dismissQuickTopics: () => set({ quickTopicsDismissed: true })
+  dismissQuickTopics: () => set({ quickTopicsDismissed: true }),
+  showProactive: () => set((s) => ({ proactiveSeq: s.proactiveSeq + 1 }))
 }))

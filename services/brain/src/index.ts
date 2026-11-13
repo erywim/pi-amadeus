@@ -13,6 +13,7 @@ import { frameRoutes } from './routes/frames.ts'
 import { memoryRoutes } from './routes/memories.ts'
 import { platformRoutes } from './routes/platforms.ts'
 import { pluginRoutes } from './routes/plugins.ts'
+import { proactiveRoutes } from './routes/proactive.ts'
 import { providerRoutes } from './routes/providers.ts'
 import { sessionRoutes } from './routes/sessions.ts'
 import { skillRoutes } from './routes/skills.ts'
@@ -51,6 +52,7 @@ app.route('/api', sttRoutes(cfg))
 app.route('/api', frameRoutes())
 app.route('/api', skillRoutes(cfg))
 app.route('/api', pluginRoutes(cfg, db))
+app.route('/api', proactiveRoutes(cfg, db))
 app.route('/api', providerRoutes(db))
 app.route('/api', platformRoutes(db))
 app.route('/api', memoryRoutes(db))

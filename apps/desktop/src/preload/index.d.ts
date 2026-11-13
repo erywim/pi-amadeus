@@ -1,5 +1,16 @@
+import type { ProactiveMessageEvent } from '@pi-amadeus/shared'
+
 /** 应用模式：window=常规主窗口；pet=透明置顶的桌宠窗口 */
 export type AppMode = 'window' | 'pet'
+
+/** 主动问候的配置补丁（字段由主进程逐个校验） */
+export interface ProactiveConfigPatch {
+  enabled?: boolean
+  userId?: string | null
+  sessionId?: string | null
+  brainUrl?: string
+  busy?: boolean
+}
 
 export type DesktopApi = {
   getVersion: () => Promise<string>
@@ -30,6 +41,16 @@ export type DesktopApi = {
     /** 强制穿透开关变化（托盘「鼠标穿透」）；返回取消订阅函数 */
     onPassthrough: (callback: (forced: boolean) => void) => () => void
   }
+  /** 主动问候：渲染层上报配置，主进程推回问候 */
+  proactive: {
+    setConfig: (patch: ProactiveConfigPatch) => void
+    /** 屏幕录制权限（macOS）：granted / denied / restricted / not-determined / unknown */
+    permission: () => Promise<string>
+    /** 用户刚打开开关时触发一次系统授权（macOS）；返回触发后的权限状态 */
+    requestPermission: () => Promise<string>
+    /** 订阅主动问候（桌宠对话框 / 陪伴页展示）；返回取消订阅函数 */
+    onMessage: (callback: (message: ProactiveMessageEvent) => void) => () => void
+  }
   /** 仅开发构建：e2e 断言与驱动 */
   debug?: {
     /** 主进程窗口状态快照 */
@@ -38,6 +59,8 @@ export type DesktopApi = {
     petCursor: (point: { x: number; y: number } | null) => Promise<void>
     /** 与托盘「鼠标穿透」同一入口 */
     petPassthrough: (forced: boolean) => Promise<void>
+    /** 主动问候：{ op: 'state' | 'trigger' | 'frame' | 'eligible' | 'brain', value? } */
+    proactive: (command: Record<string, unknown>) => Promise<unknown>
   }
 }
 

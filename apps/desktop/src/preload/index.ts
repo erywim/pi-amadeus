@@ -1,6 +1,16 @@
+import type { ProactiveMessageEvent } from '@pi-amadeus/shared'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
 type AppMode = 'window' | 'pet'
+
+/** 主动问候的配置补丁（渲染层 → 主进程；字段由主进程逐个校验） */
+interface ProactiveConfigPatch {
+  enabled?: boolean
+  userId?: string | null
+  sessionId?: string | null
+  brainUrl?: string
+  busy?: boolean
+}
 
 /** 订阅主进程推送，返回取消订阅函数 */
 function subscribe<T>(channel: string, callback: (payload: T) => void): () => void {
@@ -28,12 +38,28 @@ const api = {
     onCursor: (callback: (point: { x: number; y: number }) => void): (() => void) => subscribe('pet:cursor', callback),
     onPassthrough: (callback: (forced: boolean) => void): (() => void) => subscribe('pet:passthrough', callback)
   },
+  /**
+   * 主动问候：开关/身份/会话/忙碌上报给主进程；问候由主进程经 onMessage 推回。
+   * 只做通道，不做判断——怎么触发由主进程的调度器决定。
+   */
+  proactive: {
+    setConfig: (patch: ProactiveConfigPatch): void => ipcRenderer.send('proactive:config', patch),
+    /** 屏幕录制权限（macOS）：granted / denied / not-determined … */
+    permission: (): Promise<string> => ipcRenderer.invoke('proactive:permission'),
+    /** 用户刚打开开关时触发一次系统授权（macOS）；返回触发后的权限状态 */
+    requestPermission: (): Promise<string> => ipcRenderer.invoke('proactive:request-permission'),
+    onMessage: (callback: (message: ProactiveMessageEvent) => void): (() => void) =>
+      subscribe('proactive:message', callback)
+  },
   ...(import.meta.env.DEV
     ? {
         debug: {
           state: (): Promise<unknown> => ipcRenderer.invoke('debug:state'),
           petCursor: (point: { x: number; y: number } | null): Promise<void> => ipcRenderer.invoke('debug:pet-cursor', point),
-          petPassthrough: (forced: boolean): Promise<void> => ipcRenderer.invoke('debug:pet-passthrough', forced)
+          petPassthrough: (forced: boolean): Promise<void> => ipcRenderer.invoke('debug:pet-passthrough', forced),
+          /** 主动问候 e2e：state / trigger / frame / eligible / brain */
+          proactive: (command: Record<string, unknown>): Promise<unknown> =>
+            ipcRenderer.invoke('debug:proactive', command)
         }
       }
     : {})

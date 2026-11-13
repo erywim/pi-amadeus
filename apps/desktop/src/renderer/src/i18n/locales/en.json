@@ -310,7 +310,10 @@
       "themeHint": "Companion mode always uses the dark lab theme",
       "defaultMode": "Startup Mode",
       "defaultMute": "Mute by default in Companion mode",
-      "defaultMuteDesc": "When on, voice playback starts muted in Companion mode (toggle anytime in the HUD)"
+      "defaultMuteDesc": "When on, voice playback starts muted in Companion mode (toggle anytime in the HUD)",
+      "proactive": "Proactive greetings in the background",
+      "proactiveDesc": "While the window is in the background or in desktop-pet mode, she looks at your screen every 10–15 minutes and starts a conversation. The screenshot is used only for that one request, is never stored, and goes nowhere except the model service you configured",
+      "proactivePermission": "Screen Recording permission is not granted, so proactive greetings cannot see the screen. Allow Amadeus in System Settings → Privacy & Security → Screen Recording"
     },
     "providers": {
       "title": "Model services",

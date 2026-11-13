@@ -1,6 +1,7 @@
 import { app, ipcMain } from 'electron'
 import { registerIpcHandlers } from './ipc'
 import { setMenuLanguage } from './labels'
+import { ProactiveWatcher } from './proactive'
 import { AppTray } from './tray'
 import { WindowManager } from './window-manager'
 
@@ -13,7 +14,8 @@ if (!app.isPackaged && !app.commandLine.hasSwitch('remote-debugging-port')) {
 app.whenReady().then(() => {
   const windows = new WindowManager()
   const tray = new AppTray(windows)
-  registerIpcHandlers(windows, (lang) => {
+  const proactive = new ProactiveWatcher(windows)
+  registerIpcHandlers(windows, proactive, (lang) => {
     if (setMenuLanguage(lang)) tray.refresh()
   })
   windows.onStateChange(() => tray.refresh())
@@ -28,10 +30,15 @@ app.whenReady().then(() => {
     ipcMain.handle('debug:pet-passthrough', (_event, forced: unknown) => {
       if (typeof forced === 'boolean') windows.setPassthroughForced(forced)
     })
+    // 主动问候：注入帧 / 模拟后台 / 指定 brain / 立即触发 / 读状态
+    ipcMain.handle('debug:proactive', (_event, command: unknown) => proactive.debugCommand(command))
   }
 
   windows.createMainWindow()
   tray.create()
+  // 主动问候调度：主进程不受隐藏窗口的定时器节流，后台/桌宠都靠它
+  proactive.start()
+  app.on('before-quit', () => proactive.stop())
 
   app.on('activate', (_event, hasVisibleWindows) => {
     if (!hasVisibleWindows) windows.showCurrent()

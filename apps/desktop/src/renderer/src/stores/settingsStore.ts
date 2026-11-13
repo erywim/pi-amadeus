@@ -32,6 +32,11 @@ interface SettingsState {
   defaultMode: DefaultMode
   /** 陪伴模式进入时默认静音语音播报 */
   defaultMute: boolean
+  /**
+   * 主动问候：应用在后台 / 桌宠模式时每 10~15 分钟截屏识别桌面并主动搭话。
+   * 属于界面偏好（本地持久化）；默认开，关掉后不再截屏也不再请求。
+   */
+  proactiveEnabled: boolean
   aiConfig: UserConfig
   /** 生效密钥状态（default=回落 .env 默认密钥 / custom=用户自定义 / none=未配置） */
   keyStatus: ApiKeyStatus
@@ -40,6 +45,7 @@ interface SettingsState {
   setTheme: (theme: UiTheme) => void
   setDefaultMode: (mode: DefaultMode) => void
   setDefaultMute: (muted: boolean) => void
+  setProactiveEnabled: (enabled: boolean) => void
   /** 从大脑服务加载用户配置到表单 */
   loadAiConfig: (userId: string) => Promise<void>
   /** 保存表单到大脑服务（apiKey 留空 = 保持服务端已有密钥） */
@@ -58,6 +64,7 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'paper',
       defaultMode: 'companion',
       defaultMute: false,
+      proactiveEnabled: true,
       aiConfig: FORM_PLACEHOLDER,
       keyStatus: 'none',
       configLoaded: false,
@@ -68,6 +75,7 @@ export const useSettingsStore = create<SettingsState>()(
       setTheme: (theme) => set({ theme }),
       setDefaultMode: (defaultMode) => set({ defaultMode }),
       setDefaultMute: (defaultMute) => set({ defaultMute }),
+      setProactiveEnabled: (proactiveEnabled) => set({ proactiveEnabled }),
       loadAiConfig: async (userId) => {
         const { config, keyStatus } = await fetchUserConfig(userId)
         // 密钥不回填表单：留空提交即保持服务端密钥不变
@@ -92,7 +100,8 @@ export const useSettingsStore = create<SettingsState>()(
         language: s.language,
         theme: s.theme,
         defaultMode: s.defaultMode,
-        defaultMute: s.defaultMute
+        defaultMute: s.defaultMute,
+        proactiveEnabled: s.proactiveEnabled
       })
     }
   )
