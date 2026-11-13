@@ -8,8 +8,10 @@ import { bindMainWindowToAppMode } from './lib/appMode'
 import { router } from './router'
 import { useCompanionStore } from './stores/companionStore'
 import { useLive2dStore } from './stores/live2dStore'
+import { useMemoryStore } from './stores/memoryStore'
 import { useLive2dSpeechStore } from './stores/live2dSpeechStore'
 import { usePluginStore } from './stores/pluginStore'
+import { useProviderStore } from './stores/providerStore'
 import { useSessionStore } from './stores/sessionStore'
 import { syncPersistedLanguage, useSettingsStore } from './stores/settingsStore'
 import { useUiStore } from './stores/uiStore'
@@ -41,7 +43,9 @@ if (import.meta.env.DEV) {
     live2dSpeechStore: useLive2dSpeechStore,
     companionStore: useCompanionStore,
     settingsStore: useSettingsStore,
-    pluginStore: usePluginStore
+    pluginStore: usePluginStore,
+    providerStore: useProviderStore,
+    memoryStore: useMemoryStore
   }
 }
 

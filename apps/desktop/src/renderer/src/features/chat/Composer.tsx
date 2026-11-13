@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import { promptCommandsOf, usePluginStore, type PromptCommand } from '@renderer/stores/pluginStore'
+import { activeProviderOf, useProviderStore } from '@renderer/stores/providerStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 
@@ -248,8 +249,12 @@ function ModelSelector(): React.JSX.Element {
   const [customValue, setCustomValue] = useState('')
   const [saving, setSaving] = useState(false)
   const wrapRef = useRef<HTMLSpanElement>(null)
+  const providers = useProviderStore((s) => s.providers)
+  const updateProvider = useProviderStore((s) => s.update)
+  const activeProvider = activeProviderOf(providers)
 
-  const currentModel = aiConfig.provider.model
+  // 激活的模型服务优先：选择器显示/写回的是真正生效的那条配置
+  const currentModel = activeProvider?.model ?? aiConfig.provider.model
 
   const openMenu = useCallback(() => {
     setOpen(true)
@@ -286,12 +291,23 @@ function ModelSelector(): React.JSX.Element {
     }
     setSaving(true)
     try {
-      // 配置尚未加载完成时先拉取：aiConfig 此时还是占位初值，直接写回会清空用户配置
-      if (!configLoaded) {
-        await loadAiConfig(userId)
+      // 有激活的模型服务时改服务里的模型；否则写回内置单条配置
+      if (activeProvider) {
+        await updateProvider(activeProvider.id, {
+          name: activeProvider.name,
+          baseUrl: activeProvider.baseUrl,
+          model: trimmed,
+          proxy: activeProvider.proxy,
+          enabled: activeProvider.enabled
+        })
+      } else {
+        // 配置尚未加载完成时先拉取：aiConfig 此时还是占位初值，直接写回会清空用户配置
+        if (!configLoaded) {
+          await loadAiConfig(userId)
+        }
+        const latest = useSettingsStore.getState().aiConfig
+        await saveAiConfig(userId, { ...latest, provider: { ...latest.provider, model: trimmed } })
       }
-      const latest = useSettingsStore.getState().aiConfig
-      await saveAiConfig(userId, { ...latest, provider: { ...latest.provider, model: trimmed } })
       toast.success(t('codex.modelSaved'))
       setOpen(false)
       setCustomMode(false)

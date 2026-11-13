@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { SQLInputValue } from 'node:sqlite'
-import type { Channel, PluginKind, TurnMode } from '@pi-amadeus/shared'
+import type { Channel, MemoryKind, PluginKind, TurnMode } from '@pi-amadeus/shared'
 import type { UserConfig } from '@pi-amadeus/shared'
 import type { BrainConfig } from './config.ts'
 
@@ -40,6 +40,8 @@ export interface TurnMetricInput {
   userId: string
   channel: string
   model: string
+  /** 模型服务名（未使用服务列表时为空） */
+  provider: string
   startedAt: number
   durationMs: number
   toolCalls: number
@@ -47,6 +49,41 @@ export interface TurnMetricInput {
   inputTokens: number
   outputTokens: number
   totalTokens: number
+}
+
+export interface MemoryRow {
+  id: string
+  userId: string
+  content: string
+  kind: MemoryKind
+  pinned: boolean
+  sourceSessionId: string | null
+  sourceMessageId: string | null
+  createdAt: number
+  lastUsedAt: number | null
+}
+
+export interface AffinityEventRow {
+  id: string
+  userId: string
+  delta: number
+  reason: string
+  createdAt: number
+}
+
+export interface ProviderRow {
+  id: string
+  name: string
+  baseUrl: string
+  /** 仅服务端使用：列表接口不回传 */
+  apiKey: string
+  model: string
+  proxy: string
+  enabled: boolean
+  active: boolean
+  priority: number
+  createdAt: number
+  updatedAt: number
 }
 
 export interface TurnMetricRow extends TurnMetricInput {
@@ -108,6 +145,52 @@ export interface Db {
   // turn metrics（数据看板）
   recordTurnMetric(input: TurnMetricInput): Promise<void>
   listTurnMetrics(userId: string, sinceMs: number): Promise<TurnMetricRow[]>
+  // memories（长期记忆，真实提取结果）
+  listMemories(userId: string, query?: string): Promise<MemoryRow[]>
+  countMemories(userId: string): Promise<number>
+  addMemory(input: {
+    userId: string
+    content: string
+    kind: MemoryKind
+    sourceSessionId?: string | null
+    sourceMessageId?: string | null
+  }): Promise<MemoryRow>
+  updateMemory(
+    id: string,
+    patch: { content?: string; kind?: MemoryKind; pinned?: boolean }
+  ): Promise<MemoryRow | null>
+  deleteMemory(id: string): Promise<void>
+  touchMemories(ids: string[]): Promise<void>
+  // affinity（好感度事件）
+  addAffinityEvent(input: { userId: string; delta: number; reason: string }): Promise<void>
+  listAffinityEvents(userId: string, sinceMs?: number): Promise<AffinityEventRow[]>
+  // providers（多模型服务）
+  listProviders(): Promise<ProviderRow[]>
+  getProvider(id: string): Promise<ProviderRow | null>
+  getActiveProvider(): Promise<ProviderRow | null>
+  createProvider(input: {
+    name: string
+    baseUrl: string
+    apiKey: string
+    model: string
+    proxy: string
+    enabled: boolean
+    priority: number
+  }): Promise<ProviderRow>
+  updateProvider(
+    id: string,
+    patch: {
+      name?: string
+      baseUrl?: string
+      apiKey?: string
+      model?: string
+      proxy?: string
+      enabled?: boolean
+      priority?: number
+    }
+  ): Promise<ProviderRow | null>
+  deleteProvider(id: string): Promise<void>
+  setActiveProvider(id: string): Promise<void>
 }
 
 /** 读取一行并收窄为业务类型（node:sqlite 返回宽泛的 SQLOutputValue 记录） */
@@ -220,6 +303,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
             user_id TEXT NOT NULL,
             channel TEXT NOT NULL,
             model TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT '',
             started_at INTEGER NOT NULL,
             duration_ms INTEGER NOT NULL,
             tool_calls INTEGER NOT NULL DEFAULT 0,
@@ -229,7 +313,51 @@ export function createDb(cfg: BrainConfig['db']): Db {
             total_tokens INTEGER NOT NULL DEFAULT 0
           );
           CREATE INDEX IF NOT EXISTS idx_turn_metrics_user ON turn_metrics(user_id, started_at DESC);
+
+          CREATE TABLE IF NOT EXISTS memories (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'fact',
+            pinned INTEGER NOT NULL DEFAULT 0,
+            source_session_id TEXT,
+            source_message_id TEXT,
+            created_at INTEGER NOT NULL,
+            last_used_at INTEGER
+          );
+          CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, created_at DESC);
+
+          CREATE TABLE IF NOT EXISTS affinity_events (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            delta INTEGER NOT NULL,
+            reason TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_affinity_user ON affinity_events(user_id, created_at DESC);
+
+          CREATE TABLE IF NOT EXISTS providers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            api_key TEXT NOT NULL,
+            model TEXT NOT NULL,
+            proxy TEXT NOT NULL DEFAULT '',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            active INTEGER NOT NULL DEFAULT 0,
+            priority INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
         `)
+
+        // 老库升级：turn_metrics 增加 provider 列（SQLite 没有 IF NOT EXISTS 的 ADD COLUMN）
+        const metricColumns = sqlite
+          .prepare('PRAGMA table_info(turn_metrics)')
+          .all() as unknown as { name: string }[]
+        if (!metricColumns.some((column) => column.name === 'provider')) {
+          sqlite.exec("ALTER TABLE turn_metrics ADD COLUMN provider TEXT NOT NULL DEFAULT ''")
+        }
         conn = sqlite
       } catch (error) {
         sqlite?.close()
@@ -566,15 +694,16 @@ export function createDb(cfg: BrainConfig['db']): Db {
       run(
         getConn(),
         `INSERT INTO turn_metrics
-           (id, session_id, user_id, channel, model, started_at, duration_ms, tool_calls, tools,
+           (id, session_id, user_id, channel, model, provider, started_at, duration_ms, tool_calls, tools,
             input_tokens, output_tokens, total_tokens)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           randomUUID(),
           input.sessionId,
           input.userId,
           input.channel,
           input.model,
+          input.provider,
           input.startedAt,
           input.durationMs,
           input.toolCalls,
@@ -593,6 +722,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         user_id: string
         channel: string
         model: string
+        provider: string
         started_at: number
         duration_ms: number
         tool_calls: number
@@ -602,7 +732,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         total_tokens: number
       }>(
         getConn(),
-        `SELECT id, session_id, user_id, channel, model, started_at, duration_ms, tool_calls, tools,
+        `SELECT id, session_id, user_id, channel, model, provider, started_at, duration_ms, tool_calls, tools,
                 input_tokens, output_tokens, total_tokens
          FROM turn_metrics
          WHERE user_id = ? AND started_at >= ?
@@ -615,6 +745,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         userId: row.user_id,
         channel: row.channel,
         model: row.model,
+        provider: row.provider ?? '',
         startedAt: Number(row.started_at),
         durationMs: Number(row.duration_ms),
         toolCalls: Number(row.tool_calls),
@@ -623,10 +754,297 @@ export function createDb(cfg: BrainConfig['db']): Db {
         outputTokens: Number(row.output_tokens),
         totalTokens: Number(row.total_tokens)
       }))
+    },
+
+    // ---------- memories ----------
+
+    async listMemories(userId, query) {
+      const keyword = (query ?? '').trim()
+      const rows = keyword
+        ? all<MemoryDbRow>(
+            getConn(),
+            `SELECT ${MEMORY_COLUMNS} FROM memories
+             WHERE user_id = ? AND content LIKE ? ESCAPE '\\'
+             ORDER BY pinned DESC, created_at DESC LIMIT 500`,
+            [userId, `%${escapeLike(keyword)}%`]
+          )
+        : all<MemoryDbRow>(
+            getConn(),
+            `SELECT ${MEMORY_COLUMNS} FROM memories
+             WHERE user_id = ?
+             ORDER BY pinned DESC, created_at DESC LIMIT 500`,
+            [userId]
+          )
+      return rows.map(toMemoryRow)
+    },
+
+    async countMemories(userId) {
+      const row = first<{ n: number }>(
+        getConn(),
+        'SELECT COUNT(*) AS n FROM memories WHERE user_id = ?',
+        [userId]
+      )
+      return Number(row?.n ?? 0)
+    },
+
+    async addMemory(input) {
+      const { randomUUID } = await import('node:crypto')
+      const id = randomUUID()
+      run(
+        getConn(),
+        `INSERT INTO memories
+           (id, user_id, content, kind, pinned, source_session_id, source_message_id, created_at, last_used_at)
+         VALUES (?, ?, ?, ?, 0, ?, ?, ?, NULL)`,
+        [id, input.userId, input.content, input.kind, input.sourceSessionId ?? null, input.sourceMessageId ?? null, Date.now()]
+      )
+      const row = first<MemoryDbRow>(
+        getConn(),
+        `SELECT ${MEMORY_COLUMNS} FROM memories WHERE id = ?`,
+        [id]
+      )
+      return toMemoryRow(row!)
+    },
+
+    async updateMemory(id, patch) {
+      const sets: string[] = []
+      const params: SQLInputValue[] = []
+      if (patch.content !== undefined) {
+        sets.push('content = ?')
+        params.push(patch.content)
+      }
+      if (patch.kind !== undefined) {
+        sets.push('kind = ?')
+        params.push(patch.kind)
+      }
+      if (patch.pinned !== undefined) {
+        sets.push('pinned = ?')
+        params.push(patch.pinned ? 1 : 0)
+      }
+      if (sets.length > 0) {
+        params.push(id)
+        run(getConn(), `UPDATE memories SET ${sets.join(', ')} WHERE id = ?`, params)
+      }
+      const row = first<MemoryDbRow>(
+        getConn(),
+        `SELECT ${MEMORY_COLUMNS} FROM memories WHERE id = ?`,
+        [id]
+      )
+      return row ? toMemoryRow(row) : null
+    },
+
+    async deleteMemory(id) {
+      run(getConn(), 'DELETE FROM memories WHERE id = ?', [id])
+    },
+
+    async touchMemories(ids) {
+      if (ids.length === 0) return
+      run(
+        getConn(),
+        `UPDATE memories SET last_used_at = ? WHERE id IN (${ids.map(() => '?').join(', ')})`,
+        [Date.now(), ...ids]
+      )
+    },
+
+    // ---------- affinity ----------
+
+    async addAffinityEvent(input) {
+      const { randomUUID } = await import('node:crypto')
+      run(
+        getConn(),
+        'INSERT INTO affinity_events (id, user_id, delta, reason, created_at) VALUES (?, ?, ?, ?, ?)',
+        [randomUUID(), input.userId, input.delta, input.reason, Date.now()]
+      )
+    },
+
+    async listAffinityEvents(userId, sinceMs = 0) {
+      const rows = all<{
+        id: string
+        user_id: string
+        delta: number
+        reason: string
+        created_at: number
+      }>(
+        getConn(),
+        `SELECT id, user_id, delta, reason, created_at FROM affinity_events
+         WHERE user_id = ? AND created_at >= ?
+         ORDER BY created_at DESC LIMIT 2000`,
+        [userId, sinceMs]
+      )
+      return rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        delta: Number(row.delta),
+        reason: row.reason,
+        createdAt: Number(row.created_at)
+      }))
+    },
+
+    // ---------- providers ----------
+
+    async listProviders() {
+      const rows = all<ProviderDbRow>(
+        getConn(),
+        `SELECT ${PROVIDER_COLUMNS} FROM providers
+         ORDER BY active DESC, priority ASC, created_at ASC`
+      )
+      return rows.map(toProviderRow)
+    },
+
+    async getProvider(id) {
+      const row = first<ProviderDbRow>(
+        getConn(),
+        `SELECT ${PROVIDER_COLUMNS} FROM providers WHERE id = ?`,
+        [id]
+      )
+      return row ? toProviderRow(row) : null
+    },
+
+    async getActiveProvider() {
+      const row = first<ProviderDbRow>(
+        getConn(),
+        `SELECT ${PROVIDER_COLUMNS} FROM providers WHERE active = 1 AND enabled = 1 LIMIT 1`
+      )
+      return row ? toProviderRow(row) : null
+    },
+
+    async createProvider(input) {
+      const { randomUUID } = await import('node:crypto')
+      const id = randomUUID()
+      const now = Date.now()
+      run(
+        getConn(),
+        `INSERT INTO providers
+           (id, name, base_url, api_key, model, proxy, enabled, active, priority, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+        [
+          id,
+          input.name,
+          input.baseUrl,
+          input.apiKey,
+          input.model,
+          input.proxy,
+          input.enabled ? 1 : 0,
+          input.priority,
+          now,
+          now
+        ]
+      )
+      return (await db.getProvider(id))!
+    },
+
+    async updateProvider(id, patch) {
+      const sets: string[] = []
+      const params: SQLInputValue[] = []
+      const map: [keyof typeof patch, string][] = [
+        ['name', 'name'],
+        ['baseUrl', 'base_url'],
+        ['apiKey', 'api_key'],
+        ['model', 'model'],
+        ['proxy', 'proxy'],
+        ['priority', 'priority']
+      ]
+      for (const [key, column] of map) {
+        const value = patch[key]
+        if (typeof value !== 'string' && typeof value !== 'number') continue
+        sets.push(`${column} = ?`)
+        params.push(value)
+      }
+      if (patch.enabled !== undefined) {
+        sets.push('enabled = ?')
+        params.push(patch.enabled ? 1 : 0)
+      }
+      sets.push('updated_at = ?')
+      params.push(Date.now())
+      params.push(id)
+      run(getConn(), `UPDATE providers SET ${sets.join(', ')} WHERE id = ?`, params)
+      return db.getProvider(id)
+    },
+
+    async deleteProvider(id) {
+      run(getConn(), 'DELETE FROM providers WHERE id = ?', [id])
+    },
+
+    async setActiveProvider(id) {
+      const sqlite = getConn()
+      sqlite.exec('BEGIN')
+      try {
+        run(sqlite, 'UPDATE providers SET active = 0')
+        run(sqlite, 'UPDATE providers SET active = 1, updated_at = ? WHERE id = ?', [Date.now(), id])
+        sqlite.exec('COMMIT')
+      } catch (error) {
+        sqlite.exec('ROLLBACK')
+        throw error
+      }
     }
   }
 
   return db
+}
+
+const MEMORY_COLUMNS =
+  'id, user_id, content, kind, pinned, source_session_id, source_message_id, created_at, last_used_at'
+const PROVIDER_COLUMNS =
+  'id, name, base_url, api_key, model, proxy, enabled, active, priority, created_at, updated_at'
+
+interface MemoryDbRow {
+  id: string
+  user_id: string
+  content: string
+  kind: MemoryKind
+  pinned: number
+  source_session_id: string | null
+  source_message_id: string | null
+  created_at: number
+  last_used_at: number | null
+}
+
+interface ProviderDbRow {
+  id: string
+  name: string
+  base_url: string
+  api_key: string
+  model: string
+  proxy: string
+  enabled: number
+  active: number
+  priority: number
+  created_at: number
+  updated_at: number
+}
+
+function toMemoryRow(row: MemoryDbRow): MemoryRow {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    content: row.content,
+    kind: row.kind,
+    pinned: row.pinned === 1,
+    sourceSessionId: row.source_session_id,
+    sourceMessageId: row.source_message_id,
+    createdAt: Number(row.created_at),
+    lastUsedAt: row.last_used_at === null ? null : Number(row.last_used_at)
+  }
+}
+
+function toProviderRow(row: ProviderDbRow): ProviderRow {
+  return {
+    id: row.id,
+    name: row.name,
+    baseUrl: row.base_url,
+    apiKey: row.api_key,
+    model: row.model,
+    proxy: row.proxy,
+    enabled: row.enabled === 1,
+    active: row.active === 1,
+    priority: Number(row.priority),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at)
+  }
+}
+
+/** LIKE 查询里的通配符转义（用户搜索词里的 % 和 _ 按字面量匹配） */
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`)
 }
 
 /** plugins.config 是用户装的插件配置；解析失败按空对象处理并告警（不覆盖、不回写） */

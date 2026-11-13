@@ -3,6 +3,7 @@ import type { Channel, SseEvent, TurnMode, UserConfig } from '@pi-amadeus/shared
 import type { BrainConfig } from './config.ts'
 import type { Db } from './db.ts'
 import { streamText, supportsVision, toContextMessages, type LlmTarget } from './llm.ts'
+import { memorySystemPrompt, onTurnFinished, recallMemories, summarizeAffinity } from './memory/index.ts'
 import { buildSystemPrompt } from './persona.ts'
 import { generateTitle } from './title.ts'
 import { AsyncQueue, BilingualParser } from './bilingual.ts'
@@ -22,8 +23,23 @@ export function framesOf(userId: string): string[] {
   return frameStore.get(userId) ?? []
 }
 
-/** 用户 LLM 目标：用户配置优先，缺失字段回落 .env 默认 */
+/**
+ * 用户 LLM 目标：激活的模型服务优先；没有服务（或服务没配密钥）时回落到
+ * 设置页的单条内置配置，再回落到 .env 默认。
+ */
 export async function resolveTarget(cfg: BrainConfig, db: Db, userId: string): Promise<LlmTarget> {
+  const active = await db.getActiveProvider()
+  if (active && active.apiKey.trim()) {
+    return {
+      baseUrl: active.baseUrl,
+      apiKey: active.apiKey,
+      model: active.model,
+      vision: supportsVision(active.model),
+      proxy: active.proxy,
+      providerId: active.id,
+      providerName: active.name
+    }
+  }
   const stored = await db.getUserConfig(userId)
   const provider = stored?.provider
   const model = provider?.model || cfg.llm.model
@@ -32,7 +48,8 @@ export async function resolveTarget(cfg: BrainConfig, db: Db, userId: string): P
     apiKey: provider?.apiKey || cfg.llm.apiKey,
     model,
     vision: supportsVision(model),
-    proxy: provider?.proxy || ''
+    proxy: provider?.proxy || '',
+    providerName: ''
   }
 }
 
@@ -82,9 +99,12 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
 
   // 先读历史再落库本次用户消息：避免当前消息在 LLM 上下文里出现两次
   // （一次纯文本历史、一次带视觉帧）
-  const [storedConfig, allHistoryRows] = await Promise.all([
+  // 记忆召回与好感度摘要都来自真实数据；没有记录时返回空，不会凭空生成
+  const [storedConfig, allHistoryRows, recalledMemories, affinity] = await Promise.all([
     db.getUserConfig(userId),
-    db.listMessages(sessionId, 40)
+    db.listMessages(sessionId, 40),
+    recallMemories(db, userId, content),
+    summarizeAffinity(db, userId)
   ])
 
   // 重新生成：旧助手回答既不进上下文、也不删——等新回答成功落库时再替换，
@@ -104,7 +124,8 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   }
 
   const target = await resolveTarget(cfg, db, userId)
-  const systemPrompt = buildSystemPrompt(storedConfig?.systemPrompt, mode)
+  const systemPrompt =
+    buildSystemPrompt(storedConfig?.systemPrompt, mode) + memorySystemPrompt(recalledMemories, affinity)
   const messages = toContextMessages(
     historyRows.map((m) => ({ role: m.role, content: m.content, createdAt: m.createdAt }))
   )
@@ -152,6 +173,8 @@ export async function finishTurn(
     userText: string
     /** 重新生成：新回答落库前替换掉的旧助手消息 id（生成失败时旧消息保留） */
     replaceMessageId?: string
+    /** 本回合工具调用次数（好感度事件用） */
+    toolCalls?: number
   }
 ): Promise<string> {
   const assistantId = randomUUID()
@@ -177,6 +200,20 @@ export async function finishTurn(
       })
     }
   }
+
+  // 记忆提取与好感度：后台执行，绝不阻塞或影响已完成的回合
+  void onTurnFinished({
+    db,
+    target: input.target,
+    userId: input.userId,
+    sessionId: input.sessionId,
+    messageId: assistantId,
+    userText: input.userText,
+    assistantText: input.content,
+    toolCalls: input.toolCalls ?? 0
+  }).catch((error) => {
+    console.warn('[memory] 回合记忆/好感更新失败：', error instanceof Error ? error.message : error)
+  })
   return assistantId
 }
 
@@ -197,7 +234,8 @@ export interface TtsConfig {
 export async function* runVoiceTurn(
   ctx: TurnContext,
   signal: AbortSignal,
-  ttsConfig: TtsConfig
+  ttsConfig: TtsConfig,
+  onUsage?: (usage: { input: number; output: number; total: number }) => void
 ): AsyncGenerator<SseEvent, { cn: string; jp: string }> {
   const { target, systemPrompt, messages } = await prepareTurn(ctx)
 
@@ -226,7 +264,7 @@ export async function* runVoiceTurn(
   void worker
 
   try {
-    for await (const delta of streamText(target, { systemPrompt, messages }, { signal })) {
+    for await (const delta of streamText(target, { systemPrompt, messages }, { signal }, onUsage)) {
       const out = parser.feed(delta)
       // 按行内出现顺序发事件：动作不会先于它从属的文本到达，多情绪都发（后者覆盖）
       for (const ev of out.events) {

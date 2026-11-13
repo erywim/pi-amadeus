@@ -70,6 +70,10 @@ export default function DashboardPage(): React.JSX.Element {
     label: item.model,
     value: item.tokens
   }))
+  const providerUsage = (stats?.providers ?? []).map((item) => ({
+    label: item.name,
+    value: item.turns
+  }))
   const pluginKinds = stats
     ? [
         { label: t('plugins.kind.skill'), value: stats.plugins.byKind.skill },
@@ -102,7 +106,7 @@ export default function DashboardPage(): React.JSX.Element {
           </p>
         ) : (
           <>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <StatTile testId="sessions" label={t('dashboard.kpi.sessions')} value={numberFormat.format(totals!.sessions)} />
               <StatTile testId="messages" label={t('dashboard.kpi.messages')} value={numberFormat.format(totals!.messages)} />
               <StatTile testId="turns" label={t('dashboard.kpi.turns')} value={numberFormat.format(totals!.turns)} />
@@ -115,6 +119,17 @@ export default function DashboardPage(): React.JSX.Element {
                   input: formatTokens(totals!.inputTokens),
                   output: formatTokens(totals!.outputTokens)
                 })}
+              />
+              <StatTile
+                testId="memories"
+                label={t('dashboard.kpi.memories')}
+                value={numberFormat.format(stats.memories)}
+              />
+              <StatTile
+                testId="affinity"
+                label={t('dashboard.kpi.affinity')}
+                value={numberFormat.format(stats.affinity.score)}
+                hint={t(`memory.stage.${stats.affinity.stageKey}`)}
               />
               <StatTile
                 testId="plugins"
@@ -142,6 +157,9 @@ export default function DashboardPage(): React.JSX.Element {
               </Card>
               <Card title={t('dashboard.chart.plugins')}>
                 <HBarList items={pluginKinds} emptyText={t('dashboard.chart.noPlugins')} />
+              </Card>
+              <Card title={t('dashboard.chart.providers')}>
+                <HBarList items={providerUsage} emptyText={t('dashboard.chart.noProviders')} />
               </Card>
             </div>
 

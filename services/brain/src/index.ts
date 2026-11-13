@@ -9,7 +9,9 @@ import { chatRoutes } from './routes/chat.ts'
 import { configRoutes } from './routes/config.ts'
 import { feishuRoutes } from './routes/feishu.ts'
 import { frameRoutes } from './routes/frames.ts'
+import { memoryRoutes } from './routes/memories.ts'
 import { pluginRoutes } from './routes/plugins.ts'
+import { providerRoutes } from './routes/providers.ts'
 import { sessionRoutes } from './routes/sessions.ts'
 import { skillRoutes } from './routes/skills.ts'
 import { statsRoutes } from './routes/stats.ts'
@@ -43,6 +45,8 @@ app.route('/api', sttRoutes(cfg))
 app.route('/api', frameRoutes())
 app.route('/api', skillRoutes(cfg))
 app.route('/api', pluginRoutes(cfg, db))
+app.route('/api', providerRoutes(db))
+app.route('/api', memoryRoutes(db))
 app.route('/api', statsRoutes(db))
 app.route('/api', toolConfirmRoutes())
 if (cfg.feishu.enabled) {

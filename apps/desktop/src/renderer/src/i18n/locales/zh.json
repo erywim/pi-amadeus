@@ -10,7 +10,8 @@
     "plugins": "插件",
     "dashboard": "数据",
     "settings": "设置",
-    "modeSwitch": "对话模式"
+    "modeSwitch": "对话模式",
+    "memory": "记忆"
   },
   "topbar": {
     "modelChip": "当前 LLM 模型（文本模式输入区可切换）",
@@ -90,7 +91,9 @@
       "tokens": "Token",
       "tokensHint": "输入 {{input}} · 输出 {{output}}",
       "plugins": "插件",
-      "pluginsHint": "已启用 {{enabled}}"
+      "pluginsHint": "已启用 {{enabled}}",
+      "memories": "记忆",
+      "affinity": "好感度"
     },
     "chart": {
       "activity": "近 14 天活跃",
@@ -103,7 +106,9 @@
       "models": "模型用量",
       "noModels": "还没有模型用量",
       "plugins": "插件构成",
-      "noPlugins": "还没有安装插件"
+      "noPlugins": "还没有安装插件",
+      "providers": "模型服务用量",
+      "noProviders": "还没有服务回合记录"
     },
     "footnote": "指标从本版本开始记录；更早的历史回合没有 token 数据，不会回溯补造。"
   },
@@ -264,7 +269,8 @@
       "keySaved": "已保存密钥（留空不修改）",
       "loginRequired": "请先在陪伴模式登录后配置",
       "toolsEnable": "工具调用",
-      "toolsDesc": "允许助手使用时间/计算器/天气/搜索/终端命令等工具（危险命令会被安全策略拦截）"
+      "toolsDesc": "允许助手使用时间/计算器/天气/搜索/终端命令等工具（危险命令会被安全策略拦截）",
+      "fallbackHint": "以下内置配置仅在没有任何激活的模型服务时生效。"
     },
     "feishu": {
       "title": "飞书",
@@ -301,6 +307,33 @@
       "defaultMode": "启动默认模式",
       "defaultMute": "陪伴模式默认静音",
       "defaultMuteDesc": "开启后进入陪伴模式时语音播报静音（HUD 可随时取消）"
+    },
+    "providers": {
+      "title": "模型服务",
+      "desc": "添加多个 OpenAI 兼容服务并随时切换；激活的服务优先于下面的内置配置。密钥只保存在本机大脑服务里。",
+      "add": "添加服务",
+      "empty": "还没有模型服务。未添加时使用下面的内置配置。",
+      "active": "使用中",
+      "activate": "设为当前",
+      "activated": "已切换",
+      "disabled": "已停用",
+      "noKey": "未配置密钥",
+      "test": "测试",
+      "testOk": "连通 · {{latency}}ms · {{reply}}",
+      "testFailed": "连接失败",
+      "saved": "已保存",
+      "deleted": "已删除",
+      "editTitle": "编辑模型服务",
+      "addTitle": "添加模型服务",
+      "dialogDesc": "填写 OpenAI 兼容端点。测试会用真实的补全请求确认连通。",
+      "name": "名称",
+      "baseUrl": "Base URL",
+      "apiKey": "API Key",
+      "keyKeep": "留空保持不变",
+      "model": "模型",
+      "proxy": "代理（可选）",
+      "enabled": "启用",
+      "confirmDelete": "确认删除"
     }
   },
   "live2d": {
@@ -384,6 +417,52 @@
       "giggle": "偷笑",
       "crossarms": "抱臂",
       "uncross": "放下手"
+    }
+  },
+  "memory": {
+    "title": "记忆与关系",
+    "subtitle": "Amadeus 从真实对话里记下重要的事；好感度由真实互动累计。没有发生过的互动不会凭空出现。",
+    "loginRequired": "登录后查看记忆与关系",
+    "search": "搜索记忆",
+    "count": "共 {{count}} 条",
+    "addPlaceholder": "手动记一条：例如「喜欢在深夜写代码」",
+    "add": "添加",
+    "added": "已添加",
+    "updated": "已更新",
+    "deleted": "已删除",
+    "edit": "编辑",
+    "delete": "删除",
+    "confirmDelete": "再点一次删除",
+    "pin": "置顶（每回合都会带上）",
+    "unpin": "取消置顶",
+    "pinned": "置顶",
+    "lastUsed": "上次使用 {{date}}",
+    "empty": "还没有记忆。聊过之后，我会自动记住重要的事；也可以在上方手动添加。",
+    "emptySearch": "没有匹配的记忆",
+    "kind": {
+      "fact": "事实",
+      "preference": "偏好",
+      "event": "事件",
+      "relationship": "关系"
+    },
+    "stage": {
+      "stranger": "陌生",
+      "acquaintance": "认识",
+      "familiar": "熟悉",
+      "close": "亲近",
+      "fond": "喜欢",
+      "beloved": "挚爱"
+    },
+    "sidebar": "关系 · {{stage}} {{score}}",
+    "affinity": {
+      "title": "好感度",
+      "points": "点",
+      "next": "距离下一阶段还差 {{next}} 点",
+      "max": "已经是最高阶段",
+      "trend": "最近 14 天累计",
+      "events": "最近互动",
+      "empty": "还没有互动记录",
+      "footnote": "好感度只来自真实发生的回合与记忆：每轮 +1 起，认真倾诉、深入交流、一起完成任务会更多。"
     }
   }
 }

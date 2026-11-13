@@ -12,6 +12,7 @@ import {
 } from '@renderer/lib/api'
 import { useLive2dStore } from './live2dStore'
 import { useLive2dSpeechStore } from './live2dSpeechStore'
+import { useMemoryStore } from './memoryStore'
 import { useUiStore } from './uiStore'
 
 /**
@@ -226,6 +227,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         abortTurn = null
         // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
         void get().refreshSessions()
+        // 回合结束后好感度会变：刷新侧栏的关系读数（服务端按真实事件累计）
+        const { userId } = get()
+        if (userId) void useMemoryStore.getState().refreshAffinity(userId)
         return
       }
       case 'error':

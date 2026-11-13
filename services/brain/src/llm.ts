@@ -18,6 +18,9 @@ export interface LlmTarget {
   vision: boolean
   /** LLM 请求的本地 HTTP 代理（空 = 直连） */
   proxy?: string
+  /** 来源模型服务（多服务列表激活时）；回落内置配置时为空 */
+  providerId?: string
+  providerName?: string
 }
 
 export interface StreamOptions {
@@ -97,11 +100,12 @@ export function proxyFetch(proxy: string): typeof globalThis.fetch {
   return f as unknown as typeof globalThis.fetch
 }
 
-/** 流式补全：只产出文本增量（text_delta 事件） */
+/** 流式补全：产出文本增量；onUsage 在 done 事件时给出本次调用的用量 */
 export async function* streamText(
   target: LlmTarget,
   context: Context,
-  options?: StreamOptions
+  options?: StreamOptions,
+  onUsage?: (usage: { input: number; output: number; total: number }) => void
 ): AsyncGenerator<string> {
   const { models, model } = getLlm(target)
   const stream = models.stream(model, context, {
@@ -113,6 +117,13 @@ export async function* streamText(
   })
   for await (const event of stream) {
     if (event.type === 'text_delta') yield event.delta
+    else if (event.type === 'done' && onUsage) {
+      onUsage({
+        input: event.message.usage.input ?? 0,
+        output: event.message.usage.output ?? 0,
+        total: event.message.usage.totalTokens ?? 0
+      })
+    }
   }
 }
 

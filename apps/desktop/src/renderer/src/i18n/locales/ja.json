@@ -10,7 +10,8 @@
     "plugins": "プラグイン",
     "dashboard": "データ",
     "settings": "設定",
-    "modeSwitch": "会話モード"
+    "modeSwitch": "会話モード",
+    "memory": "記憶"
   },
   "topbar": {
     "modelChip": "現在の LLM モデル（テキストモードの入力欄で切替可能）",
@@ -90,7 +91,9 @@
       "tokens": "Token",
       "tokensHint": "入力 {{input}} · 出力 {{output}}",
       "plugins": "プラグイン",
-      "pluginsHint": "有効 {{enabled}}"
+      "pluginsHint": "有効 {{enabled}}",
+      "memories": "記憶",
+      "affinity": "好感度"
     },
     "chart": {
       "activity": "直近 14 日のアクティビティ",
@@ -103,7 +106,9 @@
       "models": "モデル使用量",
       "noModels": "モデル使用量はまだありません",
       "plugins": "プラグイン構成",
-      "noPlugins": "プラグインはまだありません"
+      "noPlugins": "プラグインはまだありません",
+      "providers": "モデルサービス使用量",
+      "noProviders": "サービスのターン記録はまだありません"
     },
     "footnote": "指標はこのバージョンから記録されます。以前のターンには token データがなく、遡って作成しません。"
   },
@@ -264,7 +269,8 @@
       "keySaved": "キー保存済み（空欄のまま変更しない）",
       "loginRequired": "先にコンパニオンモードでログインしてください",
       "toolsEnable": "ツール呼び出し",
-      "toolsDesc": "アシスタントに時刻・計算機・天気・検索・ターミナルコマンドなどのツール使用を許可（危険なコマンドは安全ポリシーでブロック）"
+      "toolsDesc": "アシスタントに時刻・計算機・天気・検索・ターミナルコマンドなどのツール使用を許可（危険なコマンドは安全ポリシーでブロック）",
+      "fallbackHint": "以下の内蔵設定は、有効なモデルサービスがない場合にのみ使われます。"
     },
     "feishu": {
       "title": "飛書",
@@ -301,6 +307,33 @@
       "defaultMode": "起動時モード",
       "defaultMute": "コンパニオンモードを既定でミュート",
       "defaultMuteDesc": "有効にすると、コンパニオンモードの音声読み上げがミュートで始まります（HUD でいつでも解除）"
+    },
+    "providers": {
+      "title": "モデルサービス",
+      "desc": "OpenAI 互換サービスを複数追加して切り替えられます。有効なサービスが下の内蔵設定より優先されます。キーはローカルのブレインサービスにのみ保存されます。",
+      "add": "サービスを追加",
+      "empty": "モデルサービスがありません。未追加の場合は下の内蔵設定を使います。",
+      "active": "使用中",
+      "activate": "現在に設定",
+      "activated": "切り替えました",
+      "disabled": "無効",
+      "noKey": "キー未設定",
+      "test": "テスト",
+      "testOk": "接続 OK · {{latency}}ms · {{reply}}",
+      "testFailed": "接続に失敗しました",
+      "saved": "保存しました",
+      "deleted": "削除しました",
+      "editTitle": "モデルサービスを編集",
+      "addTitle": "モデルサービスを追加",
+      "dialogDesc": "OpenAI 互換エンドポイントを入力してください。テストは実際の補完リクエストで接続を確認します。",
+      "name": "名前",
+      "baseUrl": "Base URL",
+      "apiKey": "API キー",
+      "keyKeep": "空欄なら変更しません",
+      "model": "モデル",
+      "proxy": "プロキシ（任意）",
+      "enabled": "有効",
+      "confirmDelete": "削除を確認"
     }
   },
   "live2d": {
@@ -384,6 +417,52 @@
       "giggle": "くすくす",
       "crossarms": "腕を組む",
       "uncross": "腕をほどく"
+    }
+  },
+  "memory": {
+    "title": "記憶と関係",
+    "subtitle": "Amadeus は実際の会話から大切なことを覚えます。好感度は実際のやり取りの積み重ねです。起きていないことは現れません。",
+    "loginRequired": "ログイン後に記憶と関係を表示します",
+    "search": "記憶を検索",
+    "count": "全 {{count}} 件",
+    "addPlaceholder": "手動で記録：例「夜遅くにコードを書くのが好き」",
+    "add": "追加",
+    "added": "追加しました",
+    "updated": "更新しました",
+    "deleted": "削除しました",
+    "edit": "編集",
+    "delete": "削除",
+    "confirmDelete": "もう一度押すと削除",
+    "pin": "ピン留め（毎ターン含める）",
+    "unpin": "ピン留めを解除",
+    "pinned": "ピン留め",
+    "lastUsed": "最終使用 {{date}}",
+    "empty": "まだ記憶がありません。会話すると大切なことを自動で覚えます。上の欄から手動で追加もできます。",
+    "emptySearch": "一致する記憶がありません",
+    "kind": {
+      "fact": "事実",
+      "preference": "好み",
+      "event": "出来事",
+      "relationship": "関係"
+    },
+    "stage": {
+      "stranger": "他人",
+      "acquaintance": "知り合い",
+      "familiar": "顔なじみ",
+      "close": "親しい",
+      "fond": "好き",
+      "beloved": "最愛"
+    },
+    "sidebar": "関係 · {{stage}} {{score}}",
+    "affinity": {
+      "title": "好感度",
+      "points": "ポイント",
+      "next": "次の段階まであと {{next}} ポイント",
+      "max": "最高段階です",
+      "trend": "直近 14 日の累計",
+      "events": "最近のやり取り",
+      "empty": "まだやり取りの記録がありません",
+      "footnote": "好感度は実際のターンと記憶だけから加算されます。1 ターン +1 から始まり、しっかり話す・深く交流する・一緒にタスクをこなすと増えます。"
     }
   }
 }

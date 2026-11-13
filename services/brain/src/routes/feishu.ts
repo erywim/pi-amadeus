@@ -3,6 +3,7 @@ import { runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
 import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import { finishTurn } from '../conversation.ts'
+import { recordTurnMetric } from '../metrics.ts'
 
 /**
  * 飞书渠道：与桌面共享同一对话服务与数据库（channel='feishu'）。
@@ -81,6 +82,7 @@ export function feishuRoutes(cfg: BrainConfig, db: Db): Hono {
     const sessionId = `feishu-${chatId}`
 
     // 工具版回合（渠道 feishu：注册表不含 bash，无确认通道；工具事件仅日志）
+    const startedAt = Date.now()
     const run = runAgentTurn({
       cfg,
       db,
@@ -105,8 +107,9 @@ export function feishuRoutes(cfg: BrainConfig, db: Db): Hono {
       }
       next = await run.next()
     }
-    full = next.value.full || full
-    target = next.value.target
+    const result = next.value
+    full = result.full || full
+    target = result.target
     if (!full || !target) return '……（大脑空空如也，哼）'
 
     await finishTurn(db, {
@@ -117,7 +120,20 @@ export function feishuRoutes(cfg: BrainConfig, db: Db): Hono {
       content: full,
       ttsText: null,
       target,
-      userText: text
+      userText: text,
+      toolCalls: result.toolCalls
+    })
+    // 飞书回合同样计入真实看板：渠道维度会显示 feishu
+    await recordTurnMetric(db, {
+      sessionId,
+      userId: user.id,
+      channel: 'feishu',
+      startedAt,
+      model: result.target.model,
+      providerName: result.target.providerName,
+      usage: result.usage,
+      toolCalls: result.toolCalls,
+      toolNames: result.toolNames
     })
     return full
   }

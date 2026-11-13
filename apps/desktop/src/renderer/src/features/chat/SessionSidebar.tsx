@@ -7,6 +7,7 @@ import { DAY_GROUP_ORDER, dayGroupOf, type Session } from '@pi-amadeus/shared'
 import { Badge } from '@renderer/components/ui/badge'
 import { cn } from '@renderer/lib/utils'
 import { useDivergenceStore } from '@renderer/stores/divergenceStore'
+import { useMemoryStore } from '@renderer/stores/memoryStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
@@ -101,6 +102,7 @@ export function SessionSidebar(): React.JSX.Element {
   const streamSessionId = useSessionStore((s) => s.stream.sessionId)
   const username = useUiStore((s) => s.username)
   const worldLine = useDivergenceStore((s) => s.value)
+  const affinity = useMemoryStore((s) => s.affinity)
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -221,6 +223,14 @@ export function SessionSidebar(): React.JSX.Element {
             {t('codex.currentWorldLine')}{' '}
             <span className="font-digit text-[11px] tracking-[0.05em] text-ink-2">{worldLine}</span>
           </span>
+          {affinity && affinity.events.length > 0 && (
+            <span data-testid="sidebar-affinity" className="text-[10.5px] text-muted-foreground">
+              {t('memory.sidebar', {
+                stage: t(`memory.stage.${affinity.stageKey}`),
+                score: affinity.score
+              })}
+            </span>
+          )}
         </span>
       </div>
     </aside>

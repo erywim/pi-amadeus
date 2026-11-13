@@ -10,7 +10,8 @@
     "plugins": "Plugins",
     "dashboard": "Insights",
     "settings": "Settings",
-    "modeSwitch": "Chat mode"
+    "modeSwitch": "Chat mode",
+    "memory": "Memory"
   },
   "topbar": {
     "modelChip": "Current LLM (switchable in Text mode)",
@@ -90,7 +91,9 @@
       "tokens": "Tokens",
       "tokensHint": "Input {{input}} · Output {{output}}",
       "plugins": "Plugins",
-      "pluginsHint": "{{enabled}} enabled"
+      "pluginsHint": "{{enabled}} enabled",
+      "memories": "Memories",
+      "affinity": "Affinity"
     },
     "chart": {
       "activity": "Last 14 days",
@@ -103,7 +106,9 @@
       "models": "Model usage",
       "noModels": "No model usage yet",
       "plugins": "Plugin mix",
-      "noPlugins": "No plugins installed yet"
+      "noPlugins": "No plugins installed yet",
+      "providers": "Model service usage",
+      "noProviders": "No service turns recorded yet"
     },
     "footnote": "Metrics are recorded from this version onward; earlier turns have no token data and are not backfilled."
   },
@@ -264,7 +269,8 @@
       "keySaved": "Key saved (leave blank to keep)",
       "loginRequired": "Log in on the Companion page first",
       "toolsEnable": "Tool Calling",
-      "toolsDesc": "Let the assistant use tools: time, calculator, weather, web search, terminal commands (dangerous commands are blocked by the safety policy)"
+      "toolsDesc": "Let the assistant use tools: time, calculator, weather, web search, terminal commands (dangerous commands are blocked by the safety policy)",
+      "fallbackHint": "The built-in config below is used only when no model service is active."
     },
     "feishu": {
       "title": "Feishu",
@@ -301,6 +307,33 @@
       "defaultMode": "Startup Mode",
       "defaultMute": "Mute by default in Companion mode",
       "defaultMuteDesc": "When on, voice playback starts muted in Companion mode (toggle anytime in the HUD)"
+    },
+    "providers": {
+      "title": "Model services",
+      "desc": "Add multiple OpenAI-compatible services and switch anytime; the active service takes precedence over the built-in config below. Keys stay in the local brain service.",
+      "add": "Add service",
+      "empty": "No model services yet. The built-in config below is used until you add one.",
+      "active": "Active",
+      "activate": "Set active",
+      "activated": "Switched",
+      "disabled": "Disabled",
+      "noKey": "No key",
+      "test": "Test",
+      "testOk": "Connected · {{latency}}ms · {{reply}}",
+      "testFailed": "Connection failed",
+      "saved": "Saved",
+      "deleted": "Deleted",
+      "editTitle": "Edit model service",
+      "addTitle": "Add model service",
+      "dialogDesc": "Enter an OpenAI-compatible endpoint. Testing sends a real completion request.",
+      "name": "Name",
+      "baseUrl": "Base URL",
+      "apiKey": "API key",
+      "keyKeep": "Leave blank to keep",
+      "model": "Model",
+      "proxy": "Proxy (optional)",
+      "enabled": "Enabled",
+      "confirmDelete": "Confirm delete"
     }
   },
   "live2d": {
@@ -384,6 +417,52 @@
       "giggle": "Giggle",
       "crossarms": "Cross arms",
       "uncross": "Uncross arms"
+    }
+  },
+  "memory": {
+    "title": "Memory & Relationship",
+    "subtitle": "Amadeus remembers what matters from real conversations; affinity grows from real interactions. Nothing that did not happen shows up here.",
+    "loginRequired": "Sign in to see memory and relationship",
+    "search": "Search memories",
+    "count": "{{count}} total",
+    "addPlaceholder": "Add one manually — e.g. \"likes coding late at night\"",
+    "add": "Add",
+    "added": "Added",
+    "updated": "Updated",
+    "deleted": "Deleted",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirmDelete": "Click again to delete",
+    "pin": "Pin (always included)",
+    "unpin": "Unpin",
+    "pinned": "Pinned",
+    "lastUsed": "Last used {{date}}",
+    "empty": "No memories yet. After you talk, important things are remembered automatically — or add one above.",
+    "emptySearch": "No matching memories",
+    "kind": {
+      "fact": "Fact",
+      "preference": "Preference",
+      "event": "Event",
+      "relationship": "Relationship"
+    },
+    "stage": {
+      "stranger": "Stranger",
+      "acquaintance": "Acquaintance",
+      "familiar": "Familiar",
+      "close": "Close",
+      "fond": "Fond",
+      "beloved": "Beloved"
+    },
+    "sidebar": "Relationship · {{stage}} {{score}}",
+    "affinity": {
+      "title": "Affinity",
+      "points": "pts",
+      "next": "{{next}} pts to the next stage",
+      "max": "Highest stage reached",
+      "trend": "Cumulative, last 14 days",
+      "events": "Recent interactions",
+      "empty": "No interactions yet",
+      "footnote": "Affinity comes only from real turns and memories: +1 per turn, more for opening up, deep conversation, or finishing a task together."
     }
   }
 }

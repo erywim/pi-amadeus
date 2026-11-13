@@ -115,8 +115,14 @@ export interface StatsResponse {
   series: StatsDayPoint[]
   channels: { channel: string; count: number }[]
   models: { model: string; turns: number; tokens: number }[]
+  /** 按模型服务（provider）聚合的回合与 token：只有真实产生过回合的服务才会出现 */
+  providers: { name: string; turns: number; tokens: number }[]
   tools: { name: string; count: number }[]
   plugins: { total: number; enabled: number; byKind: Record<PluginKind, number> }
+  /** 长期记忆条数（真实提取结果） */
+  memories: number
+  /** 好感度：真实互动事件累计 */
+  affinity: { score: number; stageKey: string }
 }
 
 export const PLUGIN_KINDS: readonly PluginKind[] = ['skill', 'prompt', 'theme', 'mcp']

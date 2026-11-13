@@ -11,6 +11,7 @@ import { Switch } from '@renderer/components/ui/switch'
 import { Textarea } from '@renderer/components/ui/textarea'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
+import { ProviderSection } from './ProviderSection'
 
 /** AI 配置表单：读写大脑服务 /api/config/:userId（服务端 SQLite 单一来源） */
 export function AiPanel(): React.JSX.Element {
@@ -64,8 +65,12 @@ export function AiPanel(): React.JSX.Element {
 
   return (
     <div className="max-w-xl">
-      <h2 className="text-base font-semibold">{t('settings.ai.title')}</h2>
-      <p className="mb-6 mt-1 text-xs text-muted-foreground">{t('settings.ai.desc')}</p>
+      <ProviderSection />
+      <div className="border-t border-border pt-6">
+        <h2 className="text-base font-semibold">{t('settings.ai.title')}</h2>
+        <p className="mb-1 mt-1 text-xs text-muted-foreground">{t('settings.ai.desc')}</p>
+        <p className="mb-6 text-xs text-muted-foreground">{t('settings.ai.fallbackHint')}</p>
+      </div>
       {!userId && (
         <p className="mb-4 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
           {t('settings.ai.loginRequired')}

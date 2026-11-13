@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import { finishTurn, framesOf, resolveTarget, runVoiceTurn } from '../conversation.ts'
+import { recordTurnMetric } from '../metrics.ts'
 import { sseResponse } from '../sse.ts'
 
 /**
@@ -35,13 +36,20 @@ export function voiceRoutes(cfg: BrainConfig, db: Db): Hono {
 
     return sseResponse(
       async function* (signal) {
+        const startedAt = Date.now()
         let cnFull = ''
         let jpFull = ''
+        const usage = { input: 0, output: 0, total: 0 }
         try {
           const stream = runVoiceTurn(
             { cfg, db, userId, sessionId, channel: 'desktop', mode: 'voice', content: text, frames },
             signal,
-            ttsConfig
+            ttsConfig,
+            (turnUsage) => {
+              usage.input += turnUsage.input
+              usage.output += turnUsage.output
+              usage.total += turnUsage.total
+            }
           )
           // 手动循环以拿到生成器返回值（解析出的 cn/jp 全文，用于落库）
           for (;;) {
@@ -74,6 +82,18 @@ export function voiceRoutes(cfg: BrainConfig, db: Db): Hono {
           ttsText: jpFull || null,
           target,
           userText: text
+        })
+        // 语音回合同样计入真实指标（token 来自 pi-ai 的 done 事件）
+        await recordTurnMetric(db, {
+          sessionId,
+          userId,
+          channel: 'desktop',
+          startedAt,
+          model: target.model,
+          providerName: target.providerName,
+          usage,
+          toolCalls: 0,
+          toolNames: []
         })
         yield { type: 'done', sessionId, messageId }
       },

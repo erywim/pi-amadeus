@@ -1,7 +1,14 @@
 import type {
+  AffinitySummary,
   InstalledPlugin,
+  MemoryItem,
+  MemoryKind,
+  MemoryListResponse,
   Message,
   PluginListResponse,
+  ProviderInput,
+  ProviderItem,
+  ProviderTestResult,
   Session,
   SseEvent,
   StatsResponse,
@@ -341,6 +348,109 @@ export async function addCustomMcpApi(input: {
   if (!res.ok) throw new Error(await readError(res, '添加 MCP 服务失败'))
   const json = (await res.json()) as { plugin: InstalledPlugin }
   return json.plugin
+}
+
+// ---------- 长期记忆与好感度 ----------
+
+export async function fetchMemories(userId: string, query = ''): Promise<MemoryListResponse> {
+  const params = new URLSearchParams({ userId })
+  if (query.trim()) params.set('q', query.trim())
+  const res = await fetch(`${BRAIN_URL}/api/memories?${params.toString()}`)
+  if (!res.ok) throw new Error(await readError(res, '记忆加载失败'))
+  return (await res.json()) as MemoryListResponse
+}
+
+export async function addMemoryApi(
+  userId: string,
+  content: string,
+  kind: MemoryKind
+): Promise<MemoryItem> {
+  const res = await fetch(`${BRAIN_URL}/api/memories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, content, kind })
+  })
+  if (!res.ok) throw new Error(await readError(res, '新增记忆失败'))
+  const json = (await res.json()) as { memory: MemoryItem }
+  return json.memory
+}
+
+export async function updateMemoryApi(
+  id: string,
+  patch: { content?: string; kind?: MemoryKind; pinned?: boolean }
+): Promise<MemoryItem> {
+  const res = await fetch(`${BRAIN_URL}/api/memories/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch)
+  })
+  if (!res.ok) throw new Error(await readError(res, '更新记忆失败'))
+  const json = (await res.json()) as { memory: MemoryItem }
+  return json.memory
+}
+
+export async function deleteMemoryApi(id: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/memories/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await readError(res, '删除记忆失败'))
+}
+
+export async function fetchAffinity(userId: string): Promise<AffinitySummary> {
+  const res = await fetch(`${BRAIN_URL}/api/affinity?userId=${encodeURIComponent(userId)}`)
+  if (!res.ok) throw new Error(await readError(res, '好感度加载失败'))
+  return (await res.json()) as AffinitySummary
+}
+
+// ---------- 多模型服务 ----------
+
+export async function fetchProviders(): Promise<ProviderItem[]> {
+  const res = await fetch(`${BRAIN_URL}/api/providers`)
+  if (!res.ok) throw new Error(await readError(res, '模型服务加载失败'))
+  const json = (await res.json()) as { providers: ProviderItem[] }
+  return json.providers
+}
+
+export async function createProviderApi(input: ProviderInput): Promise<ProviderItem> {
+  const res = await fetch(`${BRAIN_URL}/api/providers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(await readError(res, '新增模型服务失败'))
+  const json = (await res.json()) as { provider: ProviderItem }
+  return json.provider
+}
+
+export async function updateProviderApi(id: string, input: ProviderInput): Promise<ProviderItem> {
+  const res = await fetch(`${BRAIN_URL}/api/providers/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(await readError(res, '更新模型服务失败'))
+  const json = (await res.json()) as { provider: ProviderItem }
+  return json.provider
+}
+
+export async function deleteProviderApi(id: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/providers/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await readError(res, '删除模型服务失败'))
+}
+
+export async function activateProviderApi(id: string): Promise<ProviderItem> {
+  const res = await fetch(`${BRAIN_URL}/api/providers/${encodeURIComponent(id)}/active`, {
+    method: 'PUT'
+  })
+  if (!res.ok) throw new Error(await readError(res, '激活模型服务失败'))
+  const json = (await res.json()) as { provider: ProviderItem }
+  return json.provider
+}
+
+export async function testProviderApi(id: string): Promise<ProviderTestResult> {
+  const res = await fetch(`${BRAIN_URL}/api/providers/${encodeURIComponent(id)}/test`, {
+    method: 'POST'
+  })
+  if (!res.ok) throw new Error(await readError(res, '连通性测试失败'))
+  return (await res.json()) as ProviderTestResult
 }
 
 // ---------- 数据看板 ----------

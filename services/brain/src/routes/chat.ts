@@ -3,31 +3,8 @@ import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import { runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
 import { finishTurn } from '../conversation.ts'
+import { recordTurnMetric } from '../metrics.ts'
 import { sseResponse } from '../sse.ts'
-
-/** 回合指标落库（看板数据源）；指标失败不影响回合结果 */
-async function recordMetric(
-  db: Db,
-  input: { sessionId: string; userId: string; startedAt: number; result: AgentTurnResult }
-): Promise<void> {
-  try {
-    await db.recordTurnMetric({
-      sessionId: input.sessionId,
-      userId: input.userId,
-      channel: 'desktop',
-      model: input.result.target.model,
-      startedAt: input.startedAt,
-      durationMs: Date.now() - input.startedAt,
-      toolCalls: input.result.toolCalls,
-      tools: input.result.toolNames,
-      inputTokens: input.result.usage.input,
-      outputTokens: input.result.usage.output,
-      totalTokens: input.result.usage.total
-    })
-  } catch (error) {
-    console.warn('[chat] 回合指标写入失败：', error instanceof Error ? error.message : error)
-  }
-}
 
 /** 文本回合：POST /api/chat { userId, sessionId, content } → SSE delta / tool 事件 / done / error（仅中文） */
 export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
@@ -89,9 +66,20 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           content: full,
           ttsText: null,
           target,
-          userText: content
+          userText: content,
+          toolCalls: result.toolCalls
         })
-        await recordMetric(db, { sessionId, userId, startedAt, result })
+        await recordTurnMetric(db, {
+          sessionId,
+          userId,
+          channel: 'desktop',
+          startedAt,
+          model: result.target.model,
+          providerName: result.target.providerName,
+          usage: result.usage,
+          toolCalls: result.toolCalls,
+          toolNames: result.toolNames
+        })
         yield { type: 'done', sessionId, messageId }
       },
       c.req.raw.signal
@@ -176,9 +164,20 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           ttsText: null,
           target,
           userText,
-          replaceMessageId
+          replaceMessageId,
+          toolCalls: result.toolCalls
         })
-        await recordMetric(db, { sessionId, userId, startedAt, result })
+        await recordTurnMetric(db, {
+          sessionId,
+          userId,
+          channel: 'desktop',
+          startedAt,
+          model: result.target.model,
+          providerName: result.target.providerName,
+          usage: result.usage,
+          toolCalls: result.toolCalls,
+          toolNames: result.toolNames
+        })
         yield { type: 'done', sessionId, messageId }
       },
       c.req.raw.signal

@@ -1,16 +1,18 @@
 import * as React from 'react'
 import { useEffect, useRef } from 'react'
-import { BarChart3, Blocks, Settings, Terminal, UserRound } from 'lucide-react'
+import { BarChart3, Blocks, Brain, Settings, Terminal, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { cn } from '@renderer/lib/utils'
 import { setTtsMuted } from '@renderer/lib/ttsPlayer'
+import { useMemoryStore } from '@renderer/stores/memoryStore'
 import { usePluginStore } from '@renderer/stores/pluginStore'
+import { activeProviderOf, useProviderStore } from '@renderer/stores/providerStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
-const TAB_ROUTES = ['/companion', '/text', '/plugins', '/dashboard'] as const
+const TAB_ROUTES = ['/companion', '/text', '/memory', '/plugins', '/dashboard'] as const
 
 /**
  * 应用外壳（OpenDesign 原型结构）：56px 顶栏 = 品牌区 + 模式页签
@@ -23,6 +25,10 @@ export default function AppShell(): React.JSX.Element {
   const navigate = useNavigate()
   const theme = useSettingsStore((s) => s.theme)
   const aiModel = useSettingsStore((s) => s.aiConfig.provider.model)
+  const providers = useProviderStore((s) => s.providers)
+  const activeProvider = activeProviderOf(providers)
+  // 激活的模型服务优先于内置配置：顶栏胶囊要显示真正在用的模型
+  const modelLabel = activeProvider?.model || aiModel
   const configLoaded = useSettingsStore((s) => s.configLoaded)
   const loadAiConfig = useSettingsStore((s) => s.loadAiConfig)
   const userId = useSessionStore((s) => s.userId)
@@ -61,7 +67,13 @@ export default function AppShell(): React.JSX.Element {
   // 插件列表全局加载一次：快捷指令（输入框）、已安装主题（启动恢复）都依赖它
   useEffect(() => {
     void usePluginStore.getState().load()
+    void useProviderStore.getState().load()
   }, [])
+
+  // 记忆与好感度：登录身份就绪后加载一次，侧栏与记忆页共用
+  useEffect(() => {
+    if (userId) void useMemoryStore.getState().load(userId)
+  }, [userId])
 
   useEffect(() => {
     if (TAB_ROUTES.includes(location.pathname as (typeof TAB_ROUTES)[number])) {
@@ -76,6 +88,7 @@ export default function AppShell(): React.JSX.Element {
   const tabs = [
     { path: '/companion', icon: UserRound, label: t('nav.companion') },
     { path: '/text', icon: Terminal, label: t('nav.text') },
+    { path: '/memory', icon: Brain, label: t('nav.memory') },
     { path: '/plugins', icon: Blocks, label: t('nav.plugins') },
     { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') }
   ]
@@ -134,9 +147,9 @@ export default function AppShell(): React.JSX.Element {
             title={t('topbar.modelChip')}
             className="hidden max-w-60 items-center gap-2 rounded-full border border-border px-3 py-1 text-[12.5px] text-muted-foreground lg:flex"
           >
-            <span className={cn('size-1.5 shrink-0 rounded-full', aiModel ? 'bg-mint' : 'bg-line-strong')} />
+            <span className={cn('size-1.5 shrink-0 rounded-full', modelLabel ? 'bg-mint' : 'bg-line-strong')} />
             <span className="overflow-hidden text-ellipsis whitespace-nowrap">
-              {aiModel || t('topbar.modelUnset')}
+              {modelLabel || t('topbar.modelUnset')}
             </span>
           </span>
         </div>
