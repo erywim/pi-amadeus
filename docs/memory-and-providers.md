@@ -65,6 +65,9 @@
 2. 用户配置里的单条内置配置（设置 → AI 配置）
 3. `.env` 默认（`LLM_BASE_URL` / `LLM_API_KEY` / `AI_MODEL`）
 
+开发环境的 `.env.example` 默认示例使用 `https://api.deepseek.com/v1` + `deepseek-v4-flash`；
+真实密钥不写入仓库，复制为 `.env` 后再填写 `LLM_API_KEY`。
+
 激活服务优先，所以设置页的内置配置标注为「仅在没有任何激活的模型服务时生效」。
 
 ### 管理
