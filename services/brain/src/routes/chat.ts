@@ -1,8 +1,10 @@
 import { Hono } from 'hono'
+import type { AttachmentPayload } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import { runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
 import { finishTurn } from '../conversation.ts'
+import { prepareAttachments, type SavedAttachment } from '../media.ts'
 import { recordTurnMetric } from '../metrics.ts'
 import { sseResponse } from '../sse.ts'
 
@@ -12,13 +14,38 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
 
   app.post('/chat', async (c) => {
     const body = (await c.req.json().catch(() => null)) as
-      | { userId?: unknown; sessionId?: unknown; content?: unknown }
+      | { userId?: unknown; sessionId?: unknown; content?: unknown; attachments?: unknown }
       | null
     const userId = typeof body?.userId === 'string' ? body.userId : ''
     const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
     const content = typeof body?.content === 'string' ? body.content.trim() : ''
-    if (!userId || !sessionId || !content) {
-      return c.json({ error: 'userId/sessionId/content 必填' }, 400)
+    const attachmentInputs: AttachmentPayload[] = []
+    if (Array.isArray(body?.attachments)) {
+      for (const item of body.attachments) {
+        if (!item || typeof item !== 'object') continue
+        const value = item as Record<string, unknown>
+        if (
+          typeof value.name === 'string' &&
+          typeof value.mimeType === 'string' &&
+          typeof value.data === 'string'
+        ) {
+          attachmentInputs.push({
+            name: value.name,
+            mimeType: value.mimeType,
+            data: value.data
+          })
+        }
+      }
+    }
+    if (!userId || !sessionId || (!content && attachmentInputs.length === 0)) {
+      return c.json({ error: 'userId/sessionId 必填，且至少要有文字或附件' }, 400)
+    }
+
+    let attachments: SavedAttachment[]
+    try {
+      attachments = await prepareAttachments(cfg, attachmentInputs)
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
     }
 
     return sseResponse(
@@ -37,6 +64,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             channel: 'desktop',
             mode: 'text',
             content,
+            attachments,
             signal
           })
           let next = await run.next()
@@ -66,7 +94,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           content: full,
           ttsText: null,
           target,
-          userText: content,
+          userText: content || attachments.map((item) => item.name).join('、'),
           toolCalls: result.toolCalls
         })
         await recordTurnMetric(db, {
@@ -76,6 +104,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           startedAt,
           model: result.target.model,
           providerName: result.target.providerName,
+        providerId: result.target.providerId,
           usage: result.usage,
           toolCalls: result.toolCalls,
           toolNames: result.toolNames
@@ -92,9 +121,10 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
   })
 
   /**
-   * 重新生成：对会话最后一条用户消息再跑一次，替换掉旧的助手回复。
-   * - 会话末尾是助手回复 → 定位它前面那条用户消息，成功后替换旧回复
-   * - 会话末尾是用户消息（上一回合失败/被停止）→ 直接重跑，不新增用户消息
+   * 重新生成：对当前分支最后一条用户消息再跑一次，新回复成为该用户消息的
+   * 另一个子节点（旧回复保留，可在分支切换器里回看）。
+   * - 分支末尾是助手回复 → 以它的父用户消息为上下文
+   * - 分支末尾是用户消息（上一回合失败/被停止）→ 直接重跑
    */
   app.post('/chat/regenerate', async (c) => {
     const body = (await c.req.json().catch(() => null)) as
@@ -115,9 +145,13 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
     const last = rows.at(-1)
     if (!last) return c.json({ error: '没有可重新生成的消息' }, 400)
 
-    // 旧助手回复待替换；生成失败时保留原样（finishTurn 成功前不删除）
-    const replaceMessageId = last.role === 'assistant' ? last.id : undefined
-    const lastUser = [...rows].reverse().find((m) => m.role === 'user')
+    // 旧助手回复保留在旧分支；新回复挂到同一条用户消息下
+    const oldAssistantId = last.role === 'assistant' ? last.id : undefined
+    const lastUser =
+      last.role === 'user'
+        ? last
+        : rows.find((message) => message.id === last.parentId && message.role === 'user') ??
+          [...rows].reverse().find((message) => message.role === 'user')
     if (!lastUser) return c.json({ error: '没有可重新生成的用户消息' }, 400)
     const userText = lastUser.content
 
@@ -139,7 +173,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             signal,
             // 历史里已有这条用户消息；旧助手回复不进上下文
             appendUserMessage: false,
-            omitMessageId: replaceMessageId
+            omitMessageId: oldAssistantId
           })
           let next = await run.next()
           while (!next.done) {
@@ -169,7 +203,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           ttsText: null,
           target,
           userText,
-          replaceMessageId,
+          parentMessageId: lastUser.id,
           toolCalls: result.toolCalls
         })
         await recordTurnMetric(db, {
@@ -179,6 +213,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           startedAt,
           model: result.target.model,
           providerName: result.target.providerName,
+        providerId: result.target.providerId,
           usage: result.usage,
           toolCalls: result.toolCalls,
           toolNames: result.toolNames
@@ -190,8 +225,9 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
   })
 
   /**
-   * 编辑用户消息并重发：改正文 → 截断该消息之后的所有消息 → 以编辑后的内容重跑。
-   * 这是 开源自托管客户端（A） 式「编辑后重发」：之后的分支内容会被丢弃，界面对应截断。
+   * 编辑用户消息并重发（分支树版）：
+   * 新用户消息挂在原消息的父节点下，成为原消息的兄弟分支；旧消息与其回复保留。
+   * 界面上表现为新分支成为当前路径，旧分支可通过分支切换器回看。
    */
   app.post('/chat/edit', async (c) => {
     const body = (await c.req.json().catch(() => null)) as
@@ -208,15 +244,10 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
 
     const session = await db.getSession(sessionId)
     if (!session || session.userId !== userId) return c.json({ error: '会话不存在' }, 404)
-    const rows = await db.listMessages(sessionId, 400)
-    const target = rows.find((row) => row.id === messageId)
-    if (!target) return c.json({ error: '消息不存在' }, 404)
+    const target = await db.getMessage(messageId)
+    if (!target || target.sessionId !== sessionId) return c.json({ error: '消息不存在' }, 404)
     if (target.role !== 'user') return c.json({ error: '只能编辑用户消息' }, 400)
-
-    // 截断与改写都发生在流开始之前：即使模型随后失败，会话也停在「等待回答」的状态，
-    // 用户可以重试，不会留下半截旧分支
-    await db.updateMessageContent(messageId, content)
-    await db.deleteMessagesAfter(sessionId, messageId)
+    const branchParentId = target.parentId
 
     return sseResponse(
       async function* (signal) {
@@ -234,8 +265,9 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             mode: 'text',
             content,
             signal,
-            // 编辑后的用户消息已经在历史里，不能再写一条
-            appendUserMessage: false
+            // 新用户消息作为原消息的兄弟节点写入；历史只读到共同父节点
+            appendUserMessage: true,
+            branchParentId
           })
           let next = await run.next()
           while (!next.done) {
@@ -265,6 +297,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           ttsText: null,
           target: target2,
           userText: content,
+          parentMessageId: result.userMessageId,
           toolCalls: result.toolCalls
         })
         await recordTurnMetric(db, {
@@ -274,11 +307,17 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           startedAt,
           model: result.target.model,
           providerName: result.target.providerName,
+        providerId: result.target.providerId,
           usage: result.usage,
           toolCalls: result.toolCalls,
           toolNames: result.toolNames
         })
-        yield { type: 'done', sessionId, messageId: messageId2 }
+        yield {
+          type: 'done',
+          sessionId,
+          messageId: messageId2,
+          ...(result.userMessageId ? { userMessageId: result.userMessageId } : {})
+        }
       },
       c.req.raw.signal
     )

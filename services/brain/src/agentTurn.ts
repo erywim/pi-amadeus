@@ -8,6 +8,7 @@ import { prepareTurn } from './conversation.ts'
 import type { Db } from './db.ts'
 import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
 import { createKnowledgeTool } from './knowledge/index.ts'
+import type { SavedAttachment } from './media.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { disabledSkillNames } from './plugins/registry.ts'
 import { markProviderFailure, markProviderSuccess } from './providers/failover.ts'
@@ -39,6 +40,10 @@ export interface AgentTurnOptions {
   appendUserMessage?: boolean
   /** 重新生成时要排除的历史消息 id（旧助手回答） */
   omitMessageId?: string
+  /** 本次用户消息的附件（图片 / 语音 / 文件） */
+  attachments?: SavedAttachment[]
+  /** 从指定父消息之后分叉（编辑后重发用；null = 根分支） */
+  branchParentId?: string | null
 }
 
 export interface AgentTurnUsage {
@@ -93,7 +98,9 @@ export async function* runAgentTurn(
     mode: opts.mode,
     content: opts.content,
     appendUserMessage: opts.appendUserMessage,
-    omitMessageId: opts.omitMessageId
+    omitMessageId: opts.omitMessageId,
+    attachments: opts.attachments,
+    branchParentId: opts.branchParentId
   })
   if (opts.signal?.aborted) {
     return {

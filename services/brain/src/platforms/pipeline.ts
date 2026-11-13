@@ -3,7 +3,9 @@ import { runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
 import type { BrainConfig } from '../config.ts'
 import { finishTurn } from '../conversation.ts'
 import type { Db, PlatformRow } from '../db.ts'
+import { prepareAttachments } from '../media.ts'
 import { recordTurnMetric } from '../metrics.ts'
+import type { SendOptions } from './types.ts'
 
 /** 同一会话的回合串行执行：平台可能连发多条，不能让上下文交错 */
 const sessionQueues = new Map<string, Promise<void>>()
@@ -31,11 +33,14 @@ export async function handlePlatformMessage(opts: {
   db: Db
   platform: PlatformRow
   inbound: PlatformInbound
-  reply: (text: string) => Promise<void>
+  reply: (text: string, options?: SendOptions) => Promise<void>
 }): Promise<void> {
   const { cfg, db, platform, inbound, reply } = opts
   const text = inbound.text.trim()
-  if (!text) return
+  const media = inbound.media ?? []
+  if (!text && media.length === 0) return
+  // 引用内容作为上下文前缀；回复时 adapter 会用 messageId 做真正的引用
+  const content = inbound.quote ? `> 引用：${inbound.quote}\n\n${text}` : text
 
   // /bind <绑定码>：把外部账号绑到桌面端用户，之后记忆与好感度都记在该用户上
   const bind = /^\/(?:bind|绑定)\s+(\S+)/i.exec(text)
@@ -59,6 +64,17 @@ export async function handlePlatformMessage(opts: {
     await db.reassignSession(sessionId, user.id)
   }
 
+  let attachments
+  try {
+    attachments = await prepareAttachments(
+      cfg,
+      media.map((item) => ({ name: item.name, mimeType: item.mimeType, data: item.data }))
+    )
+  } catch (error) {
+    await reply(`附件处理失败：${error instanceof Error ? error.message : String(error)}`)
+    return
+  }
+
   await enqueue(sessionId, async () => {
     const startedAt = Date.now()
     try {
@@ -69,7 +85,8 @@ export async function handlePlatformMessage(opts: {
         sessionId,
         channel: platform.kind,
         mode: 'text',
-        content: text,
+        content,
+        attachments,
         signal: AbortSignal.timeout(300_000),
         temperature: 0.7
       })
@@ -98,7 +115,7 @@ export async function handlePlatformMessage(opts: {
         content: full,
         ttsText: null,
         target: turn.target,
-        userText: text,
+        userText: content || media.map((item) => item.name).join('、'),
         toolCalls: turn.toolCalls
       })
       await recordTurnMetric(db, {
@@ -108,17 +125,21 @@ export async function handlePlatformMessage(opts: {
         startedAt,
         model: turn.target.model,
         providerName: turn.target.providerName,
+        providerId: turn.target.providerId,
         usage: turn.usage,
         toolCalls: turn.toolCalls,
         toolNames: turn.toolNames
       })
-      await reply(full)
+      await reply(full, inbound.messageId ? { replyTo: inbound.messageId } : undefined)
     } catch (error) {
       console.warn(
         `[platform:${platform.kind}] 回合失败：`,
         error instanceof Error ? error.message : error
       )
-      await reply('……（暂时连不上大脑，稍后再试）').catch(() => {})
+      await reply(
+        '……（暂时连不上大脑，稍后再试）',
+        inbound.messageId ? { replyTo: inbound.messageId } : undefined
+      ).catch(() => {})
     }
   })
 }

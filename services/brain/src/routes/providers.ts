@@ -63,6 +63,11 @@ async function readInput(c: { req: { json: () => Promise<unknown> } }): Promise<
     model: str('model'),
     apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
     proxy: typeof body.proxy === 'string' ? body.proxy : undefined,
+    tags: Array.isArray(body.tags)
+      ? body.tags.filter((tag): tag is string => typeof tag === 'string')
+      : undefined,
+    dailyTokenQuota:
+      typeof body.dailyTokenQuota === 'number' ? body.dailyTokenQuota : undefined,
     enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
     priority: typeof body.priority === 'number' ? body.priority : undefined
   }

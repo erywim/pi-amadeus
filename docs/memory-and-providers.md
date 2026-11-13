@@ -61,11 +61,14 @@
 
 `resolveTarget`（`conversation.ts`）按以下顺序取模型：
 
-1. `providers` 表里 **active + enabled** 且不在冷却中的服务
-2. 激活服务冷却中时：按 `priority` 取下一个 **enabled + 有密钥 + 健康** 的服务（自动故障转移）
-3. 所有服务都在冷却：仍回到激活服务（宁可再试一次，也不让用户突然没有模型）
-4. 没有任何激活服务：用户配置里的单条内置配置（设置 → AI 配置）
-5. `.env` 默认（`LLM_BASE_URL` / `LLM_API_KEY` / `AI_MODEL`）
+1. 按回合用途（`chat` / `vision`）筛出**标签匹配 + enabled + 有密钥 + 未冷却 + 未超每日配额**的服务
+2. 激活服务符合条件 → 用它
+3. 否则按 `priority` 取下一个符合条件者（自动故障转移 / 配额回退）
+4. 没有可用服务：回落到用户配置里的单条内置配置（设置 → AI 配置）
+5. 再回落到 `.env` 默认（`LLM_BASE_URL` / `LLM_API_KEY` / `AI_MODEL`）
+
+带图片附件的回合按 `vision` 组路由：标签里有 `vision` 的服务优先；
+没有专门视觉服务时，`chat` 标签且模型名支持视觉的服务也可以接。
 
 激活服务优先，所以设置页的内置配置标注为「仅在没有任何激活的模型服务时生效」。
 
@@ -78,13 +81,22 @@
 - 冷却只存在内存：大脑重启后所有服务重新视为健康（持久化一个可能已恢复的故障状态更糟）。
 - 服务列表回传 `coolingDown`，设置页显示「故障冷却」徽标。
 
-仍未实现（与成熟多模型方案的差距）：路由组 / 权重分流 / 配额查询。
+### 路由组与每日配额
+
+- 每个服务可设 `tags`：`chat` / `vision` / `summary` / `memory`（至少一个，默认 `chat`）。
+- 每回合按用途选组：普通文本走 `chat`，带图片走 `vision`。
+- `dailyTokenQuota = 0` 表示不限；大于 0 时，按 `turn_metrics.provider_id` 汇总当天真实 token。
+- 配额用尽的服务在列表里标记 `quotaExceeded`，后续回合自动跳过；用量与配额在服务卡片上展示。
+- 指标同时记录服务名与服务 id，因此改名不会打断历史用量统计，新回合按 id 精确归属。
+
+仍未实现（与成熟多模型方案的差距）：权重分流 / 配额重置策略（当前按自然日）。
 
 ### 管理
 
 设置 → AI 配置顶部新增「模型服务」：
 
 - 新增/编辑/删除；同一时间只有一个激活服务；每条服务可单独配代理
+- 路由组标签（chat / vision / summary / memory）与每日 token 配额
 - 密钥只存服务端，列表只回传 `apiKeySet`；编辑时留空表示保持原密钥
 - 「测试」会真的发一次最小补全请求，显示延迟与模型回显（失败展示真实错误）
 - 输入框模型选择器在有激活服务时改的是该服务的模型，否则写回内置配置
@@ -113,7 +125,9 @@
 | `services/brain/src/routes/memories.ts` | `/api/memories*`、`/api/affinity` |
 | `services/brain/src/routes/providers.ts` | `/api/providers*` |
 | `services/brain/src/metrics.ts` | 回合指标落库（含 provider 名） |
-| `services/brain/src/conversation.ts` | 记忆注入、目标解析、finishTurn 副作用 |
+| `services/brain/src/conversation.ts` | 记忆注入、按用途/配额/冷却解析目标、finishTurn 副作用 |
+| `services/brain/src/providers/registry.ts` | 标签解析、今日用量、配额状态 |
+| `services/brain/src/providers/failover.ts` | 10 分钟冷却状态 |
 | `apps/desktop/src/renderer/src/features/memory/` | 记忆与关系页 |
 | `.../features/settings/ProviderSection.tsx` | 模型服务管理 |
 | `.../stores/memoryStore.ts` / `providerStore.ts` | 前端状态 |
@@ -137,8 +151,9 @@ npx --prefix apps/desktop electron-vite dev --remoteDebuggingPort 9333
 # 终端 3：记忆/好感度 + 模型服务 E2E
 CDP_HTTP=http://127.0.0.1:9333 node scripts/e2e-memory-providers.mjs
 
-# 故障转移（真实 LLM + 失效端点，brain 级）
+# 故障转移 / 路由组 / 配额（真实 LLM，brain 级）
 node scripts/e2e-knowledge-automation.mjs
+node scripts/e2e-automation-triggers.mjs
 
 # 回归
 CDP_HTTP=http://127.0.0.1:9333 node scripts/e2e-plugins.mjs
@@ -156,3 +171,6 @@ npm run verify
 `scripts/e2e-knowledge-automation.mjs` 的故障转移段：创建一个不可达服务（priority 1）与一个真实服务
 （priority 2），激活前者 → 回合报错且服务进入冷却 → 下一回合自动改用真实服务并成功 →
 指标记录实际使用的服务 → 连通性测试结果与冷却状态一致。没有真实 `.env` 时该段输出 `not run`。
+
+`scripts/e2e-automation-triggers.mjs` 的路由段：配额 1 的服务跑完第一回合后 `quotaExceeded`，
+第二回合实际使用备用服务；`vision` 标签服务接住带图片的回合。

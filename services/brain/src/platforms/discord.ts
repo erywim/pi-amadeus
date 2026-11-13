@@ -1,6 +1,12 @@
-import type { PlatformStatus } from '@pi-amadeus/shared'
+import type { PlatformMedia, PlatformStatus } from '@pi-amadeus/shared'
 import WebSocket from 'ws'
-import { configString, splitMessage, type AdapterContext, type PlatformAdapter } from './types.ts'
+import {
+  configString,
+  splitMessage,
+  type AdapterContext,
+  type PlatformAdapter,
+  type SendOptions
+} from './types.ts'
 
 /** Discord 单条消息上限（普通用户 2000 字符；按 1900 分段留余量） */
 const DISCORD_LIMIT = 1900
@@ -14,12 +20,21 @@ interface DiscordPayload {
   d?: Record<string, unknown>
 }
 
+interface DiscordAttachment {
+  url?: string
+  content_type?: string
+  filename?: string
+  size?: number
+}
+
 interface DiscordMessage {
   id?: string
   channel_id?: string
   guild_id?: string | null
   content?: string
   author?: { id?: string; username?: string; bot?: boolean }
+  attachments?: DiscordAttachment[]
+  referenced_message?: { content?: string }
 }
 
 /**
@@ -77,12 +92,18 @@ export class DiscordAdapter implements PlatformAdapter {
     return this.state
   }
 
-  async send(chatId: string, _chatType: 'private' | 'group', text: string): Promise<void> {
+  async send(
+    chatId: string,
+    _chatType: 'private' | 'group',
+    text: string,
+    options?: SendOptions
+  ): Promise<void> {
     for (const part of splitMessage(text, DISCORD_LIMIT)) {
       await this.api(`/channels/${encodeURIComponent(chatId)}/messages`, 'POST', {
         content: part,
         // 不要让模型输出里的 @everyone/@here 真的 ping 全群
-        allowed_mentions: { parse: [] }
+        allowed_mentions: { parse: [] },
+        ...(options?.replyTo ? { message_reference: { message_id: options.replyTo } } : {})
       })
     }
   }
@@ -196,11 +217,43 @@ export class DiscordAdapter implements PlatformAdapter {
     if (!message?.content || !message.channel_id) return
     if (message.author?.bot) return
     if (message.author?.id && message.author.id === this.selfId) return
+    void this.handleMessage(message)
+  }
+
+  /** 文本 + 附件 + 引用；Discord CDN 附件直接下载 */
+  private async handleMessage(message: DiscordMessage): Promise<void> {
+    const media: PlatformMedia[] = []
+    for (const attachment of message.attachments ?? []) {
+      if (!attachment.url || (attachment.size ?? 0) > 20 * 1024 * 1024) continue
+      try {
+        const res = await fetch(attachment.url, { signal: AbortSignal.timeout(30_000) })
+        if (!res.ok) continue
+        const buffer = Buffer.from(await res.arrayBuffer())
+        if (buffer.length > 20 * 1024 * 1024) continue
+        const mimeType = attachment.content_type || 'application/octet-stream'
+        media.push({
+          kind: mimeType.startsWith('image/')
+            ? 'image'
+            : mimeType.startsWith('audio/')
+              ? 'audio'
+              : 'file',
+          name: attachment.filename || 'attachment',
+          mimeType,
+          data: buffer.toString('base64'),
+          size: buffer.length
+        })
+      } catch (error) {
+        console.warn('[discord] 附件下载失败：', error instanceof Error ? error.message : error)
+      }
+    }
     this.ctx.onMessage({
       externalUserId: String(message.author?.id ?? ''),
       chatId: String(message.channel_id),
       chatType: message.guild_id ? 'group' : 'private',
-      text: message.content
+      text: message.content ?? '',
+      messageId: message.id,
+      quote: message.referenced_message?.content,
+      media
     })
   }
 

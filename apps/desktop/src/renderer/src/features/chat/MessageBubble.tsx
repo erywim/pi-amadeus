@@ -1,8 +1,9 @@
 import * as React from 'react'
-import { Copy, Mic, Pencil, RotateCcw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, FileText, Mic, Pencil, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
-import type { Message } from '@pi-amadeus/shared'
+import type { Message, MessageAttachment } from '@pi-amadeus/shared'
+import { BRAIN_URL } from '@renderer/lib/api'
 import { copyText } from '@renderer/lib/clipboard'
 import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
@@ -192,12 +193,16 @@ function UserNode({ message }: { message: Message }): React.JSX.Element {
       data-message-id={message.id}
       className="group anim-msg flex flex-col items-end gap-1"
     >
-      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-xl border border-border bg-surface-soft px-3.5 py-2.5 text-[15px] leading-relaxed">
-        {message.content}
+      <div className="max-w-[85%] rounded-xl border border-border bg-surface-soft px-3.5 py-2.5 text-[15px] leading-relaxed">
+        <MessageAttachments attachments={message.attachments ?? []} />
+        {message.content && (
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        )}
       </div>
       <div className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
         {message.mode === 'voice' && <Mic className="size-3" />}
         <span>{timeFormatter.format(message.createdAt)}</span>
+        <BranchSwitcher message={message} />
         <MessageActions
           content={message.content}
           showRegenerate={false}
@@ -206,6 +211,116 @@ function UserNode({ message }: { message: Message }): React.JSX.Element {
       </div>
     </div>
   )
+}
+
+/** 分支切换器：同一父节点下的第 n/m 条，左右切换当前活跃分支 */
+function BranchSwitcher({ message }: { message: Message }): React.JSX.Element | null {
+  const { t } = useTranslation()
+  const switchBranch = useSessionStore((s) => s.switchBranch)
+  const count = message.branchCount ?? 1
+  if (count <= 1) return null
+  const index = message.branchIndex ?? 1
+  return (
+    <span data-testid="branch-switcher" className="inline-flex items-center gap-0.5 text-[11px]">
+      <button
+        type="button"
+        data-testid="branch-prev"
+        aria-label={t('chat.branchPrev')}
+        title={t('chat.branchPrev')}
+        disabled={index <= 1}
+        onClick={() =>
+          void switchBranch(message.id, -1).catch((error: unknown) =>
+            toast.error(error instanceof Error ? error.message : String(error))
+          )
+        }
+        className="rounded p-0.5 text-muted-foreground hover:bg-surface-soft hover:text-foreground disabled:opacity-30"
+      >
+        <ChevronLeft className="size-3" />
+      </button>
+      <span className="min-w-[24px] text-center font-mono text-[10px] text-muted-foreground">
+        {index}/{count}
+      </span>
+      <button
+        type="button"
+        data-testid="branch-next"
+        aria-label={t('chat.branchNext')}
+        title={t('chat.branchNext')}
+        disabled={index >= count}
+        onClick={() =>
+          void switchBranch(message.id, 1).catch((error: unknown) =>
+            toast.error(error instanceof Error ? error.message : String(error))
+          )
+        }
+        className="rounded p-0.5 text-muted-foreground hover:bg-surface-soft hover:text-foreground disabled:opacity-30"
+      >
+        <ChevronRight className="size-3" />
+      </button>
+    </span>
+  )
+}
+
+/** 消息附件：图片缩略图 / 语音播放器 / 文件下载卡 */
+function MessageAttachments({ attachments }: { attachments: MessageAttachment[] }): React.JSX.Element | null {
+  if (attachments.length === 0) return null
+  const images = attachments.filter((item) => item.kind === 'image' && item.url)
+  const audios = attachments.filter((item) => item.kind === 'audio')
+  const files = attachments.filter((item) => item.kind === 'file')
+  return (
+    <div data-testid="message-attachments" className="mb-2 flex flex-col gap-1.5">
+      {images.length > 0 && (
+        <div className="grid max-w-[420px] grid-cols-2 gap-1.5">
+          {images.map((item) => (
+            <a
+              key={item.id}
+              href={mediaUrl(item.url)}
+              target="_blank"
+              rel="noreferrer"
+              className="block overflow-hidden rounded-lg border border-border"
+              title={item.name}
+            >
+              <img
+                src={mediaUrl(item.url)}
+                alt={item.name}
+                className="max-h-[220px] w-full object-cover"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+      {audios.map((item) => (
+        <div key={item.id} className="max-w-[420px]">
+          <span className="mb-0.5 block truncate text-[11.5px] text-muted-foreground">{item.name}</span>
+          <audio controls src={mediaUrl(item.url)} className="w-full" />
+        </div>
+      ))}
+      {files.map((item) => (
+        <a
+          key={item.id}
+          href={mediaUrl(item.url)}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex max-w-[420px] items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[12px] text-ink-2 hover:bg-surface-soft"
+        >
+          <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate">{item.name}</span>
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+            {formatBytes(item.size)}
+          </span>
+        </a>
+      ))}
+    </div>
+  )
+}
+
+function mediaUrl(url: string): string {
+  if (!url || url.startsWith('data:') || /^https?:/i.test(url)) return url
+  return `${BRAIN_URL}${url}`
+}
+
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
 }
 
 /** 助手节点：工作卡从归档日志取（非流式）；流式本体的卡由 MessageList 提供 */
@@ -238,6 +353,7 @@ function AssistantNode({
           {message.mode === 'voice' && <Mic className="size-3" />}
           <span>·</span>
           <span>{timeFormatter.format(message.createdAt)}</span>
+          <BranchSwitcher message={message} />
           <MessageActions
             content={message.content}
             showRegenerate={isLastAssistant && !streaming}

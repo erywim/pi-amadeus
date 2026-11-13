@@ -1,6 +1,12 @@
-import type { PlatformStatus } from '@pi-amadeus/shared'
+import type { PlatformMedia, PlatformStatus } from '@pi-amadeus/shared'
 import WebSocket from 'ws'
-import { configString, splitMessage, type AdapterContext, type PlatformAdapter } from './types.ts'
+import {
+  configString,
+  splitMessage,
+  type AdapterContext,
+  type PlatformAdapter,
+  type SendOptions
+} from './types.ts'
 
 /** Slack 单条消息上限约 4000 字符；按 3500 分段 */
 const SLACK_LIMIT = 3500
@@ -18,6 +24,14 @@ interface SlackEnvelope {
       channel?: string
       channel_type?: string
       bot_id?: string
+      ts?: string
+      thread_ts?: string
+      files?: {
+        url_private?: string
+        mimetype?: string
+        name?: string
+        size?: number
+      }[]
     }
   }
 }
@@ -76,7 +90,12 @@ export class SlackAdapter implements PlatformAdapter {
     return this.state
   }
 
-  async send(chatId: string, _chatType: 'private' | 'group', text: string): Promise<void> {
+  async send(
+    chatId: string,
+    _chatType: 'private' | 'group',
+    text: string,
+    options?: SendOptions
+  ): Promise<void> {
     for (const part of splitMessage(text, SLACK_LIMIT)) {
       const result = await this.api<{ ok?: boolean; error?: string }>('chat.postMessage', this.botToken, {
         channel: chatId,
@@ -84,7 +103,8 @@ export class SlackAdapter implements PlatformAdapter {
         // 纯文本回复：不让 Slack 把模型输出里的链接/@ 解析成富文本副作用
         mrkdwn: false,
         unfurl_links: false,
-        unfurl_media: false
+        unfurl_media: false,
+        ...(options?.replyTo ? { thread_ts: options.replyTo } : {})
       })
       if (result.ok === false) throw new Error(`Slack 发送失败：${result.error ?? 'unknown'}`)
     }
@@ -157,12 +177,46 @@ export class SlackAdapter implements PlatformAdapter {
     if (event.bot_id) return
     if (event.user && this.selfId && event.user === this.selfId) return
     const text = event.text ?? ''
-    if (!text.trim() || !event.channel) return
+    if ((!text.trim() && (event.files?.length ?? 0) === 0) || !event.channel) return
+    void this.handleMessage(event)
+  }
+
+  /** 文本 + 文件 + 线程回复；Slack 私有文件需要 bot token 才能下载 */
+  private async handleMessage(event: NonNullable<SlackEnvelope['payload']>['event']): Promise<void> {
+    if (!event?.channel) return
+    const media: PlatformMedia[] = []
+    for (const file of event.files ?? []) {
+      if (!file.url_private || (file.size ?? 0) > 20 * 1024 * 1024) continue
+      try {
+        const res = await fetch(file.url_private, {
+          headers: { Authorization: `Bearer ${this.botToken}` },
+          signal: AbortSignal.timeout(30_000)
+        })
+        if (!res.ok) continue
+        const buffer = Buffer.from(await res.arrayBuffer())
+        const mimeType = file.mimetype || 'application/octet-stream'
+        media.push({
+          kind: mimeType.startsWith('image/')
+            ? 'image'
+            : mimeType.startsWith('audio/')
+              ? 'audio'
+              : 'file',
+          name: file.name || 'attachment',
+          mimeType,
+          data: buffer.toString('base64'),
+          size: buffer.length
+        })
+      } catch (error) {
+        console.warn('[slack] 附件下载失败：', error instanceof Error ? error.message : error)
+      }
+    }
     this.ctx.onMessage({
       externalUserId: String(event.user ?? ''),
       chatId: String(event.channel),
       chatType: event.channel_type === 'im' ? 'private' : 'group',
-      text
+      text: event.text ?? '',
+      messageId: event.thread_ts ?? event.ts,
+      media
     })
   }
 

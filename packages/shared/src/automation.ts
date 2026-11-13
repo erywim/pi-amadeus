@@ -6,6 +6,9 @@
 
 export type AutomationSchedule = 'interval' | 'daily' | 'once'
 
+/** 触发方式：定时 / 文件变化 / Webhook */
+export type AutomationTrigger = 'schedule' | 'file' | 'webhook'
+
 /** 空字符串表示还没跑过；running 是进行中（防止同一任务重入） */
 export type AutomationRunStatus = '' | 'running' | 'success' | 'error'
 
@@ -13,6 +16,13 @@ export interface AutomationItem {
   id: string
   name: string
   prompt: string
+  trigger: AutomationTrigger
+  /** file：监听的文件或目录（绝对路径） */
+  watchPath: string
+  /** file：变更防抖秒数 */
+  debounceSeconds: number
+  /** webhook：调用方需要携带的密钥（空表示不校验） */
+  webhookSecret: string
   schedule: AutomationSchedule
   /** interval：间隔分钟数（>= 5） */
   intervalMinutes: number
@@ -28,6 +38,8 @@ export interface AutomationItem {
   lastError: string
   /** 最近一次成功回合的完整回复（用于列表里展开查看） */
   lastResult: string
+  /** 最近一次触发来源（手动 / 定时 / 文件路径 / Webhook） */
+  lastTrigger: string
   /** 该自动化任务的会话 id（automation-<id>），可在桌面端打开继续 */
   sessionId: string
   createdAt: number
@@ -37,7 +49,11 @@ export interface AutomationItem {
 export interface AutomationInput {
   name: string
   prompt: string
-  schedule: AutomationSchedule
+  trigger?: AutomationTrigger
+  watchPath?: string
+  debounceSeconds?: number
+  webhookSecret?: string
+  schedule?: AutomationSchedule
   intervalMinutes?: number
   timeOfDay?: string
   runAt?: number | null

@@ -1,5 +1,8 @@
 import * as React from 'react'
 import { useEffect } from 'react'
+import toast from 'react-hot-toast'
+import { useTranslation } from 'react-i18next'
+import { fetchProactive } from '@renderer/lib/api'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { ChatHistoryDialog } from './ChatHistoryDialog'
 import { ConfigPanel } from './ConfigPanel'
@@ -17,6 +20,7 @@ import { StageHud } from './companion/StageHud'
  * 消息发出时由语音链路自动创建。
  */
 export default function CompanionPage(): React.JSX.Element {
+  const { t } = useTranslation()
   const userId = useSessionStore((s) => s.userId)
   const sessions = useSessionStore((s) => s.sessions)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
@@ -29,6 +33,44 @@ export default function CompanionPage(): React.JSX.Element {
     }
     // sessions 初次拉取后再补一次选中（userId/sessions 异步到达）
   }, [userId, activeSessionId, sessions, selectSession])
+
+  // 主动问候：轮询最新一条；首次进入把已有问候标记为已读，不重放历史
+  useEffect(() => {
+    if (!userId) return
+    const storageKey = `amadeus_proactive_seen_${userId}`
+    let disposed = false
+    let timer: number | null = null
+    const poll = async (): Promise<void> => {
+      try {
+        const response = await fetchProactive(userId)
+        if (disposed || !response.latest) return
+        const latest = response.latest
+        const seenRaw = localStorage.getItem(storageKey)
+        if (seenRaw === null) {
+          localStorage.setItem(storageKey, String(latest.createdAt))
+          return
+        }
+        if (latest.createdAt <= Number(seenRaw)) return
+        localStorage.setItem(storageKey, String(latest.createdAt))
+        const state = useSessionStore.getState()
+        if (state.activeSessionId === latest.sessionId) {
+          await state.refreshSession(latest.sessionId)
+        } else {
+          state.selectSession(latest.sessionId)
+          await state.refreshSession(latest.sessionId)
+        }
+        toast.success(t('proactive.arrived'))
+      } catch (error) {
+        console.warn('[proactive] 轮询失败：', error)
+      }
+    }
+    void poll()
+    timer = window.setInterval(() => void poll(), 15_000)
+    return () => {
+      disposed = true
+      if (timer !== null) window.clearInterval(timer)
+    }
+  }, [userId, t])
 
   return (
     <div className="relative grid h-full min-h-0 grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">

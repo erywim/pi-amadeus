@@ -19,6 +19,8 @@ export interface BrainConfig {
   tools: { tavilyKey: string; confirmTimeoutMs: number; bashCwd: string }
   /** skill 文件目录（SKILL.md 形式，复用 pi loadSkills 加载） */
   skills: { dir: string }
+  /** 消息附件（图片/语音/文件）落盘目录 */
+  media: { dir: string }
 }
 
 export function loadConfig(): BrainConfig {
@@ -61,6 +63,9 @@ export function loadConfig(): BrainConfig {
     skills: {
       // 默认 services/brain/skills/；目录不存在时 loadSkills 静默跳过
       dir: env('SKILLS_DIR', resolve(import.meta.dirname, '../skills'))
+    },
+    media: {
+      dir: env('MEDIA_DIR') ? resolve(env('MEDIA_DIR')) : resolve(import.meta.dirname, '../data/media')
     }
   }
 }

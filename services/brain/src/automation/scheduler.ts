@@ -1,3 +1,4 @@
+import { statSync, watch, type FSWatcher } from 'node:fs'
 import type { AutomationRow } from '../db.ts'
 import { runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
 import type { BrainConfig } from '../config.ts'
@@ -21,6 +22,10 @@ class AutomationScheduler {
   private db: Db | null = null
   private timer: NodeJS.Timeout | null = null
   private running = new Set<string>()
+  /** 文件触发：id → watcher / 配置指纹 / 防抖定时器 */
+  private watchers = new Map<string, { watcher: FSWatcher; key: string }>()
+  private debounceTimers = new Map<string, NodeJS.Timeout>()
+  private pendingEvent = new Map<string, string>()
 
   async init(cfg: BrainConfig, db: Db): Promise<void> {
     this.cfg = cfg
@@ -31,22 +36,113 @@ class AutomationScheduler {
     this.timer.unref()
     // 启动后立刻查一次：大脑停机期间到期的任务不用再等一个 tick
     void this.tick()
+    await this.syncWatchers()
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
+    for (const { watcher } of this.watchers.values()) watcher.close()
+    this.watchers.clear()
+    for (const timer of this.debounceTimers.values()) clearTimeout(timer)
+    this.debounceTimers.clear()
   }
 
-  /** 手动「立即运行」：不改变既定的下次触发时间 */
+  /** 按数据库现状启停文件监听（增删改 / 启停后调用） */
+  async syncWatchers(): Promise<void> {
+    if (!this.db) return
+    let rows: AutomationRow[] = []
+    try {
+      rows = await this.db.listFileAutomations()
+    } catch (error) {
+      console.warn('[automation] 读取文件触发任务失败：', error instanceof Error ? error.message : error)
+      return
+    }
+    const byId = new Map(rows.map((row) => [row.id, row]))
+    for (const [id, entry] of [...this.watchers]) {
+      const row = byId.get(id)
+      const key = row ? `${row.watchPath}|${row.debounceSeconds}` : ''
+      if (!row || entry.key !== key) {
+        entry.watcher.close()
+        this.watchers.delete(id)
+      }
+    }
+    for (const row of rows) {
+      if (this.watchers.has(row.id)) continue
+      try {
+        const isDir = statSync(row.watchPath).isDirectory()
+        const watcher = watch(
+          row.watchPath,
+          { recursive: isDir },
+          (event, filename) => this.onFileEvent(row.id, event, filename)
+        )
+        watcher.on('error', (error) => {
+          console.warn(`[automation] 文件监听失败 ${row.watchPath}：`, error.message)
+          void this.db?.setAutomationError(row.id, `文件监听失败：${error.message}`)
+        })
+        this.watchers.set(row.id, {
+          watcher,
+          key: `${row.watchPath}|${row.debounceSeconds}`
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        console.warn(`[automation] 无法监听 ${row.watchPath}：`, message)
+        await this.db.setAutomationError(row.id, `无法监听 ${row.watchPath}：${message}`)
+      }
+    }
+  }
+
+  /** 文件变化防抖：同一任务在窗口内只跑一次，触发上下文记录最后的路径 */
+  private onFileEvent(id: string, event: string, filename: string | null): void {
+    const path = filename ? `${event}:${filename}` : event
+    this.pendingEvent.set(id, path)
+    const existing = this.debounceTimers.get(id)
+    if (existing) clearTimeout(existing)
+    const debounceMs = this.debounceSecondsOf(id) * 1000
+    const timer = setTimeout(() => {
+      this.debounceTimers.delete(id)
+      const detail = this.pendingEvent.get(id) ?? event
+      this.pendingEvent.delete(id)
+      void this.triggerEvent(id, `文件变化：${detail}`)
+    }, Math.max(300, debounceMs))
+    timer.unref()
+    this.debounceTimers.set(id, timer)
+  }
+
+  private debounceSecondsOf(id: string): number {
+    // watcher key 里已经带了 debounce，这里从数据库行读取会多一次 IO；
+    // 记录在 entry.key 的最后一段即可
+    const entry = this.watchers.get(id)
+    const value = entry?.key.split('|')[1]
+    const seconds = Number(value ?? 2)
+    return Number.isFinite(seconds) ? seconds : 2
+  }
+
+  /** Webhook 触发入口（路由调用） */
+  async triggerWebhook(id: string, text: string): Promise<boolean> {
+    return this.triggerEvent(id, `Webhook：${text || '（空请求）'}`, 'webhook')
+  }
+
+  /** 手动「立即运行」：即使任务停用也允许跑一次，不改变既定计划 */
   async runNow(id: string): Promise<boolean> {
+    return this.triggerEvent(id, '手动运行', undefined, { allowDisabled: true })
+  }
+
+  /** 事件触发统一入口：防重入 + 真实回合 */
+  async triggerEvent(
+    id: string,
+    triggerText: string,
+    expected?: 'webhook',
+    opts?: { allowDisabled?: boolean }
+  ): Promise<boolean> {
     if (!this.db || !this.cfg) return false
     if (this.running.has(id)) return false
     const row = await this.db.getAutomation(id)
-    if (!row) return false
+    if (!row || (!row.enabled && !opts?.allowDisabled)) return false
+    if (expected && row.trigger !== expected) return false
     const started = await this.db.markAutomationRunning(id)
     if (!started) return false
-    void this.execute(row, true)
+    void this.execute(row, true, triggerText)
     return true
   }
 
@@ -65,7 +161,11 @@ class AutomationScheduler {
     }
   }
 
-  private async execute(row: AutomationRow, manual: boolean): Promise<void> {
+  private async execute(
+    row: AutomationRow,
+    manual: boolean,
+    triggerText?: string
+  ): Promise<void> {
     if (!this.db || !this.cfg) return
     const db = this.db
     const cfg = this.cfg
@@ -84,7 +184,7 @@ class AutomationScheduler {
         sessionId,
         channel: 'automation',
         mode: 'text',
-        content: row.prompt,
+        content: triggerText ? `${row.prompt}\n\n[触发事件] ${triggerText}` : row.prompt,
         signal: AbortSignal.timeout(10 * 60_000),
         temperature: 0.7
       })
@@ -119,6 +219,7 @@ class AutomationScheduler {
         startedAt,
         model: turn.target.model,
         providerName: turn.target.providerName,
+        providerId: turn.target.providerId,
         usage: turn.usage,
         toolCalls: turn.toolCalls,
         toolNames: turn.toolNames
@@ -157,6 +258,7 @@ class AutomationScheduler {
         error: errorText.slice(0, 2000),
         result: result.slice(0, RESULT_LIMIT),
         nextRunAt,
+        trigger: triggerText ?? (row.trigger === 'schedule' ? '定时触发' : '手动运行'),
         ...(disableOnce ? { enabled: false } : {})
       })
       .catch((error) => {

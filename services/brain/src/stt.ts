@@ -12,12 +12,18 @@ export interface SttOptions {
   proxy?: string
 }
 
-export async function transcribe(wav: Buffer, opts: SttOptions): Promise<string> {
+export async function transcribe(
+  audio: Buffer,
+  opts: SttOptions,
+  file: { filename?: string; mimeType?: string } = {}
+): Promise<string> {
   const base = opts.baseUrl.replace(/\/+$/, '')
   // 手动构造 multipart/form-data（undici FormData 经中转服务偶发丢 boundary 头 → 415）
   const boundary = `----amadeus-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  const filename = file.filename || 'speech.wav'
+  const mimeType = file.mimeType || 'audio/wav'
   const head = Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="speech.wav"\r\nContent-Type: audio/wav\r\n\r\n`,
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename.replace(/"/g, '')}"\r\nContent-Type: ${mimeType}\r\n\r\n`,
     'utf8'
   )
   const tail = Buffer.from(
@@ -30,7 +36,7 @@ export async function transcribe(wav: Buffer, opts: SttOptions): Promise<string>
       Authorization: `Bearer ${opts.apiKey}`,
       'Content-Type': `multipart/form-data; boundary=${boundary}`
     },
-    body: Buffer.concat([head, wav, tail]),
+    body: Buffer.concat([head, audio, tail]),
     dispatcher: opts.proxy ? new ProxyAgent(opts.proxy) : undefined
   })
   if (!res.ok) {

@@ -4,7 +4,14 @@
  * 「绑定用户 → 共享会话 → agent 回合 → 回复」管线，桌面端能在会话列表里看到并继续。
  */
 
-export type PlatformKind = 'telegram' | 'onebot' | 'webhook' | 'discord' | 'slack'
+export type PlatformKind =
+  | 'telegram'
+  | 'onebot'
+  | 'webhook'
+  | 'discord'
+  | 'slack'
+  | 'wechat'
+  | 'qqbot'
 
 export type PlatformState = 'running' | 'stopped' | 'error'
 
@@ -49,10 +56,26 @@ export interface PlatformInput {
   config: Record<string, string>
 }
 
+/** 平台附件：适配器下载/解码后交给管线（base64，无 data: 前缀） */
+export interface PlatformMedia {
+  kind: 'image' | 'audio' | 'file'
+  name: string
+  mimeType: string
+  data: string
+  size?: number
+}
+
 /** 平台入站消息（适配器解析后交给共用管线） */
 export interface PlatformInbound {
   externalUserId: string
   chatId: string
   chatType: 'private' | 'group'
+  /** 纯文本；可能为空（只发了图片/语音/文件） */
   text: string
+  /** 平台消息 id：用于被动回复 / 引用 */
+  messageId?: string
+  /** 被引用消息的文本（能拿到时） */
+  quote?: string
+  /** 图片 / 语音 / 文件 */
+  media?: PlatformMedia[]
 }

@@ -131,6 +131,7 @@ export function feishuRoutes(cfg: BrainConfig, db: Db): Hono {
       startedAt,
       model: result.target.model,
       providerName: result.target.providerName,
+        providerId: result.target.providerId,
       usage: result.usage,
       toolCalls: result.toolCalls,
       toolNames: result.toolNames

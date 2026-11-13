@@ -8,7 +8,22 @@ import { isProviderCoolingDown, markProviderFailure, markProviderSuccess } from 
  * 测试连接会真的发一次最小请求——通过与否都以真实响应为准。
  */
 
-export function toProviderItem(row: ProviderRow): ProviderItem {
+const ROUTE_TAGS = new Set(['chat', 'vision', 'summary', 'memory'])
+
+export function parseTags(tags: string): string[] {
+  const list = tags
+    .split(',')
+    .map((tag) => tag.trim().toLowerCase())
+    .filter((tag) => ROUTE_TAGS.has(tag))
+  return list.length > 0 ? [...new Set(list)] : ['chat']
+}
+
+function startOfToday(): number {
+  const date = new Date()
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+}
+
+export function toProviderItem(row: ProviderRow, todayTokens = 0): ProviderItem {
   return {
     id: row.id,
     name: row.name,
@@ -18,6 +33,10 @@ export function toProviderItem(row: ProviderRow): ProviderItem {
     enabled: row.enabled,
     active: row.active,
     priority: row.priority,
+    tags: parseTags(row.tags),
+    dailyTokenQuota: row.dailyTokenQuota,
+    todayTokens,
+    quotaExceeded: row.dailyTokenQuota > 0 && todayTokens >= row.dailyTokenQuota,
     apiKeySet: row.apiKey.trim().length > 0,
     coolingDown: isProviderCoolingDown(row.id),
     createdAt: row.createdAt,
@@ -25,8 +44,15 @@ export function toProviderItem(row: ProviderRow): ProviderItem {
   }
 }
 
+async function withUsage(db: Db, row: ProviderRow): Promise<ProviderItem> {
+  // 即使配额不限也显示真实用量，避免“0 tokens”被误读成没跑过
+  const usage = await db.providerUsageToday(row.id, startOfToday())
+  return toProviderItem(row, usage)
+}
+
 export async function listProviderItems(db: Db): Promise<ProviderItem[]> {
-  return (await db.listProviders()).map(toProviderItem)
+  const rows = await db.listProviders()
+  return Promise.all(rows.map((row) => withUsage(db, row)))
 }
 
 export async function createProviderItem(
@@ -45,10 +71,12 @@ export async function createProviderItem(
     apiKey: (input.apiKey ?? '').trim(),
     model: input.model.trim(),
     proxy: (input.proxy ?? '').trim(),
+    tags: parseTags((input.tags ?? ['chat']).join(',')).join(','),
+    dailyTokenQuota: Math.max(0, Math.floor(input.dailyTokenQuota ?? 0)),
     enabled: input.enabled !== false,
     priority: input.priority ?? maxPriority + 10
   })
-  return { ok: true, provider: toProviderItem(row) }
+  return { ok: true, provider: await withUsage(db, row) }
 }
 
 export async function updateProviderItem(
@@ -67,10 +95,18 @@ export async function updateProviderItem(
     ...(input.apiKey ? { apiKey: input.apiKey.trim() } : {}),
     model: input.model.trim(),
     proxy: (input.proxy ?? '').trim(),
+    ...(input.tags !== undefined
+      ? { tags: parseTags(input.tags.join(',')).join(',') }
+      : {}),
+    ...(input.dailyTokenQuota !== undefined
+      ? { dailyTokenQuota: Math.max(0, Math.floor(input.dailyTokenQuota)) }
+      : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.priority !== undefined ? { priority: input.priority } : {})
   })
-  return updated ? { ok: true, provider: toProviderItem(updated) } : { ok: false, error: '更新失败' }
+  return updated
+    ? { ok: true, provider: await withUsage(db, updated) }
+    : { ok: false, error: '更新失败' }
 }
 
 export async function activateProvider(
@@ -82,7 +118,9 @@ export async function activateProvider(
   if (!existing.apiKey.trim()) return { ok: false, error: '该服务还没有配置密钥' }
   await db.setActiveProvider(id)
   const provider = await db.getProvider(id)
-  return provider ? { ok: true, provider: toProviderItem(provider) } : { ok: false, error: '激活失败' }
+  return provider
+    ? { ok: true, provider: await withUsage(db, provider) }
+    : { ok: false, error: '激活失败' }
 }
 
 export async function deleteProviderItem(db: Db, id: string): Promise<boolean> {

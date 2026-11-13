@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { MessageSearchHit, Session } from '@pi-amadeus/shared'
 import type { Db } from '../db.ts'
+import { toPublicMessage } from '../media.ts'
 
 /** 会话与消息读取：列表 / 详情 / 删除 / 搜索 / 用量（创建是懒的——首条消息时由 chat/voice 落行） */
 export function sessionRoutes(db: Db): Hono {
@@ -44,7 +45,7 @@ export function sessionRoutes(db: Db): Hono {
 
   app.get('/sessions/:id/messages', async (c) => {
     const rows = await db.listMessages(c.req.param('id'))
-    return c.json({ messages: rows })
+    return c.json({ messages: rows.map(toPublicMessage) })
   })
 
   /** 会话级 token 用量：turn_metrics 的真实累计（没跑过回合就是 0） */
@@ -89,6 +90,38 @@ export function sessionRoutes(db: Db): Hono {
       ok: true,
       ...(title ? { title } : {}),
       ...(pinned !== undefined ? { pinned } : {})
+    })
+  })
+
+  /**
+   * 切换分支：messageId 是当前路径上的某条消息，direction = -1/1。
+   * 找到它的兄弟消息，切到相邻分支；新活跃叶是该分支的最新后代。
+   */
+  app.post('/sessions/:id/branch', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as
+      | { userId?: unknown; messageId?: unknown; direction?: unknown }
+      | null
+    const userId = typeof body?.userId === 'string' ? body.userId : ''
+    const messageId = typeof body?.messageId === 'string' ? body.messageId : ''
+    const direction = Number(body?.direction) < 0 ? -1 : 1
+    const sessionId = c.req.param('id')
+    if (!userId || !messageId) return c.json({ error: 'userId/messageId 必填' }, 400)
+    const session = await db.getSession(sessionId)
+    if (!session || session.userId !== userId) return c.json({ error: '会话不存在' }, 404)
+    const target = await db.getMessage(messageId)
+    if (!target || target.sessionId !== sessionId) return c.json({ error: '消息不存在' }, 404)
+    const siblings = await db.listBranches(messageId)
+    if (siblings.length <= 1) return c.json({ error: '这条消息没有其他分支' }, 400)
+    const index = siblings.findIndex((item) => item.id === messageId)
+    const next = siblings[Math.min(siblings.length - 1, Math.max(0, index + direction))]
+    if (!next) return c.json({ error: '分支切换失败' }, 400)
+    const leaf = await db.lastDescendant(next.id)
+    await db.setActiveLeaf(sessionId, leaf)
+    return c.json({
+      ok: true,
+      activeMessageId: leaf,
+      branchIndex: next.branchIndex,
+      branchCount: next.branchCount
     })
   })
 

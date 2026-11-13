@@ -1,5 +1,12 @@
+import { randomBytes } from 'node:crypto'
+import { existsSync, statSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Hono } from 'hono'
-import type { AutomationItem, AutomationSchedule } from '@pi-amadeus/shared'
+import type {
+  AutomationItem,
+  AutomationSchedule,
+  AutomationTrigger
+} from '@pi-amadeus/shared'
 import type { AutomationRow, Db } from '../db.ts'
 import {
   computeNextRun,
@@ -8,10 +15,12 @@ import {
   type ScheduleSpec
 } from '../automation/schedule.ts'
 import { automationScheduler } from '../automation/scheduler.ts'
+import { toPublicMessage } from '../media.ts'
 
 const SCHEDULES = new Set<AutomationSchedule>(['interval', 'daily', 'once'])
+const TRIGGERS = new Set<AutomationTrigger>(['schedule', 'file', 'webhook'])
 
-/** 自动化任务：CRUD + 立即运行 + 运行记录（会话消息） */
+/** 自动化任务：CRUD + 立即运行 + Webhook/文件触发 + 运行记录 */
 export function automationRoutes(db: Db): Hono {
   const app = new Hono()
 
@@ -24,24 +33,30 @@ export function automationRoutes(db: Db): Hono {
 
   app.post('/automations', async (c) => {
     const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
-    const parsed = parseInput(body, true)
+    const parsed = parseCreate(body)
     if ('error' in parsed) return c.json({ error: parsed.error }, 400)
-    const { userId, name, prompt, spec, enabled } = parsed.value
-    const nextRunAt = enabled ? computeNextRun(spec) : null
-    if (enabled && nextRunAt === null) {
+    const value = parsed.value
+    const nextRunAt =
+      value.enabled && value.trigger === 'schedule' ? computeNextRun(value.spec) : null
+    if (value.enabled && value.trigger === 'schedule' && nextRunAt === null) {
       return c.json({ error: '一次性任务的时间必须晚于当前时间' }, 400)
     }
     const row = await db.createAutomation({
-      userId,
-      name,
-      prompt,
-      schedule: spec.schedule,
-      intervalMinutes: spec.intervalMinutes,
-      timeOfDay: spec.timeOfDay,
-      runAt: spec.runAt,
-      enabled,
+      userId: value.userId,
+      name: value.name,
+      prompt: value.prompt,
+      trigger: value.trigger,
+      watchPath: value.watchPath,
+      debounceSeconds: value.debounceSeconds,
+      webhookSecret: value.webhookSecret,
+      schedule: value.spec.schedule,
+      intervalMinutes: value.spec.intervalMinutes,
+      timeOfDay: value.spec.timeOfDay,
+      runAt: value.spec.runAt,
+      enabled: value.enabled,
       nextRunAt
     })
+    await automationScheduler.syncWatchers()
     return c.json({ ok: true, automation: toItem(row) })
   })
 
@@ -64,12 +79,23 @@ export function automationRoutes(db: Db): Hono {
       if (prompt.length > 4000) return c.json({ error: '指令最多 4000 字' }, 400)
       patch.prompt = prompt
     }
+    if (body.enabled !== undefined) {
+      if (typeof body.enabled !== 'boolean') return c.json({ error: 'enabled 必须是布尔值' }, 400)
+      patch.enabled = body.enabled
+    }
 
-    const scheduleChanged =
+    const trigger = typeof body.trigger === 'string' ? body.trigger : row.trigger
+    if (!TRIGGERS.has(trigger as AutomationTrigger)) {
+      return c.json({ error: 'trigger 必须是 schedule/file/webhook' }, 400)
+    }
+    patch.trigger = trigger as AutomationTrigger
+
+    const scheduleTouched =
       body.schedule !== undefined ||
       body.intervalMinutes !== undefined ||
       body.timeOfDay !== undefined ||
-      body.runAt !== undefined
+      body.runAt !== undefined ||
+      trigger !== row.trigger
     if (body.schedule !== undefined) {
       if (typeof body.schedule !== 'string' || !SCHEDULES.has(body.schedule as AutomationSchedule)) {
         return c.json({ error: 'schedule 必须是 interval/daily/once' }, 400)
@@ -97,30 +123,51 @@ export function automationRoutes(db: Db): Hono {
         patch.runAt = Math.floor(runAt)
       }
     }
-    if (body.enabled !== undefined) {
-      if (typeof body.enabled !== 'boolean') return c.json({ error: 'enabled 必须是布尔值' }, 400)
-      patch.enabled = body.enabled
-    }
 
-    // 调度字段或启停变化后重算下次触发；只是改名/改指令则保留原计划
-    const nextRows = { ...row, ...patch }
-    const spec: ScheduleSpec = {
-      schedule: nextRows.schedule,
-      intervalMinutes: nextRows.intervalMinutes,
-      timeOfDay: nextRows.timeOfDay,
-      runAt: nextRows.runAt
-    }
-    if (patch.enabled === false) {
-      patch.nextRunAt = null
-    } else if (patch.enabled === true || (scheduleChanged && nextRows.enabled)) {
-      const next = computeNextRun(spec)
-      if (next === null && spec.schedule === 'once') {
-        return c.json({ error: '一次性任务的时间必须晚于当前时间' }, 400)
+    // 合并后的字段用于 trigger 校验
+    const next = { ...row, ...patch }
+    if (next.trigger === 'file') {
+      const watchPath = typeof body.watchPath === 'string' ? body.watchPath : row.watchPath
+      const pathError = validateWatchPath(watchPath)
+      if (pathError) return c.json({ error: pathError }, 400)
+      patch.watchPath = resolve(watchPath.trim())
+      const debounce = Number(body.debounceSeconds ?? row.debounceSeconds)
+      if (!Number.isFinite(debounce) || debounce < 1 || debounce > 300) {
+        return c.json({ error: '防抖秒数必须在 1~300 之间' }, 400)
       }
-      patch.nextRunAt = next
+      patch.debounceSeconds = Math.floor(debounce)
+      patch.nextRunAt = null
+    } else if (next.trigger === 'webhook') {
+      const secret =
+        typeof body.webhookSecret === 'string' && body.webhookSecret.trim()
+          ? body.webhookSecret.trim()
+          : row.webhookSecret || newSecret()
+      patch.webhookSecret = secret
+      patch.nextRunAt = null
+    } else {
+      const spec: ScheduleSpec = {
+        schedule: next.schedule,
+        intervalMinutes: next.intervalMinutes,
+        timeOfDay: next.timeOfDay,
+        runAt: next.runAt
+      }
+      if (next.enabled) {
+        const nextRunAt = computeNextRun(spec)
+        if (nextRunAt === null && spec.schedule === 'once') {
+          return c.json({ error: '一次性任务的时间必须晚于当前时间' }, 400)
+        }
+        patch.nextRunAt = nextRunAt
+      } else {
+        patch.nextRunAt = null
+      }
+      if (!scheduleTouched && body.enabled === undefined) {
+        // 只改名称/指令：保留原计划
+        delete patch.nextRunAt
+      }
     }
 
     const updated = await db.updateAutomation(row.id, patch)
+    await automationScheduler.syncWatchers()
     return c.json({ ok: true, automation: toItem(updated!) })
   })
 
@@ -128,6 +175,7 @@ export function automationRoutes(db: Db): Hono {
     const row = await db.getAutomation(c.req.param('id'))
     if (!row) return c.json({ error: '自动化任务不存在' }, 404)
     await db.deleteAutomation(row.id)
+    await automationScheduler.syncWatchers()
     return c.json({ ok: true })
   })
 
@@ -141,12 +189,33 @@ export function automationRoutes(db: Db): Hono {
     return c.json({ ok: true }, 202)
   })
 
+  /** Webhook 触发：外部系统 POST 到这里，密钥放 x-amadeus-secret */
+  app.post('/automations/:id/trigger', async (c) => {
+    const row = await db.getAutomation(c.req.param('id'))
+    if (!row) return c.json({ error: '自动化任务不存在' }, 404)
+    if (row.trigger !== 'webhook') return c.json({ error: '该任务不是 Webhook 触发' }, 400)
+    if (row.webhookSecret) {
+      const secret = c.req.header('x-amadeus-secret') ?? ''
+      if (secret !== row.webhookSecret) return c.json({ error: '密钥不匹配' }, 401)
+    }
+    const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
+    const text =
+      typeof body?.text === 'string'
+        ? body.text
+        : body
+          ? JSON.stringify(body)
+          : ''
+    const started = await automationScheduler.triggerWebhook(row.id, text.slice(0, 2000))
+    if (!started) return c.json({ error: '任务正在运行中' }, 409)
+    return c.json({ ok: true }, 202)
+  })
+
   /** 该任务的会话消息（运行记录；成功回合的回复已落库） */
   app.get('/automations/:id/messages', async (c) => {
     const row = await db.getAutomation(c.req.param('id'))
     if (!row) return c.json({ error: '自动化任务不存在' }, 404)
     const messages = await db.listMessages(`automation-${row.id}`)
-    return c.json({ messages })
+    return c.json({ messages: messages.map(toPublicMessage) })
   })
 
   return app
@@ -157,6 +226,10 @@ function toItem(row: AutomationRow): AutomationItem {
     id: row.id,
     name: row.name,
     prompt: row.prompt,
+    trigger: row.trigger,
+    watchPath: row.watchPath,
+    debounceSeconds: row.debounceSeconds,
+    webhookSecret: row.webhookSecret,
     schedule: row.schedule,
     intervalMinutes: row.intervalMinutes,
     timeOfDay: row.timeOfDay,
@@ -167,25 +240,48 @@ function toItem(row: AutomationRow): AutomationItem {
     lastStatus: row.lastStatus,
     lastError: row.lastError,
     lastResult: row.lastResult,
+    lastTrigger: row.lastTrigger,
     sessionId: `automation-${row.id}`,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   }
 }
 
-type ParsedInput =
+function newSecret(): string {
+  return randomBytes(16).toString('hex')
+}
+
+function validateWatchPath(raw: string): string | null {
+  const value = raw.trim()
+  if (!value) return '请填写要监听的文件或目录路径'
+  const resolved = resolve(value)
+  if (!existsSync(resolved)) return `路径不存在：${resolved}`
+  try {
+    const stat = statSync(resolved)
+    if (!stat.isFile() && !stat.isDirectory()) return '路径必须是文件或目录'
+  } catch {
+    return '路径无法访问'
+  }
+  return null
+}
+
+type ParsedCreate =
   | {
       value: {
         userId: string
         name: string
         prompt: string
+        trigger: AutomationTrigger
+        watchPath: string
+        debounceSeconds: number
+        webhookSecret: string
         spec: ScheduleSpec
         enabled: boolean
       }
     }
   | { error: string }
 
-function parseInput(body: Record<string, unknown> | null, creating: boolean): ParsedInput {
+function parseCreate(body: Record<string, unknown> | null): ParsedCreate {
   const userId = typeof body?.userId === 'string' ? body.userId : ''
   const name = typeof body?.name === 'string' ? body.name.trim() : ''
   const prompt = typeof body?.prompt === 'string' ? body.prompt.trim() : ''
@@ -194,13 +290,22 @@ function parseInput(body: Record<string, unknown> | null, creating: boolean): Pa
   if (name.length > 80) return { error: '名称最多 80 字' }
   if (!prompt) return { error: '指令必填' }
   if (prompt.length > 4000) return { error: '指令最多 4000 字' }
-  const schedule = typeof body?.schedule === 'string' ? body.schedule : ''
+
+  const trigger = typeof body?.trigger === 'string' ? body.trigger : 'schedule'
+  if (!TRIGGERS.has(trigger as AutomationTrigger)) {
+    return { error: 'trigger 必须是 schedule/file/webhook' }
+  }
+
+  const schedule = typeof body?.schedule === 'string' ? body.schedule : 'daily'
   if (!SCHEDULES.has(schedule as AutomationSchedule)) {
     return { error: 'schedule 必须是 interval/daily/once' }
   }
   const intervalRaw = Number(body?.intervalMinutes ?? 60)
   const intervalMinutes = Number.isFinite(intervalRaw) ? Math.floor(intervalRaw) : 60
-  if (schedule === 'interval' && (intervalMinutes < MIN_INTERVAL_MINUTES || intervalMinutes > MAX_INTERVAL_MINUTES)) {
+  if (
+    schedule === 'interval' &&
+    (intervalMinutes < MIN_INTERVAL_MINUTES || intervalMinutes > MAX_INTERVAL_MINUTES)
+  ) {
     return { error: `间隔必须在 ${MIN_INTERVAL_MINUTES}~${MAX_INTERVAL_MINUTES} 分钟之间` }
   }
   const timeOfDay = typeof body?.timeOfDay === 'string' ? body.timeOfDay : '09:00'
@@ -212,16 +317,40 @@ function parseInput(body: Record<string, unknown> | null, creating: boolean): Pa
     const value = Number(body?.runAt)
     if (!Number.isFinite(value)) return { error: '一次性任务需要 runAt 时间戳' }
     runAt = Math.floor(value)
-    if (creating && runAt <= Date.now()) return { error: '一次性任务的时间必须晚于当前时间' }
+    if (runAt <= Date.now()) return { error: '一次性任务的时间必须晚于当前时间' }
   }
-  const enabled = body?.enabled !== false
+
+  let watchPath = ''
+  let debounceSeconds = 2
+  let webhookSecret = ''
+  if (trigger === 'file') {
+    const rawPath = typeof body?.watchPath === 'string' ? body.watchPath : ''
+    const pathError = validateWatchPath(rawPath)
+    if (pathError) return { error: pathError }
+    watchPath = resolve(rawPath.trim())
+    const debounce = Number(body?.debounceSeconds ?? 2)
+    if (!Number.isFinite(debounce) || debounce < 1 || debounce > 300) {
+      return { error: '防抖秒数必须在 1~300 之间' }
+    }
+    debounceSeconds = Math.floor(debounce)
+  } else if (trigger === 'webhook') {
+    webhookSecret =
+      typeof body?.webhookSecret === 'string' && body.webhookSecret.trim()
+        ? body.webhookSecret.trim()
+        : newSecret()
+  }
+
   return {
     value: {
       userId,
       name,
       prompt,
+      trigger: trigger as AutomationTrigger,
+      watchPath,
+      debounceSeconds,
+      webhookSecret,
       spec: { schedule: schedule as AutomationSchedule, intervalMinutes, timeOfDay, runAt },
-      enabled
+      enabled: body?.enabled !== false
     }
   }
 }

@@ -6,16 +6,19 @@ import { loadConfig } from './config.ts'
 import { createDb } from './db.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { platformManager } from './platforms/manager.ts'
+import { proactiveScheduler } from './proactive/index.ts'
 import { syncMcpPlugins } from './plugins/registry.ts'
 import { automationRoutes } from './routes/automations.ts'
 import { chatRoutes } from './routes/chat.ts'
 import { knowledgeRoutes } from './routes/knowledge.ts'
+import { mediaRoutes } from './routes/media.ts'
 import { configRoutes } from './routes/config.ts'
 import { feishuRoutes } from './routes/feishu.ts'
 import { frameRoutes } from './routes/frames.ts'
 import { memoryRoutes } from './routes/memories.ts'
 import { platformRoutes } from './routes/platforms.ts'
 import { pluginRoutes } from './routes/plugins.ts'
+import { proactiveRoutes } from './routes/proactive.ts'
 import { providerRoutes } from './routes/providers.ts'
 import { sessionRoutes } from './routes/sessions.ts'
 import { skillRoutes } from './routes/skills.ts'
@@ -39,6 +42,8 @@ void platformManager.init(cfg, db).catch((error) => {
 void automationScheduler.init(cfg, db).catch((error) => {
   console.warn('[automation] 调度器启动失败：', error instanceof Error ? error.message : error)
 })
+// 主动问候：每 60 秒检查一次空闲用户（是否真的问候由 proactive/index.ts 判断）
+proactiveScheduler.init(cfg, db)
 
 const app = new Hono()
 
@@ -62,7 +67,9 @@ app.route('/api', providerRoutes(db))
 app.route('/api', platformRoutes(db))
 app.route('/api', memoryRoutes(db))
 app.route('/api', knowledgeRoutes(db))
+app.route('/api', mediaRoutes(db))
 app.route('/api', automationRoutes(db))
+app.route('/api', proactiveRoutes(db))
 app.route('/api', statsRoutes(db))
 app.route('/api', toolConfirmRoutes())
 if (cfg.feishu.enabled) {
@@ -83,6 +90,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     mcpManager.closeAll()
     platformManager.stopAll()
     automationScheduler.stop()
+    proactiveScheduler.stop()
     void db.close().finally(() => process.exit(0))
   })
 }

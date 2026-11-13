@@ -33,7 +33,9 @@
     "webhook": "Webhook",
     "discord": "Discord",
     "slack": "Slack",
-    "automation": "Automation"
+    "automation": "Automation",
+    "wechat": "微信",
+    "qqbot": "QQ 机器人"
   },
   "plugins": {
     "title": "Plugin Center",
@@ -192,7 +194,14 @@
     "artifactCopy": "Copy code",
     "artifactDownload": "Download",
     "artifactError": "Render failed",
-    "artifactHint": "HTML / SVG / Mermaid output from the model is previewed in a sandbox."
+    "artifactHint": "HTML / SVG / Mermaid output from the model is previewed in a sandbox.",
+    "attachmentsLimit": "Up to {{count}} attachments",
+    "attachmentTooLarge": "\"{{name}}\" exceeds {{size}}MB",
+    "attachmentReadFailed": "Failed to read \"{{name}}\"",
+    "attachmentRemove": "Remove attachment",
+    "attachments": "Attachments",
+    "branchPrev": "Previous branch",
+    "branchNext": "Next branch"
   },
   "companion": {
     "charName": "Kurisu Makise",
@@ -275,7 +284,8 @@
       "skills": "Skills",
       "language": "Language",
       "general": "General",
-      "platforms": "Platforms"
+      "platforms": "Platforms",
+      "proactive": "Companion"
     },
     "ai": {
       "title": "AI Configuration",
@@ -362,11 +372,21 @@
       "proxy": "Proxy (optional)",
       "enabled": "Enabled",
       "confirmDelete": "Confirm delete",
-      "coolingDown": "Cooling down"
+      "coolingDown": "Cooling down",
+      "tags": "Routing group",
+      "tagsHint": "Pick purposes; chat turns use chat, image turns prefer vision",
+      "tag": {
+        "chat": "Chat",
+        "vision": "Vision",
+        "summary": "Summary",
+        "memory": "Memory"
+      },
+      "dailyQuota": "Daily token quota (0 = unlimited)",
+      "quotaUsed": "Today {{used}} / {{quota}}"
     },
     "platforms": {
       "title": "Messaging platforms",
-      "desc": "Connect Amadeus to Telegram, QQ (OneBot v11), Discord, Slack, or any webhook service. Every platform shares the same sessions, memory, and affinity.",
+      "desc": "Connect Amadeus to Telegram, QQ (OneBot / official bot), Discord, Slack, WeChat Official Accounts, or any webhook. All platforms share sessions, memory, and affinity.",
       "add": "Add platform",
       "empty": "No platforms connected yet. Once added, external messages reach the same Amadeus.",
       "saved": "Saved",
@@ -380,7 +400,9 @@
         "onebot": "QQ (OneBot)",
         "webhook": "Webhook",
         "discord": "Discord",
-        "slack": "Slack"
+        "slack": "Slack",
+        "wechat": "WeChat Official",
+        "qqbot": "QQ Official Bot"
       },
       "state": {
         "running": "Running",
@@ -409,7 +431,19 @@
       "slackBotToken": "Bot Token (xoxb)",
       "slackAppToken": "App Token (xapp, Socket Mode)",
       "slackApiBase": "API base URL (optional, official by default)",
-      "channelIdPlaceholder": "Channel / conversation ID"
+      "channelIdPlaceholder": "Channel / conversation ID",
+      "wechatToken": "Callback Token",
+      "wechatAppId": "AppID",
+      "wechatAppSecret": "AppSecret",
+      "wechatApiBase": "API base URL (optional, official by default)",
+      "wechatTestOpenId": "Test OpenID",
+      "wechatInbound": "Copy callback URL",
+      "qqbotAppId": "AppID",
+      "qqbotSecret": "AppSecret",
+      "qqbotTokenUrl": "Token URL (optional, official by default)",
+      "qqbotApiBase": "API base URL (optional, official by default)",
+      "qqbotGateway": "Gateway URL (optional, auto-discovered)",
+      "qqbotTestOpenId": "Test OpenID"
     }
   },
   "live2d": {
@@ -624,7 +658,23 @@
       "daily": "Daily at {{time}}",
       "once": "Once"
     },
-    "loginRequired": "Sign in to use automations"
+    "loginRequired": "Sign in to use automations",
+    "trigger": "Trigger",
+    "triggerSchedule": "Schedule",
+    "triggerFile": "File change",
+    "triggerWebhook": "Webhook",
+    "watchPath": "Watch path",
+    "watchPathPlaceholder": "/Users/you/project or a file",
+    "debounceSeconds": "Debounce (s)",
+    "webhookSecret": "Trigger secret",
+    "webhookUrl": "Webhook URL",
+    "copyWebhook": "Copy URL & secret",
+    "lastTrigger": "Last trigger",
+    "triggerLabel": {
+      "schedule": "Schedule",
+      "file": "File change",
+      "webhook": "Webhook"
+    }
   },
   "workbench": {
     "title": "Agent workbench",
@@ -690,5 +740,24 @@
       "model": "Model",
       "recently": "Recently"
     }
+  },
+  "proactive": {
+    "title": "Proactive greetings",
+    "subtitle": "When you have been quiet for a while, she reaches out using real memory and relationship state.",
+    "enabled": "Enable proactive greetings",
+    "enabledHint": "Only inside the active window, after the idle threshold and under the daily limit",
+    "minIdle": "Idle minutes before greeting",
+    "maxPerDay": "Max per day",
+    "activeFrom": "Window starts",
+    "activeTo": "Window ends",
+    "runNow": "Greet now",
+    "todayCount": "Greeted {{count}} times today",
+    "latest": "Latest greeting",
+    "empty": "No greetings yet",
+    "hint": "Greetings are generated by the real model from long-term memory and affinity, then written to your latest desktop session. No fixed templates and no invented user lines.",
+    "saved": "Settings saved",
+    "sent": "Greeting generated",
+    "arrived": "She sent you a message",
+    "loginRequired": "Sign in to use proactive greetings"
   }
 }

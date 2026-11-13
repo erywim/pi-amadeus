@@ -33,7 +33,9 @@
     "webhook": "Webhook",
     "discord": "Discord",
     "slack": "Slack",
-    "automation": "自動化"
+    "automation": "自動化",
+    "wechat": "微信",
+    "qqbot": "QQ 机器人"
   },
   "plugins": {
     "title": "プラグインセンター",
@@ -192,7 +194,14 @@
     "artifactCopy": "コードをコピー",
     "artifactDownload": "ダウンロード",
     "artifactError": "描画に失敗",
-    "artifactHint": "モデルが出力した HTML / SVG / Mermaid をサンドボックスで表示します。"
+    "artifactHint": "モデルが出力した HTML / SVG / Mermaid をサンドボックスで表示します。",
+    "attachmentsLimit": "添付は最大 {{count}} 件です",
+    "attachmentTooLarge": "「{{name}}」は {{size}}MB を超えています",
+    "attachmentReadFailed": "「{{name}}」の読み込みに失敗しました",
+    "attachmentRemove": "添付を削除",
+    "attachments": "添付",
+    "branchPrev": "前のブランチ",
+    "branchNext": "次のブランチ"
   },
   "companion": {
     "charName": "牧瀬紅莉栖",
@@ -275,7 +284,8 @@
       "skills": "スキル",
       "language": "言語",
       "general": "一般",
-      "platforms": "連携プラットフォーム"
+      "platforms": "連携プラットフォーム",
+      "proactive": "陪伴"
     },
     "ai": {
       "title": "AI 設定",
@@ -362,11 +372,21 @@
       "proxy": "プロキシ（任意）",
       "enabled": "有効",
       "confirmDelete": "削除を確認",
-      "coolingDown": "冷却中"
+      "coolingDown": "冷却中",
+      "tags": "ルーティンググループ",
+      "tagsHint": "用途を選択。チャットは chat、画像は vision を優先",
+      "tag": {
+        "chat": "チャット",
+        "vision": "視覚",
+        "summary": "要約",
+        "memory": "記憶"
+      },
+      "dailyQuota": "1日の token 配额（0 = 無制限）",
+      "quotaUsed": "本日 {{used}} / {{quota}}"
     },
     "platforms": {
       "title": "連携プラットフォーム",
-      "desc": "Amadeus を Telegram、QQ（OneBot v11）、Discord、Slack、任意の Webhook に接続します。全プラットフォームでセッション・記憶・好感度を共有します。",
+      "desc": "Amadeus を Telegram、QQ（OneBot / 公式ボット）、Discord、Slack、WeChat 公式アカウント、任意の Webhook に接続します。",
       "add": "プラットフォームを追加",
       "empty": "まだ接続していません。追加すると外部メッセージが同じ Amadeus に入ります。",
       "saved": "保存しました",
@@ -380,7 +400,9 @@
         "onebot": "QQ（OneBot）",
         "webhook": "Webhook",
         "discord": "Discord",
-        "slack": "Slack"
+        "slack": "Slack",
+        "wechat": "WeChat 公式アカウント",
+        "qqbot": "QQ 公式ボット"
       },
       "state": {
         "running": "実行中",
@@ -409,7 +431,19 @@
       "slackBotToken": "Bot Token（xoxb）",
       "slackAppToken": "App Token（xapp、Socket Mode）",
       "slackApiBase": "API ベース URL（任意、既定は公式）",
-      "channelIdPlaceholder": "チャンネル / 会話 ID"
+      "channelIdPlaceholder": "チャンネル / 会話 ID",
+      "wechatToken": "コールバック Token",
+      "wechatAppId": "AppID",
+      "wechatAppSecret": "AppSecret",
+      "wechatApiBase": "API ベース URL（任意）",
+      "wechatTestOpenId": "テスト OpenID",
+      "wechatInbound": "コールバック URL をコピー",
+      "qqbotAppId": "AppID",
+      "qqbotSecret": "AppSecret",
+      "qqbotTokenUrl": "Token URL（任意）",
+      "qqbotApiBase": "API ベース URL（任意）",
+      "qqbotGateway": "Gateway URL（任意、自動取得）",
+      "qqbotTestOpenId": "テスト OpenID"
     }
   },
   "live2d": {
@@ -624,7 +658,23 @@
       "daily": "毎日 {{time}}",
       "once": "1回だけ"
     },
-    "loginRequired": "ログインすると利用できます"
+    "loginRequired": "ログインすると利用できます",
+    "trigger": "トリガー",
+    "triggerSchedule": "スケジュール",
+    "triggerFile": "ファイル変更",
+    "triggerWebhook": "Webhook",
+    "watchPath": "監視パス",
+    "watchPathPlaceholder": "/Users/you/project またはファイル",
+    "debounceSeconds": "デバウンス（秒）",
+    "webhookSecret": "トリガーキー",
+    "webhookUrl": "Webhook URL",
+    "copyWebhook": "URL とキーをコピー",
+    "lastTrigger": "前回のトリガー",
+    "triggerLabel": {
+      "schedule": "スケジュール",
+      "file": "ファイル変更",
+      "webhook": "Webhook"
+    }
   },
   "workbench": {
     "title": "Agent ワークベンチ",
@@ -690,5 +740,24 @@
       "model": "モデル",
       "recently": "最近"
     }
+  },
+  "proactive": {
+    "title": "主动の挨拶",
+    "subtitle": "しばらく話していないと、実際の記憶と関係性から彼女の方から声をかけます。",
+    "enabled": "主动の挨拶を有効化",
+    "enabledHint": "時間帯・アイドル時間・1日の上限をすべて満たす時だけ",
+    "minIdle": "アイドル時間（分）",
+    "maxPerDay": "1日の上限",
+    "activeFrom": "時間帯の開始",
+    "activeTo": "時間帯の終了",
+    "runNow": "今すぐ挨拶",
+    "todayCount": "本日 {{count}} 回",
+    "latest": "最新の挨拶",
+    "empty": "まだ挨拶はありません",
+    "hint": "挨拶は実際のモデルが長期記憶と好感度から生成し、直近のデスクトップセッションに書き込みます。固定テンプレートや架空の発言は使いません。",
+    "saved": "設定を保存しました",
+    "sent": "挨拶を生成しました",
+    "arrived": "彼女からメッセージが届きました",
+    "loginRequired": "ログインすると利用できます"
   }
 }

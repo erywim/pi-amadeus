@@ -1,5 +1,6 @@
 import type {
   AffinitySummary,
+  AttachmentPayload,
   AutomationInput,
   AutomationItem,
   InstalledPlugin,
@@ -15,6 +16,10 @@ import type {
   PlatformInput,
   PlatformItem,
   PluginListResponse,
+  ProactiveGreeting,
+  ProactiveInput,
+  ProactiveResponse,
+  ProactiveSettings,
   ProviderInput,
   ProviderItem,
   ProviderTestResult,
@@ -137,6 +142,28 @@ export async function fetchSessionUsage(sessionId: string): Promise<SessionUsage
   return (await res.json()) as SessionUsage
 }
 
+/** 切换消息分支：messageId 是当前路径上的消息，direction = -1/1 */
+export async function switchBranchApi(input: {
+  sessionId: string
+  userId: string
+  messageId: string
+  direction: -1 | 1
+}): Promise<void> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/sessions/${encodeURIComponent(input.sessionId)}/branch`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: input.userId,
+        messageId: input.messageId,
+        direction: input.direction
+      })
+    }
+  )
+  if (!res.ok) throw new Error(await readError(res, '切换分支失败'))
+}
+
 // ---------- 用户配置（服务端 SQLite 单一来源） ----------
 
 export type ApiKeyStatus = 'default' | 'custom' | 'none'
@@ -243,7 +270,12 @@ function runTurn(
 
 /** 文本回合（仅中文） */
 export function startChatTurn(
-  body: { userId: string; sessionId: string; content: string },
+  body: {
+    userId: string
+    sessionId: string
+    content: string
+    attachments?: AttachmentPayload[]
+  },
   onEvent: (event: SseEvent) => void
 ): AbortController {
   return runTurn('/api/chat', body, onEvent)
@@ -741,4 +773,37 @@ export async function fetchAutomationMessages(id: string): Promise<Message[]> {
   if (!res.ok) throw new Error(await readError(res, '运行记录加载失败'))
   const json = (await res.json()) as { messages: Message[] }
   return json.messages
+}
+
+// ---------- 主动问候 ----------
+
+export async function fetchProactive(userId: string): Promise<ProactiveResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/proactive?userId=${encodeURIComponent(userId)}`)
+  if (!res.ok) throw new Error(await readError(res, '主动问候设置加载失败'))
+  return (await res.json()) as ProactiveResponse
+}
+
+export async function saveProactive(
+  userId: string,
+  input: ProactiveInput
+): Promise<ProactiveSettings> {
+  const res = await fetch(`${BRAIN_URL}/api/proactive`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, ...input })
+  })
+  if (!res.ok) throw new Error(await readError(res, '主动问候设置保存失败'))
+  const json = (await res.json()) as { settings: ProactiveSettings }
+  return json.settings
+}
+
+export async function runProactive(userId: string): Promise<ProactiveGreeting> {
+  const res = await fetch(`${BRAIN_URL}/api/proactive/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId })
+  })
+  if (!res.ok) throw new Error(await readError(res, '生成主动问候失败'))
+  const json = (await res.json()) as { greeting: ProactiveGreeting }
+  return json.greeting
 }

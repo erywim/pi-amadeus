@@ -1,12 +1,24 @@
 import * as React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUp, Check, ChevronDown, Plus, Sparkles, Square } from 'lucide-react'
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  FileText,
+  Image as ImageIcon,
+  Music,
+  Plus,
+  Sparkles,
+  Square,
+  X
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
+import { ATTACHMENT_LIMITS } from '@pi-amadeus/shared'
 import { cn } from '@renderer/lib/utils'
 import { promptCommandsOf, usePluginStore, type PromptCommand } from '@renderer/stores/pluginStore'
 import { activeProviderOf, useProviderStore } from '@renderer/stores/providerStore'
-import { useSessionStore } from '@renderer/stores/sessionStore'
+import { useSessionStore, type OutgoingAttachment } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 
 /**
@@ -24,7 +36,9 @@ export function Composer(): React.JSX.Element {
 function ChatComposerInner(): React.JSX.Element {
   const { t } = useTranslation()
   const [text, setText] = useState('')
+  const [attachments, setAttachments] = useState<OutgoingAttachment[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const streaming = useSessionStore((s) => s.stream.streaming)
   const sendMessage = useSessionStore((s) => s.sendMessage)
   const stopStreaming = useSessionStore((s) => s.stopStreaming)
@@ -68,16 +82,78 @@ function ChatComposerInner(): React.JSX.Element {
 
   function submit(): void {
     const value = text.trim()
-    if (!value || streaming) return
+    if ((!value && attachments.length === 0) || streaming) return
     // 未登录（或大脑服务不可达导致建档失败）时提示去陪伴模式完成身份认证
     if (!userId) {
       toast.error(t('settings.ai.loginRequired'))
       return
     }
     closeMenu()
-    sendMessage(value)
+    sendMessage(value, attachments)
     setText('')
+    setAttachments([])
     if (textareaRef.current) textareaRef.current.style.height = ''
+  }
+
+  /** File → base64 附件；图片额外生成 data URL 预览 */
+  function fileToAttachment(file: File): Promise<OutgoingAttachment> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = String(reader.result ?? '')
+        const comma = result.indexOf(',')
+        resolve({
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          size: file.size,
+          data: comma >= 0 ? result.slice(comma + 1) : '',
+          previewUrl: file.type.startsWith('image/') ? result : ''
+        })
+      }
+      reader.onerror = () => reject(reader.error ?? new Error('读取文件失败'))
+      reader.readAsDataURL(file)
+    })
+  }
+
+  async function addFiles(files: File[]): Promise<void> {
+    if (files.length === 0) return
+    const room = ATTACHMENT_LIMITS.count - attachments.length
+    if (room <= 0) {
+      toast.error(t('chat.attachmentsLimit', { count: ATTACHMENT_LIMITS.count }))
+      return
+    }
+    const accepted: OutgoingAttachment[] = []
+    for (const file of files.slice(0, room)) {
+      const kind = file.type.startsWith('image/')
+        ? 'image'
+        : file.type.startsWith('audio/')
+          ? 'audio'
+          : 'file'
+      const limit =
+        kind === 'image'
+          ? ATTACHMENT_LIMITS.imageBytes
+          : kind === 'audio'
+            ? ATTACHMENT_LIMITS.audioBytes
+            : ATTACHMENT_LIMITS.fileBytes
+      if (file.size > limit) {
+        toast.error(
+          t('chat.attachmentTooLarge', {
+            name: file.name,
+            size: Math.round(limit / 1024 / 1024)
+          })
+        )
+        continue
+      }
+      try {
+        accepted.push(await fileToAttachment(file))
+      } catch {
+        toast.error(t('chat.attachmentReadFailed', { name: file.name }))
+      }
+    }
+    if (files.length > room) {
+      toast.error(t('chat.attachmentsLimit', { count: ATTACHMENT_LIMITS.count }))
+    }
+    if (accepted.length > 0) setAttachments((current) => [...current, ...accepted])
   }
 
   function resize(el: HTMLTextAreaElement): void {
@@ -92,6 +168,14 @@ function ChatComposerInner(): React.JSX.Element {
         onSubmit={(e) => {
           e.preventDefault()
           submit()
+        }}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('Files')) e.preventDefault()
+        }}
+        onDrop={(e) => {
+          if (e.dataTransfer.files.length === 0) return
+          e.preventDefault()
+          void addFiles([...e.dataTransfer.files])
         }}
       >
         {/* 快捷指令菜单：点「指令」按钮或输入 / 触发 */}
@@ -134,6 +218,50 @@ function ChatComposerInner(): React.JSX.Element {
             </div>
           </div>
         )}
+        {attachments.length > 0 && (
+          <div data-testid="attachment-list" className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+            {attachments.map((item, index) => (
+              <span
+                key={`${item.name}-${index}`}
+                data-testid="attachment-chip"
+                className="group/chip relative flex max-w-[220px] items-center gap-2 rounded-lg border border-border bg-surface-soft py-1 pl-1.5 pr-6"
+              >
+                {item.previewUrl ? (
+                  <img
+                    src={item.previewUrl}
+                    alt={item.name}
+                    className="size-8 shrink-0 rounded object-cover"
+                  />
+                ) : (
+                  <span className="grid size-8 shrink-0 place-items-center rounded bg-surface text-muted-foreground">
+                    {item.mimeType.startsWith('audio/') ? (
+                      <Music className="size-3.5" />
+                    ) : item.mimeType.startsWith('image/') ? (
+                      <ImageIcon className="size-3.5" />
+                    ) : (
+                      <FileText className="size-3.5" />
+                    )}
+                  </span>
+                )}
+                <span className="min-w-0">
+                  <span className="block truncate text-[12px] text-foreground">{item.name}</span>
+                  <span className="block text-[10px] text-muted-foreground">
+                    {(item.size / 1024).toFixed(0)} KB
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  aria-label={t('chat.attachmentRemove')}
+                  title={t('chat.attachmentRemove')}
+                  onClick={() => setAttachments((current) => current.filter((_, i) => i !== index))}
+                  className="absolute right-1 top-1 rounded p-0.5 text-muted-foreground hover:bg-surface hover:text-foreground"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           rows={2}
@@ -147,6 +275,12 @@ function ChatComposerInner(): React.JSX.Element {
             // 以 / 开头（且还没换行）时打开指令菜单，后续输入作为过滤词
             if (value.startsWith('/') && !value.includes('\n')) openMenu(value.slice(1))
             else if (menuOpen) closeMenu()
+          }}
+          onPaste={(e) => {
+            const files = [...e.clipboardData.files]
+            if (files.length === 0) return
+            e.preventDefault()
+            void addFiles(files)
           }}
           onKeyDown={(e) => {
             if (menuOpen) {
@@ -190,12 +324,24 @@ function ChatComposerInner(): React.JSX.Element {
         <div className="flex items-center gap-2 p-2">
           <button
             type="button"
-            onClick={() => toast(t('chatShell.attachWip'))}
+            data-testid="attach-button"
+            onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-1.5 rounded-lg px-2.5 py-[5px] text-[13.5px] text-ink-2 transition-colors hover:bg-surface-soft"
           >
             <Plus className="size-3.5" strokeWidth={2} />
             {t('chatShell.attach')}
           </button>
+          <input
+            ref={fileInputRef}
+            data-testid="attach-input"
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              void addFiles([...(e.target.files ?? [])])
+              e.target.value = ''
+            }}
+          />
           <button
             type="button"
             data-testid="composer-commands"
@@ -222,7 +368,7 @@ function ChatComposerInner(): React.JSX.Element {
               type="submit"
               aria-label={t('chat.send')}
               title={t('chat.send')}
-              disabled={!text.trim()}
+              disabled={!text.trim() && attachments.length === 0}
               className="grid size-[34px] place-items-center rounded-lg bg-foreground text-accent-ink transition-colors hover:brightness-90 disabled:bg-line-strong"
             >
               <ArrowUp className="size-[15px]" strokeWidth={2} />

@@ -1,3 +1,4 @@
+import type { MessageAttachment } from './attachment.ts'
 import type { Emotion } from './emotion.ts'
 import type { ToolStatus } from './sse.ts'
 
@@ -13,6 +14,8 @@ export type Channel =
   | 'webhook'
   | 'discord'
   | 'slack'
+  | 'wechat'
+  | 'qqbot'
   | 'automation'
 
 export type Role = 'user' | 'assistant'
@@ -34,6 +37,13 @@ export interface Message {
   ttsText?: string | null
   /** 回合发起时的模式 */
   mode: TurnMode
+  /** 分支树父节点；根消息为 null */
+  parentId?: string | null
+  /** 同一父节点下的第几条 / 总数（分支切换器） */
+  branchIndex?: number
+  branchCount?: number
+  /** 图片 / 语音 / 文件附件（文件本体在服务端数据目录） */
+  attachments?: MessageAttachment[]
   createdAt: number
 }
 

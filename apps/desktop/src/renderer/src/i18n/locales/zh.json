@@ -33,7 +33,9 @@
     "webhook": "Webhook",
     "discord": "Discord",
     "slack": "Slack",
-    "automation": "自动化"
+    "automation": "自动化",
+    "wechat": "微信",
+    "qqbot": "QQ 机器人"
   },
   "plugins": {
     "title": "插件中心",
@@ -192,7 +194,14 @@
     "artifactCopy": "复制代码",
     "artifactDownload": "下载",
     "artifactError": "渲染失败",
-    "artifactHint": "模型输出的 HTML / SVG / Mermaid 在这里以沙箱方式预览。"
+    "artifactHint": "模型输出的 HTML / SVG / Mermaid 在这里以沙箱方式预览。",
+    "attachmentsLimit": "最多附加 {{count}} 个文件",
+    "attachmentTooLarge": "「{{name}}」超过 {{size}}MB，未添加",
+    "attachmentReadFailed": "读取「{{name}}」失败",
+    "attachmentRemove": "移除附件",
+    "attachments": "附件",
+    "branchPrev": "上一个分支",
+    "branchNext": "下一个分支"
   },
   "companion": {
     "charName": "牧濑红莉栖",
@@ -275,7 +284,8 @@
       "skills": "技能",
       "language": "语言",
       "general": "通用",
-      "platforms": "通讯平台"
+      "platforms": "通讯平台",
+      "proactive": "陪伴"
     },
     "ai": {
       "title": "AI 配置",
@@ -362,11 +372,21 @@
       "proxy": "代理（可选）",
       "enabled": "启用",
       "confirmDelete": "确认删除",
-      "coolingDown": "故障冷却"
+      "coolingDown": "故障冷却",
+      "tags": "路由组",
+      "tagsHint": "按用途选择；聊天回合走 chat，带图片的回合优先 vision",
+      "tag": {
+        "chat": "聊天",
+        "vision": "视觉",
+        "summary": "摘要",
+        "memory": "记忆"
+      },
+      "dailyQuota": "每日 token 配额（0 = 不限）",
+      "quotaUsed": "今日 {{used}} / {{quota}}"
     },
     "platforms": {
       "title": "通讯平台",
-      "desc": "把 Amadeus 接到 Telegram、QQ（OneBot v11）、Discord、Slack 或任意 Webhook 服务；各平台共用同一套会话、记忆与好感度，桌面端也能看到并继续。",
+      "desc": "把 Amadeus 接到 Telegram、QQ（OneBot / 官方机器人）、Discord、Slack、微信公众号或任意 Webhook；各平台共用同一套会话、记忆与好感度。",
       "add": "添加平台",
       "empty": "还没有接入通讯平台。添加后，外部消息会进入同一个 Amadeus。",
       "saved": "已保存",
@@ -380,7 +400,9 @@
         "onebot": "QQ（OneBot）",
         "webhook": "Webhook",
         "discord": "Discord",
-        "slack": "Slack"
+        "slack": "Slack",
+        "wechat": "微信公众号",
+        "qqbot": "QQ 官方机器人"
       },
       "state": {
         "running": "运行中",
@@ -409,7 +431,19 @@
       "slackBotToken": "Bot Token（xoxb）",
       "slackAppToken": "App Token（xapp，Socket Mode）",
       "slackApiBase": "API 地址（可选，默认官方）",
-      "channelIdPlaceholder": "频道 / 会话 ID"
+      "channelIdPlaceholder": "频道 / 会话 ID",
+      "wechatToken": "回调签名 Token",
+      "wechatAppId": "AppID",
+      "wechatAppSecret": "AppSecret",
+      "wechatApiBase": "API 地址（可选，默认官方）",
+      "wechatTestOpenId": "测试 OpenID",
+      "wechatInbound": "复制公众号回调地址",
+      "qqbotAppId": "AppID",
+      "qqbotSecret": "AppSecret",
+      "qqbotTokenUrl": "Token 地址（可选，默认官方）",
+      "qqbotApiBase": "API 地址（可选，默认官方）",
+      "qqbotGateway": "Gateway 地址（可选，默认自动获取）",
+      "qqbotTestOpenId": "测试 OpenID"
     }
   },
   "live2d": {
@@ -624,7 +658,23 @@
       "daily": "每天 {{time}}",
       "once": "一次性"
     },
-    "loginRequired": "登录后可以使用自动化任务"
+    "loginRequired": "登录后可以使用自动化任务",
+    "trigger": "触发方式",
+    "triggerSchedule": "定时",
+    "triggerFile": "文件变化",
+    "triggerWebhook": "Webhook",
+    "watchPath": "监听路径",
+    "watchPathPlaceholder": "/Users/you/project 或某个文件",
+    "debounceSeconds": "防抖（秒）",
+    "webhookSecret": "触发密钥",
+    "webhookUrl": "Webhook 地址",
+    "copyWebhook": "复制地址与密钥",
+    "lastTrigger": "最近触发",
+    "triggerLabel": {
+      "schedule": "定时",
+      "file": "文件变化",
+      "webhook": "Webhook"
+    }
   },
   "workbench": {
     "title": "Agent 工作台",
@@ -690,5 +740,24 @@
       "model": "模型",
       "recently": "最近活动"
     }
+  },
+  "proactive": {
+    "title": "主动问候",
+    "subtitle": "当你有段时间没说话时，让她用真实记忆和关系状态主动关心你。",
+    "enabled": "启用主动问候",
+    "enabledHint": "只在时间窗内、超过空闲时长且未超过今日次数时触发",
+    "minIdle": "空闲多少分钟后（分钟）",
+    "maxPerDay": "每天最多",
+    "activeFrom": "时间窗开始",
+    "activeTo": "时间窗结束",
+    "runNow": "立即问候",
+    "todayCount": "今天已问候 {{count}} 次",
+    "latest": "最近一条主动问候",
+    "empty": "还没有主动问候",
+    "hint": "问候由真实模型基于长期记忆与好感度生成，写入你最近的桌面会话；不会发固定模板，也不会假装你说过话。",
+    "saved": "设置已保存",
+    "sent": "已生成一条主动问候",
+    "arrived": "她主动发来一条消息",
+    "loginRequired": "登录后可以使用主动问候"
   }
 }

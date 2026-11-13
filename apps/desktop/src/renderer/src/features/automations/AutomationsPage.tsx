@@ -15,12 +15,19 @@ import {
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
-import type { AutomationInput, AutomationItem, AutomationSchedule } from '@pi-amadeus/shared'
+import type {
+  AutomationInput,
+  AutomationItem,
+  AutomationSchedule,
+  AutomationTrigger
+} from '@pi-amadeus/shared'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Switch } from '@renderer/components/ui/switch'
 import { Textarea } from '@renderer/components/ui/textarea'
+import { BRAIN_URL } from '@renderer/lib/api'
+import { copyText } from '@renderer/lib/clipboard'
 import { cn } from '@renderer/lib/utils'
 import { useAutomationStore } from '@renderer/stores/automationStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
@@ -35,20 +42,28 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 interface FormState {
   name: string
   prompt: string
+  trigger: AutomationTrigger
   schedule: AutomationSchedule
   intervalMinutes: number
   timeOfDay: string
   runAt: string
+  watchPath: string
+  debounceSeconds: number
+  webhookSecret: string
   enabled: boolean
 }
 
 const EMPTY_FORM: FormState = {
   name: '',
   prompt: '',
+  trigger: 'schedule',
   schedule: 'daily',
   intervalMinutes: 60,
   timeOfDay: '09:00',
   runAt: '',
+  watchPath: '',
+  debounceSeconds: 2,
+  webhookSecret: '',
   enabled: true
 }
 
@@ -116,10 +131,14 @@ export default function AutomationsPage(): React.JSX.Element {
     setForm({
       name: item.name,
       prompt: item.prompt,
+      trigger: item.trigger,
       schedule: item.schedule,
       intervalMinutes: item.intervalMinutes,
       timeOfDay: item.timeOfDay || '09:00',
       runAt: item.runAt ? toLocalInput(item.runAt) : '',
+      watchPath: item.watchPath,
+      debounceSeconds: item.debounceSeconds,
+      webhookSecret: item.webhookSecret,
       enabled: item.enabled
     })
     setFormOpen(true)
@@ -132,11 +151,20 @@ export default function AutomationsPage(): React.JSX.Element {
     const payload: AutomationInput = {
       name,
       prompt,
-      schedule: form.schedule,
-      intervalMinutes: form.intervalMinutes,
-      timeOfDay: form.timeOfDay,
-      runAt: form.schedule === 'once' && form.runAt ? Date.parse(form.runAt) : null,
-      enabled: form.enabled
+      trigger: form.trigger,
+      enabled: form.enabled,
+      ...(form.trigger === 'schedule'
+        ? {
+            schedule: form.schedule,
+            intervalMinutes: form.intervalMinutes,
+            timeOfDay: form.timeOfDay,
+            runAt: form.schedule === 'once' && form.runAt ? Date.parse(form.runAt) : null
+          }
+        : {}),
+      ...(form.trigger === 'file'
+        ? { watchPath: form.watchPath.trim(), debounceSeconds: form.debounceSeconds }
+        : {}),
+      ...(form.trigger === 'webhook' ? { webhookSecret: form.webhookSecret.trim() } : {})
     }
     setBusy(true)
     try {
@@ -244,6 +272,28 @@ export default function AutomationsPage(): React.JSX.Element {
                 {t('common.cancel')}
               </button>
             </div>
+            <div className="mt-3 space-y-1">
+              <span className="text-[12.5px] text-muted-foreground">{t('automations.trigger')}</span>
+              <div className="flex max-w-md gap-1 rounded-[10px] border border-border bg-surface-soft p-1">
+                {(['schedule', 'file', 'webhook'] as const).map((trigger) => (
+                  <button
+                    key={trigger}
+                    type="button"
+                    data-testid={`automation-trigger-${trigger}`}
+                    onClick={() => setForm({ ...form, trigger })}
+                    className={cn(
+                      'flex-1 rounded-[7px] px-2 py-1.5 text-[12.5px] transition-colors',
+                      form.trigger === trigger
+                        ? 'bg-surface font-medium text-foreground shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    {t(`automations.triggerLabel.${trigger}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="mt-3 grid gap-3 md:grid-cols-2">
               <label className="space-y-1">
                 <span className="text-[12.5px] text-muted-foreground">{t('automations.name')}</span>
@@ -255,6 +305,7 @@ export default function AutomationsPage(): React.JSX.Element {
                   className="h-9 text-[13px]"
                 />
               </label>
+              {form.trigger === 'schedule' && (
               <div className="space-y-1">
                 <span className="text-[12.5px] text-muted-foreground">{t('automations.schedule')}</span>
                 <div className="flex gap-1 rounded-[10px] border border-border bg-surface-soft p-1">
@@ -276,10 +327,11 @@ export default function AutomationsPage(): React.JSX.Element {
                   ))}
                 </div>
               </div>
+              )}
             </div>
 
             <div className="mt-3 grid gap-3 md:grid-cols-2">
-              {form.schedule === 'interval' && (
+              {form.trigger === 'schedule' && form.schedule === 'interval' && (
                 <label className="space-y-1">
                   <span className="text-[12.5px] text-muted-foreground">
                     {t('automations.intervalMinutes')}
@@ -297,7 +349,7 @@ export default function AutomationsPage(): React.JSX.Element {
                   />
                 </label>
               )}
-              {form.schedule === 'daily' && (
+              {form.trigger === 'schedule' && form.schedule === 'daily' && (
                 <label className="space-y-1">
                   <span className="text-[12.5px] text-muted-foreground">
                     {t('automations.timeOfDay')}
@@ -311,7 +363,7 @@ export default function AutomationsPage(): React.JSX.Element {
                   />
                 </label>
               )}
-              {form.schedule === 'once' && (
+              {form.trigger === 'schedule' && form.schedule === 'once' && (
                 <label className="space-y-1">
                   <span className="text-[12.5px] text-muted-foreground">
                     {t('automations.runAt')}
@@ -322,6 +374,52 @@ export default function AutomationsPage(): React.JSX.Element {
                     value={form.runAt}
                     onChange={(e) => setForm({ ...form, runAt: e.target.value })}
                     className="h-9 text-[13px]"
+                  />
+                </label>
+              )}
+              {form.trigger === 'file' && (
+                <>
+                  <label className="space-y-1 md:col-span-2">
+                    <span className="text-[12.5px] text-muted-foreground">
+                      {t('automations.watchPath')}
+                    </span>
+                    <Input
+                      data-testid="automation-watch-path"
+                      value={form.watchPath}
+                      onChange={(e) => setForm({ ...form, watchPath: e.target.value })}
+                      placeholder={t('automations.watchPathPlaceholder')}
+                      className="h-9 font-mono text-[12.5px]"
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[12.5px] text-muted-foreground">
+                      {t('automations.debounceSeconds')}
+                    </span>
+                    <Input
+                      data-testid="automation-debounce"
+                      type="number"
+                      min={1}
+                      max={300}
+                      value={form.debounceSeconds}
+                      onChange={(e) =>
+                        setForm({ ...form, debounceSeconds: Number(e.target.value) || 2 })
+                      }
+                      className="h-9 text-[13px]"
+                    />
+                  </label>
+                </>
+              )}
+              {form.trigger === 'webhook' && (
+                <label className="space-y-1 md:col-span-2">
+                  <span className="text-[12.5px] text-muted-foreground">
+                    {t('automations.webhookSecret')}
+                  </span>
+                  <Input
+                    data-testid="automation-webhook-secret"
+                    value={form.webhookSecret}
+                    onChange={(e) => setForm({ ...form, webhookSecret: e.target.value })}
+                    placeholder="留空自动生成"
+                    className="h-9 font-mono text-[12.5px]"
                   />
                 </label>
               )}
@@ -396,19 +494,26 @@ export default function AutomationsPage(): React.JSX.Element {
                         {t(`automations.status.${status}`)}
                       </Badge>
                       <span className="text-[11.5px] text-muted-foreground">
-                        {scheduleLabel(item, t)}
+                        {triggerSummary(item, t)}
                       </span>
                     </div>
                     <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground">
                       {item.prompt}
                     </p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-muted-foreground">
-                      <span>
-                        {t('automations.nextRun')}：
-                        {item.enabled && item.nextRunAt
-                          ? dateTimeFormatter.format(item.nextRunAt)
-                          : t('automations.never')}
-                      </span>
+                      {item.trigger === 'schedule' ? (
+                        <span>
+                          {t('automations.nextRun')}：
+                          {item.enabled && item.nextRunAt
+                            ? dateTimeFormatter.format(item.nextRunAt)
+                            : t('automations.never')}
+                        </span>
+                      ) : (
+                        <span>
+                          {t('automations.lastTrigger')}：
+                          {item.lastTrigger || t('automations.never')}
+                        </span>
+                      )}
                       <span>
                         {t('automations.lastRun')}：
                         {item.lastRunAt
@@ -416,6 +521,25 @@ export default function AutomationsPage(): React.JSX.Element {
                           : t('automations.never')}
                       </span>
                     </div>
+                    {item.trigger === 'webhook' && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface-soft px-2 py-1.5">
+                        <code className="min-w-0 flex-1 truncate font-mono text-[10.5px] text-muted-foreground">
+                          {BRAIN_URL}/api/automations/{item.id}/trigger
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const url = `${BRAIN_URL}/api/automations/${item.id}/trigger`
+                            const curl = `curl -X POST '${url}' -H 'x-amadeus-secret: ${item.webhookSecret}' -H 'content-type: application/json' -d '{"text":"..."}'`
+                            void copyText(curl)
+                            toast.success(t('common.copied'))
+                          }}
+                          className="shrink-0 text-[11px] text-primary hover:underline"
+                        >
+                          {t('automations.copyWebhook')}
+                        </button>
+                      </div>
+                    )}
                     {item.lastStatus === 'error' && item.lastError && (
                       <p className="mt-1.5 rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-[11.5px] text-destructive">
                         {item.lastError}
@@ -530,6 +654,17 @@ function statusKey(item: AutomationItem): 'success' | 'error' | 'running' | 'idl
   if (item.lastStatus === 'success') return 'success'
   if (item.lastStatus === 'error') return 'error'
   return 'idle'
+}
+
+function triggerSummary(
+  item: AutomationItem,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  if (item.trigger === 'file') {
+    return `${t('automations.triggerLabel.file')} · ${item.watchPath}`
+  }
+  if (item.trigger === 'webhook') return t('automations.triggerLabel.webhook')
+  return scheduleLabel(item, t)
 }
 
 function scheduleLabel(

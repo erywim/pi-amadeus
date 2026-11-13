@@ -3,14 +3,24 @@ import type { PlatformItem, PlatformKind } from '@pi-amadeus/shared'
 import type { Db, PlatformRow } from '../db.ts'
 import { platformManager } from '../platforms/manager.ts'
 
-const KINDS = new Set<PlatformKind>(['telegram', 'onebot', 'webhook', 'discord', 'slack'])
+const KINDS = new Set<PlatformKind>([
+  'telegram',
+  'onebot',
+  'webhook',
+  'discord',
+  'slack',
+  'wechat',
+  'qqbot'
+])
 
 const FIELDS: Record<PlatformKind, string[]> = {
   telegram: ['token', 'baseUrl', 'testChatId'],
   onebot: ['url', 'accessToken', 'testChatId'],
   webhook: ['outboundUrl', 'secret'],
   discord: ['botToken', 'gatewayUrl', 'apiBaseUrl', 'testChatId'],
-  slack: ['botToken', 'appToken', 'apiBaseUrl', 'testChatId']
+  slack: ['botToken', 'appToken', 'apiBaseUrl', 'testChatId'],
+  wechat: ['token', 'appId', 'appSecret', 'apiBaseUrl', 'testOpenId'],
+  qqbot: ['appId', 'clientSecret', 'tokenUrl', 'apiBaseUrl', 'gatewayUrl', 'testOpenId']
 }
 
 /** 每个平台的密钥字段；编辑时留空表示保持原值 */
@@ -19,7 +29,9 @@ const SECRET_FIELDS: Record<PlatformKind, string[]> = {
   onebot: ['accessToken'],
   webhook: ['secret'],
   discord: ['botToken'],
-  slack: ['botToken', 'appToken']
+  slack: ['botToken', 'appToken'],
+  wechat: ['token', 'appSecret'],
+  qqbot: ['clientSecret']
 }
 
 /**
@@ -96,6 +108,20 @@ export function platformRoutes(db: Db): Hono {
     return c.json({ ok: true })
   })
 
+  // 微信公众号回调：GET 校验地址 / POST 收消息（签名在 manager 内校验）
+  app.get('/platforms/:id/wechat', async (c) => {
+    const query = Object.fromEntries(new URL(c.req.url).searchParams.entries())
+    const result = await platformManager.handleWechatInbound(c.req.param('id'), 'GET', query, '')
+    return c.text(result.body, result.status as 200)
+  })
+
+  app.post('/platforms/:id/wechat', async (c) => {
+    const query = Object.fromEntries(new URL(c.req.url).searchParams.entries())
+    const body = await c.req.text()
+    const result = await platformManager.handleWechatInbound(c.req.param('id'), 'POST', query, body)
+    return c.text(result.body, result.status as 200)
+  })
+
   // 通用 Webhook 入站（平台外部系统调用；密钥可选）
   app.post('/platforms/:id/webhook', async (c) => {
     const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
@@ -156,6 +182,23 @@ function maskConfig(kind: PlatformKind, config: Record<string, unknown>): Record
         botTokenSet: text('botToken').length > 0,
         appTokenSet: text('appToken').length > 0
       }
+    case 'wechat':
+      return {
+        appId: text('appId'),
+        apiBaseUrl: text('apiBaseUrl'),
+        testOpenId: text('testOpenId'),
+        tokenSet: text('token').length > 0,
+        appSecretSet: text('appSecret').length > 0
+      }
+    case 'qqbot':
+      return {
+        appId: text('appId'),
+        tokenUrl: text('tokenUrl'),
+        apiBaseUrl: text('apiBaseUrl'),
+        gatewayUrl: text('gatewayUrl'),
+        testOpenId: text('testOpenId'),
+        clientSecretSet: text('clientSecret').length > 0
+      }
   }
 }
 
@@ -214,6 +257,23 @@ function validate(kind: PlatformKind, config: Record<string, string>): string | 
     if (!config.botToken) return '缺少 Bot Token（xoxb）'
     if (!config.appToken) return '缺少 App Token（xapp，需开启 Socket Mode）'
     if (config.apiBaseUrl && !isHttpUrl(config.apiBaseUrl)) return 'API 地址必须是 http(s) 地址'
+    return null
+  }
+  if (kind === 'wechat') {
+    if (!config.token) return '缺少回调签名 Token'
+    if (!config.appId) return '缺少 AppID'
+    if (!config.appSecret) return '缺少 AppSecret'
+    if (config.apiBaseUrl && !isHttpUrl(config.apiBaseUrl)) return 'API 地址必须是 http(s) 地址'
+    return null
+  }
+  if (kind === 'qqbot') {
+    if (!config.appId) return '缺少 AppID'
+    if (!config.clientSecret) return '缺少 AppSecret'
+    if (config.tokenUrl && !isHttpUrl(config.tokenUrl)) return 'Token 地址必须是 http(s) 地址'
+    if (config.apiBaseUrl && !isHttpUrl(config.apiBaseUrl)) return 'API 地址必须是 http(s) 地址'
+    if (config.gatewayUrl && !/^wss?:\/\//.test(config.gatewayUrl)) {
+      return 'Gateway 地址必须以 ws:// 或 wss:// 开头'
+    }
     return null
   }
   if (!config.outboundUrl) return '缺少出站地址（outboundUrl）'

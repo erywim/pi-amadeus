@@ -25,6 +25,8 @@ interface FormState {
   apiKey: string
   model: string
   proxy: string
+  tags: string[]
+  dailyTokenQuota: number
   enabled: boolean
 }
 
@@ -34,6 +36,8 @@ const EMPTY_FORM: FormState = {
   apiKey: '',
   model: '',
   proxy: '',
+  tags: ['chat'],
+  dailyTokenQuota: 0,
   enabled: true
 }
 
@@ -74,6 +78,8 @@ export function ProviderSection(): React.JSX.Element {
       apiKey: '',
       model: provider.model,
       proxy: provider.proxy,
+      tags: provider.tags.length > 0 ? provider.tags : ['chat'],
+      dailyTokenQuota: provider.dailyTokenQuota,
       enabled: provider.enabled
     })
     setDialog({ mode: 'edit', provider })
@@ -88,6 +94,8 @@ export function ProviderSection(): React.JSX.Element {
         baseUrl: form.baseUrl,
         model: form.model,
         proxy: form.proxy,
+        tags: form.tags,
+        dailyTokenQuota: form.dailyTokenQuota,
         enabled: form.enabled,
         ...(form.apiKey ? { apiKey: form.apiKey } : {})
       }
@@ -223,6 +231,32 @@ export function ProviderSection(): React.JSX.Element {
                 <p className="truncate font-mono text-[11px] text-muted-foreground">
                   {provider.baseUrl} · {provider.model}
                 </p>
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {provider.tags.map((tag) => (
+                    <Badge
+                      key={tag}
+                      variant="outline"
+                      className="px-1.5 py-0 text-[9.5px] text-muted-foreground"
+                    >
+                      {t(`settings.providers.tag.${tag}`)}
+                    </Badge>
+                  ))}
+                  {provider.dailyTokenQuota > 0 && (
+                    <span
+                      data-testid="provider-quota"
+                      className={
+                        provider.quotaExceeded
+                          ? 'font-mono text-[10px] text-destructive'
+                          : 'font-mono text-[10px] text-muted-foreground'
+                      }
+                    >
+                      {t('settings.providers.quotaUsed', {
+                        used: provider.todayTokens,
+                        quota: provider.dailyTokenQuota
+                      })}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <Button
@@ -299,6 +333,51 @@ export function ProviderSection(): React.JSX.Element {
               onChange={(v) => setForm({ ...form, proxy: v })}
               placeholder="http://127.0.0.1:7890"
             />
+            <div className="grid gap-1.5">
+              <Label className="text-[12.5px]">{t('settings.providers.tags')}</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {(['chat', 'vision', 'summary', 'memory'] as const).map((tag) => {
+                  const selected = form.tags.includes(tag)
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      data-testid={`provider-tag-${tag}`}
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          tags: selected
+                            ? form.tags.filter((item) => item !== tag)
+                            : [...form.tags, tag]
+                        })
+                      }
+                      className={
+                        selected
+                          ? 'rounded-full border border-primary/40 bg-accent-soft px-2 py-0.5 text-[11px] text-foreground'
+                          : 'rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-surface-soft'
+                      }
+                    >
+                      {t(`settings.providers.tag.${tag}`)}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {t('settings.providers.tagsHint')}
+              </p>
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-[12.5px]">{t('settings.providers.dailyQuota')}</Label>
+              <Input
+                data-testid="provider-quota-input"
+                type="number"
+                min={0}
+                value={form.dailyTokenQuota}
+                onChange={(e) =>
+                  setForm({ ...form, dailyTokenQuota: Math.max(0, Number(e.target.value) || 0) })
+                }
+              />
+            </div>
             <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
               <Switch checked={form.enabled} onCheckedChange={(checked) => setForm({ ...form, enabled: checked })} />
               {t('settings.providers.enabled')}

@@ -2,7 +2,15 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { SQLInputValue } from 'node:sqlite'
-import type { Channel, MemoryKind, PlatformKind, PluginKind, TurnMode } from '@pi-amadeus/shared'
+import type {
+  Channel,
+  MemoryKind,
+  PlatformKind,
+  PluginKind,
+  ProactiveGreeting,
+  ProactiveSettings,
+  TurnMode
+} from '@pi-amadeus/shared'
 import type { UserConfig } from '@pi-amadeus/shared'
 import type { BrainConfig } from './config.ts'
 
@@ -53,6 +61,10 @@ export interface AutomationRow {
   userId: string
   name: string
   prompt: string
+  trigger: 'schedule' | 'file' | 'webhook'
+  watchPath: string
+  debounceSeconds: number
+  webhookSecret: string
   schedule: 'interval' | 'daily' | 'once'
   intervalMinutes: number
   timeOfDay: string
@@ -63,6 +75,7 @@ export interface AutomationRow {
   lastStatus: '' | 'running' | 'success' | 'error'
   lastError: string
   lastResult: string
+  lastTrigger: string
   createdAt: number
   updatedAt: number
 }
@@ -85,6 +98,18 @@ export interface MessageSearchRow {
   createdAt: number
 }
 
+export interface MessageMediaRow {
+  id: string
+  messageId: string
+  kind: 'image' | 'audio' | 'file'
+  name: string
+  mimeType: string
+  size: number
+  path: string
+  /** 文本正文 / 语音转写（只进模型上下文，不在消息列表接口回传） */
+  extractedText: string | null
+}
+
 export interface MessageRow {
   id: string
   sessionId: string
@@ -92,6 +117,12 @@ export interface MessageRow {
   content: string
   ttsText: string | null
   mode: TurnMode
+  /** 分支树父节点；根消息为 null */
+  parentId: string | null
+  /** 同一父节点下的第几条（1-based）与总数 */
+  branchIndex: number
+  branchCount: number
+  attachments: MessageMediaRow[]
   createdAt: number
 }
 
@@ -111,6 +142,8 @@ export interface TurnMetricInput {
   model: string
   /** 模型服务名（未使用服务列表时为空） */
   provider: string
+  /** 模型服务 id（用于按服务统计配额） */
+  providerId: string
   startedAt: number
   durationMs: number
   toolCalls: number
@@ -158,6 +191,10 @@ export interface ProviderRow {
   apiKey: string
   model: string
   proxy: string
+  /** 路由标签：chat / vision / summary / memory，逗号分隔 */
+  tags: string
+  /** 每日 token 配额；0 = 不限 */
+  dailyTokenQuota: number
   enabled: boolean
   active: boolean
   priority: number
@@ -200,14 +237,38 @@ export interface Db {
   /** 会话级用量：turn_metrics 真实累计 */
   sessionUsage(sessionId: string): Promise<SessionUsageRow>
   // messages
-  listMessages(sessionId: string, limit?: number): Promise<MessageRow[]>
-  /** 会话最后一条消息（重新生成时定位用户消息与待替换的助手回复） */
+  /** 当前活跃分支的消息路径（root → active leaf）；可指定 leaf 读取任意分支 */
+  listMessages(sessionId: string, limit?: number, leafId?: string): Promise<MessageRow[]>
+  /** 会话当前活跃分支的最后一条消息（重新生成时定位） */
   getLastMessage(sessionId: string): Promise<MessageRow | null>
+  /** 按 id 取单条消息 */
+  getMessage(id: string): Promise<MessageRow | null>
+  /** 同一父节点下的兄弟消息（分支切换器用） */
+  listBranches(messageId: string): Promise<MessageRow[]>
+  /** 从某条消息沿最新子节点走到叶子（切换分支时定位新活跃叶） */
+  lastDescendant(messageId: string): Promise<string>
+  /** 把会话的活跃叶切到指定消息 */
+  setActiveLeaf(sessionId: string, messageId: string): Promise<void>
   deleteMessage(id: string): Promise<void>
   /** 编辑用户消息：只改正文（编辑后重发由调用方截断后续消息再跑回合） */
   updateMessageContent(id: string, content: string): Promise<void>
   /** 截断：删除该消息之后的所有消息（含该消息？不，保留该消息本身） */
   deleteMessagesAfter(sessionId: string, messageId: string): Promise<number>
+  /** 附件元数据落库（文件本体已由 media.ts 写入数据目录） */
+  addMessageMedia(
+    messageId: string,
+    media: {
+      id: string
+      kind: 'image' | 'audio' | 'file'
+      name: string
+      mimeType: string
+      size: number
+      path: string
+      extractedText: string | null
+    }[]
+  ): Promise<void>
+  /** 媒体路由用：按 id 查附件（含磁盘路径） */
+  getMedia(id: string): Promise<MessageMediaRow | null>
   appendMessage(input: {
     id: string
     sessionId: string
@@ -215,6 +276,8 @@ export interface Db {
     content: string
     ttsText?: string | null
     mode: TurnMode
+    /** 分支父节点；缺省时接在当前活跃叶之后 */
+    parentId?: string | null
   }): Promise<void>
   countMessages(sessionId: string): Promise<number>
   // auth: 当前登录用户
@@ -265,6 +328,8 @@ export interface Db {
     apiKey: string
     model: string
     proxy: string
+    tags: string
+    dailyTokenQuota: number
     enabled: boolean
     priority: number
   }): Promise<ProviderRow>
@@ -276,10 +341,14 @@ export interface Db {
       apiKey?: string
       model?: string
       proxy?: string
+      tags?: string
+      dailyTokenQuota?: number
       enabled?: boolean
       priority?: number
     }
   ): Promise<ProviderRow | null>
+  /** 某服务从 sinceMs 起的真实 token 累计（配额判断用） */
+  providerUsageToday(providerId: string, sinceMs: number): Promise<number>
   deleteProvider(id: string): Promise<void>
   setActiveProvider(id: string): Promise<void>
   // platforms（通讯平台适配器）
@@ -322,6 +391,10 @@ export interface Db {
     userId: string
     name: string
     prompt: string
+    trigger: 'schedule' | 'file' | 'webhook'
+    watchPath: string
+    debounceSeconds: number
+    webhookSecret: string
     schedule: 'interval' | 'daily' | 'once'
     intervalMinutes: number
     timeOfDay: string
@@ -334,6 +407,10 @@ export interface Db {
     patch: {
       name?: string
       prompt?: string
+      trigger?: 'schedule' | 'file' | 'webhook'
+      watchPath?: string
+      debounceSeconds?: number
+      webhookSecret?: string
       schedule?: 'interval' | 'daily' | 'once'
       intervalMinutes?: number
       timeOfDay?: string
@@ -343,8 +420,10 @@ export interface Db {
     }
   ): Promise<AutomationRow | null>
   deleteAutomation(id: string): Promise<void>
-  /** 调度器：到期且未在运行的任务 */
+  /** 调度器：到期且未在运行的定时任务 */
   listDueAutomations(now: number): Promise<AutomationRow[]>
+  /** 文件监听：所有启用的文件触发任务 */
+  listFileAutomations(): Promise<AutomationRow[]>
   /** 大脑重启时清理上次被中断的 running 状态（否则任务永远不再触发） */
   resetRunningAutomations(): Promise<number>
   /** 任务开始：先置 running，防止同一定时器重入 */
@@ -356,8 +435,27 @@ export interface Db {
     error: string
     result: string
     nextRunAt: number | null
+    trigger?: string
     enabled?: boolean
   }): Promise<void>
+  /** 文件监听启动失败等非回合错误：只更新错误状态，不伪造一次运行 */
+  setAutomationError(id: string, error: string): Promise<void>
+  // proactive（主动问候）
+  getProactiveSettings(userId: string): Promise<ProactiveSettings>
+  updateProactiveSettings(
+    userId: string,
+    patch: Partial<Omit<ProactiveSettings, 'userId'>>
+  ): Promise<ProactiveSettings>
+  listProactiveUsers(): Promise<string[]>
+  lastUserMessageAt(userId: string): Promise<number | null>
+  countProactiveToday(userId: string, sinceMs: number): Promise<number>
+  addProactiveGreeting(input: {
+    userId: string
+    sessionId: string
+    messageId: string
+    content: string
+  }): Promise<ProactiveGreeting>
+  latestProactiveGreeting(userId: string): Promise<ProactiveGreeting | null>
   upsertPlatformAccount(platformId: string, externalUserId: string, userId: string): Promise<void>
 }
 
@@ -405,6 +503,81 @@ export function createDb(cfg: BrainConfig['db']): Db {
     return conn
   }
 
+  /** 会话当前活跃叶；没有时回落到最新消息 */
+  const activeLeafOf = (sessionId: string): string | null => {
+    const session = first<{ active_leaf_id: string | null }>(
+      getConn(),
+      'SELECT active_leaf_id FROM sessions WHERE id = ?',
+      [sessionId]
+    )
+    if (session?.active_leaf_id) return session.active_leaf_id
+    const last = first<{ id: string }>(
+      getConn(),
+      'SELECT id FROM messages WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1',
+      [sessionId]
+    )
+    return last?.id ?? null
+  }
+
+  /** 同一父节点分组的序号 / 总数（分支切换器显示 2/3 用） */
+  const branchInfoFor = (sessionId: string): Map<string, { index: number; count: number }> => {
+    const rows = all<{ id: string; parent_id: string | null }>(
+      getConn(),
+      'SELECT id, parent_id FROM messages WHERE session_id = ? ORDER BY created_at ASC, rowid ASC',
+      [sessionId]
+    )
+    const groups = new Map<string, string[]>()
+    for (const row of rows) {
+      const key = row.parent_id ?? '__root__'
+      const list = groups.get(key) ?? []
+      list.push(row.id)
+      groups.set(key, list)
+    }
+    const info = new Map<string, { index: number; count: number }>()
+    for (const list of groups.values()) {
+      list.forEach((id, index) => info.set(id, { index: index + 1, count: list.length }))
+    }
+    return info
+  }
+
+  /** 批量取消息附件，避免逐条消息一次查询 */
+  const mediaFor = (messageIds: string[]): Map<string, MessageMediaRow[]> => {
+    const grouped = new Map<string, MessageMediaRow[]>()
+    if (messageIds.length === 0) return grouped
+    const placeholders = messageIds.map(() => '?').join(', ')
+    const rows = all<{
+      id: string
+      message_id: string
+      kind: 'image' | 'audio' | 'file'
+      name: string
+      mime_type: string
+      size: number
+      path: string
+      extracted_text: string | null
+    }>(
+      getConn(),
+      `SELECT id, message_id, kind, name, mime_type, size, path, extracted_text
+       FROM message_media WHERE message_id IN (${placeholders})
+       ORDER BY created_at ASC, rowid ASC`,
+      messageIds
+    )
+    for (const row of rows) {
+      const list = grouped.get(row.message_id) ?? []
+      list.push({
+        id: row.id,
+        messageId: row.message_id,
+        kind: row.kind,
+        name: row.name,
+        mimeType: row.mime_type,
+        size: Number(row.size),
+        path: row.path,
+        extractedText: row.extracted_text
+      })
+      grouped.set(row.message_id, list)
+    }
+    return grouped
+  }
+
   const db: Db = {
     async init(): Promise<void> {
       let sqlite: DatabaseSync | null = null
@@ -436,6 +609,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
             user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             channel TEXT NOT NULL,
             title TEXT NOT NULL DEFAULT '',
+            active_leaf_id TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
           );
@@ -447,9 +621,22 @@ export function createDb(cfg: BrainConfig['db']): Db {
             content TEXT NOT NULL,
             tts_text TEXT,
             mode TEXT NOT NULL,
+            parent_id TEXT,
             created_at INTEGER NOT NULL
           );
           CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
+          CREATE TABLE IF NOT EXISTS message_media (
+            id TEXT PRIMARY KEY,
+            message_id TEXT NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            size INTEGER NOT NULL,
+            path TEXT NOT NULL,
+            extracted_text TEXT,
+            created_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_message_media_message ON message_media(message_id);
 
           CREATE TABLE IF NOT EXISTS app_state (
             key TEXT PRIMARY KEY,
@@ -472,6 +659,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
             channel TEXT NOT NULL,
             model TEXT NOT NULL,
             provider TEXT NOT NULL DEFAULT '',
+            provider_id TEXT NOT NULL DEFAULT '',
             started_at INTEGER NOT NULL,
             duration_ms INTEGER NOT NULL,
             tool_calls INTEGER NOT NULL DEFAULT 0,
@@ -511,6 +699,8 @@ export function createDb(cfg: BrainConfig['db']): Db {
             api_key TEXT NOT NULL,
             model TEXT NOT NULL,
             proxy TEXT NOT NULL DEFAULT '',
+            tags TEXT NOT NULL DEFAULT 'chat',
+            daily_token_quota INTEGER NOT NULL DEFAULT 0,
             enabled INTEGER NOT NULL DEFAULT 1,
             active INTEGER NOT NULL DEFAULT 0,
             priority INTEGER NOT NULL DEFAULT 0,
@@ -569,6 +759,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
             user_id TEXT NOT NULL,
             name TEXT NOT NULL,
             prompt TEXT NOT NULL,
+            trigger_kind TEXT NOT NULL DEFAULT 'schedule',
+            watch_path TEXT NOT NULL DEFAULT '',
+            debounce_seconds INTEGER NOT NULL DEFAULT 2,
+            webhook_secret TEXT NOT NULL DEFAULT '',
+            last_trigger TEXT NOT NULL DEFAULT '',
             schedule TEXT NOT NULL,
             interval_minutes INTEGER NOT NULL DEFAULT 60,
             time_of_day TEXT NOT NULL DEFAULT '',
@@ -584,6 +779,27 @@ export function createDb(cfg: BrainConfig['db']): Db {
           );
           CREATE INDEX IF NOT EXISTS idx_automations_due ON automations(enabled, next_run_at);
           CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(user_id, created_at DESC);
+
+          CREATE TABLE IF NOT EXISTS proactive_settings (
+            user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            enabled INTEGER NOT NULL DEFAULT 0,
+            min_idle_minutes INTEGER NOT NULL DEFAULT 180,
+            active_start TEXT NOT NULL DEFAULT '09:00',
+            active_end TEXT NOT NULL DEFAULT '23:00',
+            max_per_day INTEGER NOT NULL DEFAULT 2,
+            last_greeted_at INTEGER,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS proactive_greetings (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_proactive_user ON proactive_greetings(user_id, created_at DESC);
         `)
 
         // 老库升级：turn_metrics 增加 provider 列（SQLite 没有 IF NOT EXISTS 的 ADD COLUMN）
@@ -600,6 +816,84 @@ export function createDb(cfg: BrainConfig['db']): Db {
           .all() as unknown as { name: string }[]
         if (!sessionColumns.some((column) => column.name === 'pinned')) {
           sqlite.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
+        }
+        // 老库升级：消息分支树（parent_id / active_leaf_id）
+        if (!sessionColumns.some((column) => column.name === 'active_leaf_id')) {
+          sqlite.exec('ALTER TABLE sessions ADD COLUMN active_leaf_id TEXT')
+        }
+        const messageColumns = sqlite
+          .prepare('PRAGMA table_info(messages)')
+          .all() as unknown as { name: string }[]
+        if (!messageColumns.some((column) => column.name === 'parent_id')) {
+          sqlite.exec('ALTER TABLE messages ADD COLUMN parent_id TEXT')
+        }
+        const backfilled = sqlite
+          .prepare("SELECT value FROM app_state WHERE key = 'messages_tree_v1'")
+          .get() as unknown as { value?: string } | undefined
+        if (!backfilled) {
+          // 一次性把线性历史补成父子链：按 created_at/rowid 排序，上一条即父节点
+          const sessions = sqlite
+            .prepare('SELECT id FROM sessions')
+            .all() as unknown as { id: string }[]
+          for (const session of sessions) {
+            const messages = sqlite
+              .prepare(
+                'SELECT id FROM messages WHERE session_id = ? ORDER BY created_at ASC, rowid ASC'
+              )
+              .all(session.id) as unknown as { id: string }[]
+            let parent: string | null = null
+            for (const message of messages) {
+              sqlite
+                .prepare('UPDATE messages SET parent_id = ? WHERE id = ? AND parent_id IS NULL')
+                .run(parent, message.id)
+              parent = message.id
+            }
+            if (parent) {
+              sqlite
+                .prepare(
+                  "UPDATE sessions SET active_leaf_id = ? WHERE id = ? AND (active_leaf_id IS NULL OR active_leaf_id = '')"
+                )
+                .run(parent, session.id)
+            }
+          }
+          sqlite
+            .prepare(
+              "INSERT INTO app_state (key, value) VALUES ('messages_tree_v1', '1') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+            )
+            .run()
+        }
+        // 老库升级：模型路由标签 / 每日配额
+        const providerColumns = sqlite
+          .prepare('PRAGMA table_info(providers)')
+          .all() as unknown as { name: string }[]
+        if (!providerColumns.some((column) => column.name === 'tags')) {
+          sqlite.exec("ALTER TABLE providers ADD COLUMN tags TEXT NOT NULL DEFAULT 'chat'")
+        }
+        if (!providerColumns.some((column) => column.name === 'daily_token_quota')) {
+          sqlite.exec('ALTER TABLE providers ADD COLUMN daily_token_quota INTEGER NOT NULL DEFAULT 0')
+        }
+        const metricColumns2 = sqlite
+          .prepare('PRAGMA table_info(turn_metrics)')
+          .all() as unknown as { name: string }[]
+        if (!metricColumns2.some((column) => column.name === 'provider_id')) {
+          sqlite.exec("ALTER TABLE turn_metrics ADD COLUMN provider_id TEXT NOT NULL DEFAULT ''")
+        }
+
+        // 老库升级：自动化事件触发字段
+        const automationColumns = sqlite
+          .prepare('PRAGMA table_info(automations)')
+          .all() as unknown as { name: string }[]
+        const automationExtras: [string, string][] = [
+          ['trigger_kind', "TEXT NOT NULL DEFAULT 'schedule'"],
+          ['watch_path', "TEXT NOT NULL DEFAULT ''"],
+          ['debounce_seconds', 'INTEGER NOT NULL DEFAULT 2'],
+          ['webhook_secret', "TEXT NOT NULL DEFAULT ''"],
+          ['last_trigger', "TEXT NOT NULL DEFAULT ''"]
+        ]
+        for (const [column, definition] of automationExtras) {
+          if (!automationColumns.some((item) => item.name === column)) {
+            sqlite.exec(`ALTER TABLE automations ADD COLUMN ${column} ${definition}`)
+          }
         }
         conn = sqlite
       } catch (error) {
@@ -876,7 +1170,9 @@ export function createDb(cfg: BrainConfig['db']): Db {
       }
     },
 
-    async listMessages(sessionId, limit = 200) {
+    async listMessages(sessionId, limit = 200, leafId) {
+      const leaf = leafId ?? activeLeafOf(sessionId)
+      if (!leaf) return []
       const rows = all<{
         id: string
         session_id: string
@@ -884,20 +1180,30 @@ export function createDb(cfg: BrainConfig['db']): Db {
         content: string
         tts_text: string | null
         mode: TurnMode
+        parent_id: string | null
         created_ms: number
       }>(
         getConn(),
-        `SELECT id, session_id, role, content, tts_text, mode, created_at AS created_ms
+        `WITH RECURSIVE path(id) AS (
+           SELECT id FROM messages WHERE id = ? AND session_id = ?
+           UNION ALL
+           SELECT m.parent_id FROM messages m JOIN path p ON m.id = p.id
+            WHERE m.parent_id IS NOT NULL
+         )
+         SELECT id, session_id, role, content, tts_text, mode, parent_id, created_ms, seq
          FROM (
-           SELECT id, session_id, role, content, tts_text, mode, created_at, rowid AS seq
-           FROM messages
-           WHERE session_id = ?
-           ORDER BY created_at DESC, rowid DESC
+           SELECT m.id, m.session_id, m.role, m.content, m.tts_text, m.mode, m.parent_id,
+                  m.created_at AS created_ms, m.rowid AS seq
+           FROM messages m
+           WHERE m.id IN (SELECT id FROM path)
+           ORDER BY m.created_at DESC, m.rowid DESC
            LIMIT ?
          ) t
-         ORDER BY created_at, seq`,
-        [sessionId, limit]
+         ORDER BY created_ms ASC, seq ASC`,
+        [leaf, sessionId, limit]
       )
+      const media = mediaFor(rows.map((row) => row.id))
+      const branch = branchInfoFor(sessionId)
       return rows.map(
         (row): MessageRow => ({
           id: row.id,
@@ -906,12 +1212,21 @@ export function createDb(cfg: BrainConfig['db']): Db {
           content: row.content,
           ttsText: row.tts_text ?? null,
           mode: row.mode,
+          parentId: row.parent_id ?? null,
+          branchIndex: branch.get(row.id)?.index ?? 1,
+          branchCount: branch.get(row.id)?.count ?? 1,
+          attachments: media.get(row.id) ?? [],
           createdAt: Number(row.created_ms)
         })
       )
     },
 
     async getLastMessage(sessionId) {
+      const rows = await db.listMessages(sessionId, 1)
+      return rows.at(-1) ?? null
+    },
+
+    async getMessage(id) {
       const row = first<{
         id: string
         session_id: string
@@ -919,17 +1234,16 @@ export function createDb(cfg: BrainConfig['db']): Db {
         content: string
         tts_text: string | null
         mode: TurnMode
+        parent_id: string | null
         created_ms: number
       }>(
         getConn(),
-        `SELECT id, session_id, role, content, tts_text, mode, created_at AS created_ms
-         FROM messages
-         WHERE session_id = ?
-         ORDER BY created_at DESC, rowid DESC
-         LIMIT 1`,
-        [sessionId]
+        `SELECT id, session_id, role, content, tts_text, mode, parent_id, created_at AS created_ms
+         FROM messages WHERE id = ?`,
+        [id]
       )
       if (!row) return null
+      const branch = branchInfoFor(row.session_id)
       return {
         id: row.id,
         sessionId: row.session_id,
@@ -937,8 +1251,73 @@ export function createDb(cfg: BrainConfig['db']): Db {
         content: row.content,
         ttsText: row.tts_text ?? null,
         mode: row.mode,
+        parentId: row.parent_id ?? null,
+        branchIndex: branch.get(row.id)?.index ?? 1,
+        branchCount: branch.get(row.id)?.count ?? 1,
+        attachments: mediaFor([row.id]).get(row.id) ?? [],
         createdAt: Number(row.created_ms)
       }
+    },
+
+    async listBranches(messageId) {
+      const target = await db.getMessage(messageId)
+      if (!target) return []
+      const rows = all<{
+        id: string
+        session_id: string
+        role: 'user' | 'assistant'
+        content: string
+        tts_text: string | null
+        mode: TurnMode
+        parent_id: string | null
+        created_ms: number
+      }>(
+        getConn(),
+        target.parentId
+          ? `SELECT id, session_id, role, content, tts_text, mode, parent_id, created_at AS created_ms
+             FROM messages WHERE session_id = ? AND parent_id = ?
+             ORDER BY created_at ASC, rowid ASC`
+          : `SELECT id, session_id, role, content, tts_text, mode, parent_id, created_at AS created_ms
+             FROM messages WHERE session_id = ? AND parent_id IS NULL
+             ORDER BY created_at ASC, rowid ASC`,
+        target.parentId ? [target.sessionId, target.parentId] : [target.sessionId]
+      )
+      const branch = branchInfoFor(target.sessionId)
+      const media = mediaFor(rows.map((row) => row.id))
+      return rows.map(
+        (row): MessageRow => ({
+          id: row.id,
+          sessionId: row.session_id,
+          role: row.role,
+          content: row.content,
+          ttsText: row.tts_text ?? null,
+          mode: row.mode,
+          parentId: row.parent_id ?? null,
+          branchIndex: branch.get(row.id)?.index ?? 1,
+          branchCount: branch.get(row.id)?.count ?? 1,
+          attachments: media.get(row.id) ?? [],
+          createdAt: Number(row.created_ms)
+        })
+      )
+    },
+
+    async lastDescendant(messageId) {
+      let current = messageId
+      for (let depth = 0; depth < 500; depth += 1) {
+        const child = first<{ id: string }>(
+          getConn(),
+          `SELECT id FROM messages WHERE parent_id = ?
+           ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+          [current]
+        )
+        if (!child) return current
+        current = child.id
+      }
+      return current
+    },
+
+    async setActiveLeaf(sessionId, messageId) {
+      run(getConn(), 'UPDATE sessions SET active_leaf_id = ? WHERE id = ?', [messageId, sessionId])
     },
 
     async deleteMessage(id) {
@@ -947,6 +1326,67 @@ export function createDb(cfg: BrainConfig['db']): Db {
 
     async updateMessageContent(id, content) {
       run(getConn(), 'UPDATE messages SET content = ? WHERE id = ?', [content, id])
+    },
+
+    async addMessageMedia(messageId, media) {
+      if (media.length === 0) return
+      const sqlite = getConn()
+      const now = Date.now()
+      sqlite.exec('BEGIN')
+      try {
+        for (const item of media) {
+          run(
+            sqlite,
+            `INSERT INTO message_media
+               (id, message_id, kind, name, mime_type, size, path, extracted_text, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              item.id,
+              messageId,
+              item.kind,
+              item.name,
+              item.mimeType,
+              item.size,
+              item.path,
+              item.extractedText,
+              now
+            ]
+          )
+        }
+        sqlite.exec('COMMIT')
+      } catch (error) {
+        sqlite.exec('ROLLBACK')
+        throw error
+      }
+    },
+
+    async getMedia(id) {
+      const row = first<{
+        id: string
+        message_id: string
+        kind: 'image' | 'audio' | 'file'
+        name: string
+        mime_type: string
+        size: number
+        path: string
+        extracted_text: string | null
+      }>(
+        getConn(),
+        `SELECT id, message_id, kind, name, mime_type, size, path, extracted_text
+         FROM message_media WHERE id = ?`,
+        [id]
+      )
+      if (!row) return null
+      return {
+        id: row.id,
+        messageId: row.message_id,
+        kind: row.kind,
+        name: row.name,
+        mimeType: row.mime_type,
+        size: Number(row.size),
+        path: row.path,
+        extractedText: row.extracted_text
+      }
     },
 
     async deleteMessagesAfter(sessionId, messageId) {
@@ -961,12 +1401,36 @@ export function createDb(cfg: BrainConfig['db']): Db {
     },
 
     async appendMessage(input) {
-      run(
-        getConn(),
-        `INSERT INTO messages (id, session_id, role, content, tts_text, mode, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [input.id, input.sessionId, input.role, input.content, input.ttsText ?? null, input.mode, Date.now()]
-      )
+      const sqlite = getConn()
+      const parentId =
+        input.parentId === undefined ? activeLeafOf(input.sessionId) : input.parentId
+      sqlite.exec('BEGIN')
+      try {
+        run(
+          sqlite,
+          `INSERT INTO messages (id, session_id, role, content, tts_text, mode, parent_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            input.id,
+            input.sessionId,
+            input.role,
+            input.content,
+            input.ttsText ?? null,
+            input.mode,
+            parentId,
+            Date.now()
+          ]
+        )
+        // 新消息成为活跃叶：分支树里“当前正在看的那条路径”始终以它收尾
+        run(sqlite, 'UPDATE sessions SET active_leaf_id = ? WHERE id = ?', [
+          input.id,
+          input.sessionId
+        ])
+        sqlite.exec('COMMIT')
+      } catch (error) {
+        sqlite.exec('ROLLBACK')
+        throw error
+      }
     },
 
     async countMessages(sessionId) {
@@ -1029,9 +1493,9 @@ export function createDb(cfg: BrainConfig['db']): Db {
       run(
         getConn(),
         `INSERT INTO turn_metrics
-           (id, session_id, user_id, channel, model, provider, started_at, duration_ms, tool_calls, tools,
+           (id, session_id, user_id, channel, model, provider, provider_id, started_at, duration_ms, tool_calls, tools,
             input_tokens, output_tokens, total_tokens)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           randomUUID(),
           input.sessionId,
@@ -1039,6 +1503,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
           input.channel,
           input.model,
           input.provider,
+          input.providerId,
           input.startedAt,
           input.durationMs,
           input.toolCalls,
@@ -1058,6 +1523,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         channel: string
         model: string
         provider: string
+        provider_id: string
         started_at: number
         duration_ms: number
         tool_calls: number
@@ -1067,7 +1533,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         total_tokens: number
       }>(
         getConn(),
-        `SELECT id, session_id, user_id, channel, model, provider, started_at, duration_ms, tool_calls, tools,
+        `SELECT id, session_id, user_id, channel, model, provider, provider_id, started_at, duration_ms, tool_calls, tools,
                 input_tokens, output_tokens, total_tokens
          FROM turn_metrics
          WHERE user_id = ? AND started_at >= ?
@@ -1081,6 +1547,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         channel: row.channel,
         model: row.model,
         provider: row.provider ?? '',
+        providerId: row.provider_id ?? '',
         startedAt: Number(row.started_at),
         durationMs: Number(row.duration_ms),
         toolCalls: Number(row.tool_calls),
@@ -1249,8 +1716,9 @@ export function createDb(cfg: BrainConfig['db']): Db {
       run(
         getConn(),
         `INSERT INTO providers
-           (id, name, base_url, api_key, model, proxy, enabled, active, priority, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+           (id, name, base_url, api_key, model, proxy, tags, daily_token_quota, enabled, active,
+            priority, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
         [
           id,
           input.name,
@@ -1258,6 +1726,8 @@ export function createDb(cfg: BrainConfig['db']): Db {
           input.apiKey,
           input.model,
           input.proxy,
+          input.tags,
+          input.dailyTokenQuota,
           input.enabled ? 1 : 0,
           input.priority,
           now,
@@ -1276,6 +1746,8 @@ export function createDb(cfg: BrainConfig['db']): Db {
         ['apiKey', 'api_key'],
         ['model', 'model'],
         ['proxy', 'proxy'],
+        ['tags', 'tags'],
+        ['dailyTokenQuota', 'daily_token_quota'],
         ['priority', 'priority']
       ]
       for (const [key, column] of map) {
@@ -1310,6 +1782,17 @@ export function createDb(cfg: BrainConfig['db']): Db {
         sqlite.exec('ROLLBACK')
         throw error
       }
+    },
+
+    async providerUsageToday(providerId, sinceMs) {
+      if (!providerId) return 0
+      const row = first<{ total: number }>(
+        getConn(),
+        `SELECT COALESCE(SUM(total_tokens), 0) AS total FROM turn_metrics
+         WHERE provider_id = ? AND started_at >= ?`,
+        [providerId, sinceMs]
+      )
+      return Number(row?.total ?? 0)
     },
 
     // ---------- platforms ----------
@@ -1615,14 +2098,20 @@ export function createDb(cfg: BrainConfig['db']): Db {
       run(
         getConn(),
         `INSERT INTO automations
-           (id, user_id, name, prompt, schedule, interval_minutes, time_of_day, run_at,
-            enabled, next_run_at, last_run_at, last_status, last_error, last_result, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', '', ?, ?)`,
+           (id, user_id, name, prompt, trigger_kind, watch_path, debounce_seconds, webhook_secret,
+            schedule, interval_minutes, time_of_day, run_at,
+            enabled, next_run_at, last_run_at, last_status, last_error, last_result, last_trigger,
+            created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', '', '', ?, ?)`,
         [
           id,
           input.userId,
           input.name,
           input.prompt,
+          input.trigger,
+          input.watchPath,
+          input.debounceSeconds,
+          input.webhookSecret,
           input.schedule,
           input.intervalMinutes,
           input.timeOfDay,
@@ -1645,6 +2134,10 @@ export function createDb(cfg: BrainConfig['db']): Db {
       }
       if (patch.name !== undefined) push('name', patch.name)
       if (patch.prompt !== undefined) push('prompt', patch.prompt)
+      if (patch.trigger !== undefined) push('trigger_kind', patch.trigger)
+      if (patch.watchPath !== undefined) push('watch_path', patch.watchPath)
+      if (patch.debounceSeconds !== undefined) push('debounce_seconds', patch.debounceSeconds)
+      if (patch.webhookSecret !== undefined) push('webhook_secret', patch.webhookSecret)
       if (patch.schedule !== undefined) push('schedule', patch.schedule)
       if (patch.intervalMinutes !== undefined) push('interval_minutes', patch.intervalMinutes)
       if (patch.timeOfDay !== undefined) push('time_of_day', patch.timeOfDay)
@@ -1667,10 +2160,21 @@ export function createDb(cfg: BrainConfig['db']): Db {
       const rows = all<AutomationDbRow>(
         getConn(),
         `SELECT ${AUTOMATION_COLUMNS} FROM automations
-         WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
+         WHERE enabled = 1 AND trigger_kind = 'schedule'
+           AND next_run_at IS NOT NULL AND next_run_at <= ?
            AND last_status <> 'running'
          ORDER BY next_run_at ASC`,
         [now]
+      )
+      return rows.map(toAutomationRow)
+    },
+
+    async listFileAutomations() {
+      const rows = all<AutomationDbRow>(
+        getConn(),
+        `SELECT ${AUTOMATION_COLUMNS} FROM automations
+         WHERE enabled = 1 AND trigger_kind = 'file'
+         ORDER BY created_at ASC`
       )
       return rows.map(toAutomationRow)
     },
@@ -1704,6 +2208,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         'last_status = ?',
         'last_error = ?',
         'last_result = ?',
+        'last_trigger = ?',
         'last_run_at = ?',
         'next_run_at = ?',
         'updated_at = ?'
@@ -1712,6 +2217,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         input.status,
         input.error,
         input.result,
+        input.trigger ?? '',
         now,
         input.nextRunAt,
         now
@@ -1722,6 +2228,150 @@ export function createDb(cfg: BrainConfig['db']): Db {
       }
       params.push(input.id)
       run(getConn(), `UPDATE automations SET ${sets.join(', ')} WHERE id = ?`, params)
+    },
+
+    async setAutomationError(id, error) {
+      run(
+        getConn(),
+        "UPDATE automations SET last_status = 'error', last_error = ?, updated_at = ? WHERE id = ?",
+        [error.slice(0, 2000), Date.now(), id]
+      )
+    },
+
+    // ---------- proactive ----------
+
+    async getProactiveSettings(userId) {
+      const row = first<{
+        enabled: number
+        min_idle_minutes: number
+        active_start: string
+        active_end: string
+        max_per_day: number
+        last_greeted_at: number | null
+      }>(
+        getConn(),
+        `SELECT enabled, min_idle_minutes, active_start, active_end, max_per_day, last_greeted_at
+         FROM proactive_settings WHERE user_id = ?`,
+        [userId]
+      )
+      return {
+        userId,
+        enabled: row?.enabled === 1,
+        minIdleMinutes: Number(row?.min_idle_minutes ?? 180),
+        activeStart: row?.active_start ?? '09:00',
+        activeEnd: row?.active_end ?? '23:00',
+        maxPerDay: Number(row?.max_per_day ?? 2),
+        lastGreetedAt: row?.last_greeted_at === null || row?.last_greeted_at === undefined
+          ? null
+          : Number(row.last_greeted_at)
+      }
+    },
+
+    async updateProactiveSettings(userId, patch) {
+      const current = await db.getProactiveSettings(userId)
+      const next = { ...current, ...patch }
+      const now = Date.now()
+      run(
+        getConn(),
+        `INSERT INTO proactive_settings
+           (user_id, enabled, min_idle_minutes, active_start, active_end, max_per_day,
+            last_greeted_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id) DO UPDATE SET
+           enabled = excluded.enabled,
+           min_idle_minutes = excluded.min_idle_minutes,
+           active_start = excluded.active_start,
+           active_end = excluded.active_end,
+           max_per_day = excluded.max_per_day,
+           last_greeted_at = excluded.last_greeted_at,
+           updated_at = excluded.updated_at`,
+        [
+          userId,
+          next.enabled ? 1 : 0,
+          next.minIdleMinutes,
+          next.activeStart,
+          next.activeEnd,
+          next.maxPerDay,
+          next.lastGreetedAt,
+          now,
+          now
+        ]
+      )
+      return db.getProactiveSettings(userId)
+    },
+
+    async listProactiveUsers() {
+      const rows = all<{ user_id: string }>(
+        getConn(),
+        'SELECT user_id FROM proactive_settings WHERE enabled = 1'
+      )
+      return rows.map((row) => row.user_id)
+    },
+
+    async lastUserMessageAt(userId) {
+      const row = first<{ last: number | null }>(
+        getConn(),
+        `SELECT MAX(m.created_at) AS last
+         FROM messages m JOIN sessions s ON s.id = m.session_id
+         WHERE s.user_id = ? AND m.role = 'user'`,
+        [userId]
+      )
+      return row?.last === null || row?.last === undefined ? null : Number(row.last)
+    },
+
+    async countProactiveToday(userId, sinceMs) {
+      const row = first<{ n: number }>(
+        getConn(),
+        'SELECT COUNT(*) AS n FROM proactive_greetings WHERE user_id = ? AND created_at >= ?',
+        [userId, sinceMs]
+      )
+      return Number(row?.n ?? 0)
+    },
+
+    async addProactiveGreeting(input) {
+      const { randomUUID } = await import('node:crypto')
+      const id = randomUUID()
+      const now = Date.now()
+      run(
+        getConn(),
+        `INSERT INTO proactive_greetings (id, user_id, session_id, message_id, content, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, input.userId, input.sessionId, input.messageId, input.content, now]
+      )
+      return {
+        id,
+        userId: input.userId,
+        sessionId: input.sessionId,
+        messageId: input.messageId,
+        content: input.content,
+        createdAt: now
+      }
+    },
+
+    async latestProactiveGreeting(userId) {
+      const row = first<{
+        id: string
+        user_id: string
+        session_id: string
+        message_id: string
+        content: string
+        created_at: number
+      }>(
+        getConn(),
+        `SELECT id, user_id, session_id, message_id, content, created_at
+         FROM proactive_greetings WHERE user_id = ?
+         ORDER BY created_at DESC LIMIT 1`,
+        [userId]
+      )
+      if (!row) return null
+      return {
+        id: row.id,
+        userId: row.user_id,
+        sessionId: row.session_id,
+        messageId: row.message_id,
+        content: row.content,
+        createdAt: Number(row.created_at)
+      }
     }
   }
 
@@ -1731,8 +2381,9 @@ export function createDb(cfg: BrainConfig['db']): Db {
 const MEMORY_COLUMNS =
   'id, user_id, content, kind, pinned, source_session_id, source_message_id, created_at, last_used_at'
 const AUTOMATION_COLUMNS =
-  'id, user_id, name, prompt, schedule, interval_minutes, time_of_day, run_at, enabled, ' +
-  'next_run_at, last_run_at, last_status, last_error, last_result, created_at, updated_at'
+  'id, user_id, name, prompt, trigger_kind, watch_path, debounce_seconds, webhook_secret, ' +
+  'schedule, interval_minutes, time_of_day, run_at, enabled, next_run_at, last_run_at, ' +
+  'last_status, last_error, last_result, last_trigger, created_at, updated_at'
 
 interface KnowledgeBaseDbRow {
   id: string
@@ -1750,6 +2401,10 @@ interface AutomationDbRow {
   user_id: string
   name: string
   prompt: string
+  trigger_kind: 'schedule' | 'file' | 'webhook'
+  watch_path: string
+  debounce_seconds: number
+  webhook_secret: string
   schedule: 'interval' | 'daily' | 'once'
   interval_minutes: number
   time_of_day: string
@@ -1760,6 +2415,7 @@ interface AutomationDbRow {
   last_status: '' | 'running' | 'success' | 'error'
   last_error: string
   last_result: string
+  last_trigger: string
   created_at: number
   updated_at: number
 }
@@ -1783,6 +2439,10 @@ function toAutomationRow(row: AutomationDbRow): AutomationRow {
     userId: row.user_id,
     name: row.name,
     prompt: row.prompt,
+    trigger: row.trigger_kind,
+    watchPath: row.watch_path,
+    debounceSeconds: Number(row.debounce_seconds),
+    webhookSecret: row.webhook_secret,
     schedule: row.schedule,
     intervalMinutes: Number(row.interval_minutes),
     timeOfDay: row.time_of_day,
@@ -1793,12 +2453,13 @@ function toAutomationRow(row: AutomationDbRow): AutomationRow {
     lastStatus: row.last_status,
     lastError: row.last_error,
     lastResult: row.last_result,
+    lastTrigger: row.last_trigger,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at)
   }
 }
 const PROVIDER_COLUMNS =
-  'id, name, base_url, api_key, model, proxy, enabled, active, priority, created_at, updated_at'
+  'id, name, base_url, api_key, model, proxy, tags, daily_token_quota, enabled, active, priority, created_at, updated_at'
 const PLATFORM_COLUMNS = 'id, kind, name, enabled, config, created_at, updated_at'
 
 interface MemoryDbRow {
@@ -1820,6 +2481,8 @@ interface ProviderDbRow {
   api_key: string
   model: string
   proxy: string
+  tags: string
+  daily_token_quota: number
   enabled: number
   active: number
   priority: number
@@ -1884,6 +2547,8 @@ function toProviderRow(row: ProviderDbRow): ProviderRow {
     apiKey: row.api_key,
     model: row.model,
     proxy: row.proxy,
+    tags: row.tags || 'chat',
+    dailyTokenQuota: Number(row.daily_token_quota ?? 0),
     enabled: row.enabled === 1,
     active: row.active === 1,
     priority: Number(row.priority),

@@ -1,5 +1,14 @@
 import { create } from 'zustand'
-import type { Message, Session, SseEvent, StreamState, ToolActivityItem, ToolStatus } from '@pi-amadeus/shared'
+import type {
+  AttachmentKind,
+  Message,
+  MessageAttachment,
+  Session,
+  SseEvent,
+  StreamState,
+  ToolActivityItem,
+  ToolStatus
+} from '@pi-amadeus/shared'
 import {
   confirmTool,
   deleteSessionApi,
@@ -9,6 +18,7 @@ import {
   renameSessionApi,
   setSessionPinnedApi,
   startChatTurn,
+  switchBranchApi,
   startEditTurn,
   startRegenerate
 } from '@renderer/lib/api'
@@ -21,6 +31,26 @@ import { useUiStore } from './uiStore'
  * 回合工作过程日志：一个回合的工具活动快照 + 耗时（紧凑工作台风格折叠卡的数据源）。
  * 不落库、仅内存：本会话窗口内可回看，重进页面后历史消息不带工作卡。
  */
+/** 输入区待发送的附件（base64 在内存里，发送后才落盘） */
+export interface OutgoingAttachment {
+  name: string
+  mimeType: string
+  size: number
+  /** base64，不含 data: 前缀 */
+  data: string
+  /** 本地预览（图片用 data URL，其它为空） */
+  previewUrl?: string
+}
+
+function attachmentKind(mimeType: string, name: string): AttachmentKind {
+  const mime = mimeType.toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name)) return 'image'
+  if (/\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(name)) return 'audio'
+  return 'file'
+}
+
 export interface TurnWorkLog {
   tools: ToolActivityItem[]
   durationMs: number
@@ -69,13 +99,15 @@ interface SessionState {
   /** 返回当前选中会话；无则新建（语音回合复用文本会话） */
   ensureActiveSession: () => string
   deleteSession: (id: string) => void
-  sendMessage: (text: string) => void
+  sendMessage: (text: string, attachments?: OutgoingAttachment[]) => void
   /** 重新生成最后一条回复（会话末尾是用户消息时等于重试失败的回合） */
   regenerate: () => void
   /** 编辑用户消息并重发：服务端截断后续消息，本地同步截断后追加新回复 */
   editMessage: (messageId: string, content: string) => void
   /** 置顶 / 取消置顶（乐观更新；失败回滚） */
   togglePin: (id: string) => Promise<void>
+  /** 消息分支切换：-1 上一个分支 / 1 下一个分支 */
+  switchBranch: (messageId: string, direction: -1 | 1) => Promise<void>
   stopStreaming: () => void
   /** bash 确认卡应答（允许/拒绝） */
   respondToolConfirm: (approved: boolean) => void
@@ -264,6 +296,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         })
         turnStartedAt = 0
         abortTurn = null
+        // 回合结束后回读一次：同步服务端消息 id、分支序号与附件 URL
+        void get().refreshSession(sessionId)
         // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
         void get().refreshSessions()
         // 回合结束后好感度会变：刷新侧栏的关系读数（服务端按真实事件累计）
@@ -337,6 +371,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     refreshSession: async (sessionId) => {
       try {
         const messages = await fetchMessages(sessionId)
+        // 回读期间用户已经发了新回合：旧快照不能覆盖正在流式的消息列
+        const stream = get().stream
+        if (stream.streaming && stream.sessionId === sessionId) return
         set((s) => ({ messages: { ...s.messages, [sessionId]: messages } }))
         void get().refreshSessions()
       } catch (error) {
@@ -405,24 +442,34 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       })
     },
 
-    sendMessage: (text) => {
+    sendMessage: (text, outgoing = []) => {
       const { activeSessionId, stream, userId } = get()
       if (stream.streaming || !activeSessionId || !userId) return
 
       const trimmed = text.trim()
-      if (!trimmed) return
+      if (!trimmed && outgoing.length === 0) return
 
       const sessionId = activeSessionId
+      const now = Date.now()
+      const localAttachments: MessageAttachment[] = outgoing.map((item, index) => ({
+        id: `local-${now}-${index}`,
+        kind: attachmentKind(item.mimeType, item.name),
+        name: item.name,
+        mimeType: item.mimeType,
+        size: item.size,
+        url: item.previewUrl ?? ''
+      }))
       const userMessage: Message = {
-        id: `local-${Date.now()}-u`,
+        id: `local-${now}-u`,
         sessionId,
         role: 'user',
         content: trimmed,
         ttsText: null,
         mode: 'text',
-        createdAt: Date.now()
+        attachments: localAttachments,
+        createdAt: now
       }
-      const draftId = `local-${Date.now()}-a`
+      const draftId = `local-${now}-a`
       turnStartedAt = Date.now()
 
       set((s) => {
@@ -443,9 +490,21 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         }
       })
 
-      abortTurn = startChatTurn({ userId, sessionId, content: trimmed }, (event) => {
-        handleTurnEvent(sessionId, event, false)
-      })
+      abortTurn = startChatTurn(
+        {
+          userId,
+          sessionId,
+          content: trimmed,
+          attachments: outgoing.map((item) => ({
+            name: item.name,
+            mimeType: item.mimeType,
+            data: item.data
+          }))
+        },
+        (event) => {
+          handleTurnEvent(sessionId, event, false)
+        }
+      )
     },
 
     regenerate: () => {
@@ -527,6 +586,18 @@ export const useSessionStore = create<SessionState>()((set, get) => {
             session.id === id ? { ...session, pinned: prev } : session
           )
         }))
+        throw error
+      }
+    },
+
+    switchBranch: async (messageId, direction) => {
+      const { activeSessionId, userId, stream } = get()
+      if (!activeSessionId || !userId || stream.streaming) return
+      try {
+        await switchBranchApi({ sessionId: activeSessionId, userId, messageId, direction })
+        await get().refreshSession(activeSessionId)
+      } catch (error) {
+        console.warn('[session] 切换分支失败：', error)
         throw error
       }
     },

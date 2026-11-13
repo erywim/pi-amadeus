@@ -15,6 +15,14 @@ export interface ProviderItem {
   /** 同一时间只有一个激活服务 */
   active: boolean
   priority: number
+  /** 路由标签：chat / vision / summary / memory */
+  tags: string[]
+  /** 每日 token 配额（0 = 不限） */
+  dailyTokenQuota: number
+  /** 今天已使用的 token（来自真实回合指标） */
+  todayTokens: number
+  /** 今天是否已超过配额 */
+  quotaExceeded: boolean
   /** 是否已配置密钥（不返回密钥本身） */
   apiKeySet: boolean
   /**
@@ -33,6 +41,10 @@ export interface ProviderInput {
   /** 留空 = 保持已保存的密钥不变（编辑时） */
   apiKey?: string
   proxy?: string
+  /** 路由标签；缺省 chat */
+  tags?: string[]
+  /** 每日 token 配额；0 = 不限 */
+  dailyTokenQuota?: number
   enabled?: boolean
   priority?: number
 }
