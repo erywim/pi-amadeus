@@ -157,7 +157,8 @@ export async function* runAgentTurn(
         cfg: opts.cfg,
         channel: opts.channel,
         target: prepared.target,
-        confirmRequest
+        confirmRequest,
+        ...(opts.signal ? { signal: opts.signal } : {})
       })
     : []
 

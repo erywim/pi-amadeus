@@ -20,6 +20,7 @@ import { platformRoutes } from './routes/platforms.ts'
 import { pluginRoutes } from './routes/plugins.ts'
 import { proactiveRoutes } from './routes/proactive.ts'
 import { providerRoutes } from './routes/providers.ts'
+import { searchRoutes } from './routes/search.ts'
 import { sessionRoutes } from './routes/sessions.ts'
 import { skillRoutes } from './routes/skills.ts'
 import { statsRoutes } from './routes/stats.ts'
@@ -65,6 +66,7 @@ app.route('/api', frameRoutes())
 app.route('/api', skillRoutes(cfg))
 app.route('/api', pluginRoutes(cfg, db))
 app.route('/api', providerRoutes(db))
+app.route('/api', searchRoutes(cfg))
 app.route('/api', platformRoutes(db))
 app.route('/api', memoryRoutes(db))
 app.route('/api', knowledgeRoutes(db))

@@ -209,6 +209,21 @@ try {
     `document.querySelectorAll('[data-testid="workspace-file"]').length`
   )
   report('工作区：文件树来自真实目录', fileCount > 5, `files=${fileCount}`)
+  // 回归：npm workspace 脚本的 cwd 是 services/brain，工作区默认值曾经跟着它走，
+  // 导致文件树指向大脑包目录（根 package.json 是 @pi-amadeus/brain）。
+  // 工作区根必须是仓库根：根 package.json 的 name 是 pi-amadeus。
+  const rootInfo = await (await fetch(`${BRAIN}/api/workspace/info`)).json()
+  const rootPkg = await (
+    await fetch(`${BRAIN}/api/workspace/file?path=package.json`)
+  ).json()
+  report(
+    '工作区：根目录是仓库根而不是 services/brain',
+    rootInfo.isRepo === true &&
+      rootInfo.name !== 'brain' &&
+      typeof rootPkg.content === 'string' &&
+      rootPkg.content.includes('"name": "pi-amadeus"'),
+    `root=${rootInfo.name} pkg=${(rootPkg.content ?? '').slice(0, 40).replace(/\n/g, ' ')}`
+  )
 
   const packagePath = await evalJs(
     `[...document.querySelectorAll('[data-testid="workspace-file"]')].find((el) => el.dataset.path === 'package.json')?.dataset.path ?? null`

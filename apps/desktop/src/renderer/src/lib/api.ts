@@ -21,9 +21,13 @@ import type {
   ProactiveInput,
   ProactiveResponse,
   ProactiveSettings,
+  FetchPageResponse,
   ProviderInput,
   ProviderItem,
   ProviderTestResult,
+  SearchDiagnostics,
+  SearchEngineName,
+  SearchTestResponse,
   Session,
   SessionUsage,
   SseEvent,
@@ -620,6 +624,40 @@ export async function testProviderApi(id: string): Promise<ProviderTestResult> {
   })
   if (!res.ok) throw new Error(await readError(res, '连通性测试失败'))
   return (await res.json()) as ProviderTestResult
+}
+
+// ---------- 联网搜索 ----------
+
+/** 各引擎在当前网络下的真实可达性（服务端逐个发探测请求，不做缓存） */
+export async function fetchSearchStatus(): Promise<SearchDiagnostics> {
+  const res = await fetch(`${BRAIN_URL}/api/search/status`)
+  if (!res.ok) throw new Error(await readError(res, '联网状态检查失败'))
+  return (await res.json()) as SearchDiagnostics
+}
+
+/** 用给定关键词真的搜一次（engine 可选，用于单引擎诊断） */
+export async function testSearchApi(
+  query: string,
+  engine?: SearchEngineName
+): Promise<SearchTestResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/search/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, ...(engine ? { engine } : {}) })
+  })
+  if (!res.ok) throw new Error(await readError(res, '搜索测试失败'))
+  return (await res.json()) as SearchTestResponse
+}
+
+/** 读取网页正文（与 fetch_url 工具同一套解析） */
+export async function fetchPageApi(url: string, maxChars = 4000): Promise<FetchPageResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/search/fetch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, maxChars })
+  })
+  if (!res.ok) throw new Error(await readError(res, '网页读取失败'))
+  return (await res.json()) as FetchPageResponse
 }
 
 // ---------- 通讯平台 ----------

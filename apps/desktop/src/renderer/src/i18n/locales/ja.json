@@ -157,6 +157,7 @@
       "calculate": "計算機",
       "weather": "天気",
       "search": "ウェブ検索",
+      "fetch_url": "ページ読取",
       "bash": "ターミナル",
       "use_skill": "スキル読込"
     },
@@ -312,6 +313,7 @@
     "title": "設定",
     "nav": {
       "ai": "モデル（LLM）",
+      "search": "ウェブ検索",
       "feishu": "飛書",
       "skills": "スキル",
       "language": "言語",
@@ -356,6 +358,32 @@
         "high": "高",
         "xhigh": "極高",
         "max": "最大"
+      }
+    },
+    "search": {
+      "title": "ウェブ検索",
+      "desc": "リアルタイム情報が必要なとき、アシスタントは検索とウェブページ読み取りツールを使います。ここでは現在のネットワークでの各エンジンの実際の到達性を表示し、試し検索もできます。",
+      "recheck": "再チェック",
+      "checking": "検索ソースを順に確認中…",
+      "noDetail": "詳細なし",
+      "tavilyOn": "キー設定済み",
+      "tavilyOff": "キー未設定",
+      "orderHint": "エンジンは順にフォールバックします：到達できない、または結果がない場合は次を試します。すべて失敗した場合、アシスタントは答えを捏造せず、その旨を伝えます。",
+      "testTitle": "試し検索",
+      "testDesc": "実際のキーワードで一度検索します。結果も失敗理由もこのリクエストによるものです。",
+      "testPlaceholder": "キーワードを入力（例：Node.js 24 リリース日）",
+      "testRun": "検索",
+      "hitEngine": "{{engine}} 経由",
+      "hitCount": "{{count}} 件",
+      "allFailed": "全エンジン失敗",
+      "toolHintTitle": "アシスタントの使い方",
+      "toolHint": "search はタイトル・リンク・抜粋のみを返します。本文が必要なときは fetch_url でページを開きます。取得ツールは公開 http(s) のみ許可し、localhost とプライベート網は拒否します。",
+      "engine": {
+        "tavily": "Tavily",
+        "bing": "Bing",
+        "so": "360 検索",
+        "sogou": "搜狗",
+        "duckduckgo": "DuckDuckGo"
       }
     },
     "feishu": {

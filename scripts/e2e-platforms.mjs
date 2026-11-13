@@ -1099,10 +1099,35 @@ try {
       ).catch(() => false)
       report('桌面端：启停开关', disabled === true)
 
+      // 删除是「再点一次确认」：必须先等按钮可用。上一步启停的请求可能还没回来，
+      // 此时按钮 disabled，点击会被吞掉，于是第一次点击只把按钮切到确认态、
+      // 第二次点击落在同一个「第一次」上 → 永远删不掉（曾导致本用例稳定失败）。
+      await waitFor(
+        () =>
+          evalJs(
+            `(() => {
+               const b = document.querySelector('[data-platform-id="${listed.id}"] [data-testid="platform-delete"]')
+               return !!b && !b.disabled
+             })()`
+          ),
+        10000,
+        '删除按钮可用'
+      )
       await evalJs(
         `document.querySelector('[data-platform-id="${listed.id}"] [data-testid="platform-delete"]').click(); true`
       )
-      await sleep(200)
+      // 确认态是真的切过去了（按钮变 destructive）再点第二次
+      await waitFor(
+        () =>
+          evalJs(
+            `(() => {
+               const b = document.querySelector('[data-platform-id="${listed.id}"] [data-testid="platform-delete"]')
+               return !!b && /destructive/.test(b.className)
+             })()`
+          ),
+        5000,
+        '删除确认态'
+      )
       await evalJs(
         `document.querySelector('[data-platform-id="${listed.id}"] [data-testid="platform-delete"]').click(); true`
       )

@@ -157,6 +157,7 @@
       "calculate": "计算器",
       "weather": "天气查询",
       "search": "联网搜索",
+      "fetch_url": "读取网页",
       "bash": "终端命令",
       "use_skill": "读取技能"
     },
@@ -312,6 +313,7 @@
     "title": "设置",
     "nav": {
       "ai": "模型（LLM）",
+      "search": "联网搜索",
       "feishu": "飞书",
       "skills": "技能",
       "language": "语言",
@@ -356,6 +358,32 @@
         "high": "高",
         "xhigh": "极高",
         "max": "最大"
+      }
+    },
+    "search": {
+      "title": "联网搜索",
+      "desc": "助手需要实时信息时会调用搜索与网页读取工具。这里显示各引擎在当前网络下的真实可达性，并可手动试搜。",
+      "recheck": "重新检查",
+      "checking": "正在逐个探测搜索源…",
+      "noDetail": "无详情",
+      "tavilyOn": "已配置密钥",
+      "tavilyOff": "未配置密钥",
+      "orderHint": "引擎按顺序降级：前一个不可用或没有结果时自动换下一个。全部不可用时助手会如实告知，不会编造答案。",
+      "testTitle": "试搜",
+      "testDesc": "用真实关键词搜一次，结果与失败原因都来自这次请求。",
+      "testPlaceholder": "输入关键词，例如：Node.js 24 发布时间",
+      "testRun": "搜索",
+      "hitEngine": "来源 {{engine}}",
+      "hitCount": "{{count}} 条结果",
+      "allFailed": "全部引擎失败",
+      "toolHintTitle": "助手怎么用",
+      "toolHint": "search 只返回标题、链接与摘要；需要正文时助手会再用 fetch_url 打开具体页面。抓取工具只允许公网 http(s) 地址，本机与内网地址会被拒绝。",
+      "engine": {
+        "tavily": "Tavily",
+        "bing": "必应",
+        "so": "360 搜索",
+        "sogou": "搜狗",
+        "duckduckgo": "DuckDuckGo"
       }
     },
     "feishu": {

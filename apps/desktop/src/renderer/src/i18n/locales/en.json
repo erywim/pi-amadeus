@@ -157,6 +157,7 @@
       "calculate": "Calculator",
       "weather": "Weather",
       "search": "Web Search",
+      "fetch_url": "Read Page",
       "bash": "Terminal",
       "use_skill": "Read Skill"
     },
@@ -312,6 +313,7 @@
     "title": "Settings",
     "nav": {
       "ai": "Model (LLM)",
+      "search": "Web search",
       "feishu": "Feishu",
       "skills": "Skills",
       "language": "Language",
@@ -356,6 +358,32 @@
         "high": "High",
         "xhigh": "Extra high",
         "max": "Max"
+      }
+    },
+    "search": {
+      "title": "Web search",
+      "desc": "The assistant calls search and page-reading tools when it needs live information. This page shows each engine's real reachability on your current network and lets you try a query.",
+      "recheck": "Re-check",
+      "checking": "Probing search sources…",
+      "noDetail": "No detail",
+      "tavilyOn": "Key configured",
+      "tavilyOff": "No key",
+      "orderHint": "Engines fall back in order: when one is unreachable or returns nothing, the next one is tried. If all fail the assistant says so instead of inventing an answer.",
+      "testTitle": "Try a search",
+      "testDesc": "Runs one real query; both the hits and the failure reasons come from that request.",
+      "testPlaceholder": "Enter keywords, e.g. Node.js 24 release date",
+      "testRun": "Search",
+      "hitEngine": "via {{engine}}",
+      "hitCount": "{{count}} results",
+      "allFailed": "All engines failed",
+      "toolHintTitle": "How the assistant uses it",
+      "toolHint": "search returns titles, links and snippets; when it needs the body, the assistant opens the page with fetch_url. The fetch tool only allows public http(s) URLs — localhost and private ranges are rejected.",
+      "engine": {
+        "tavily": "Tavily",
+        "bing": "Bing",
+        "so": "360 Search",
+        "sogou": "Sogou",
+        "duckduckgo": "DuckDuckGo"
       }
     },
     "feishu": {
