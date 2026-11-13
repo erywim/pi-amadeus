@@ -127,7 +127,6 @@ const click = (selector, index = 0) =>
     return true
   })()`
 
-const stamp = Date.now()
 let prevActiveSessionId = null
 const createdSessionIds = []
 

@@ -78,17 +78,33 @@ const cdp = await new Promise((resolve, reject) => {
   }
 })
 async function evalJs(expression) {
-  const result = await cdp.call('Runtime.evaluate', {
-    expression,
-    awaitPromise: true,
-    returnByValue: true
-  })
-  if (result.exceptionDetails) {
-    throw new Error(
-      `页面脚本异常: ${result.exceptionDetails.text} ${result.exceptionDetails.exception?.description ?? ''}`
-    )
+  // 页面导航 / HMR 重载期间 Runtime.evaluate 的 await 可能被回收；表达式尚未真正执行时重试是安全的
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const result = await cdp.call('Runtime.evaluate', {
+        expression,
+        awaitPromise: true,
+        returnByValue: true
+      })
+      if (result.exceptionDetails) {
+        throw new Error(
+          `页面脚本异常: ${result.exceptionDetails.text} ${result.exceptionDetails.exception?.description ?? ''}`
+        )
+      }
+      return result.result.value
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const transient =
+        /Promise was collected|Cannot find context|Execution context was destroyed|Target closed/i.test(
+          message
+        )
+      if (attempt < 2 && transient) {
+        await sleep(200)
+        continue
+      }
+      throw error
+    }
   }
-  return result.result.value
 }
 async function waitFor(expression, timeoutMs = 30_000, label = expression) {
   const start = Date.now()
