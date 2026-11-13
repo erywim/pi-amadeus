@@ -3,6 +3,7 @@ import { registerIpcHandlers } from './ipc'
 import { setMenuLanguage } from './labels'
 import { AppTray } from './tray'
 import { WindowManager } from './window-manager'
+import { startBrain, stopBrain } from './brain-process'
 
 // 开发期开 CDP 调试端口，供自动化 E2E 验证驱动。
 // 命令行已指定时不覆盖（9222 被占用时可用 electron-vite dev --remoteDebuggingPort <port>）
@@ -10,7 +11,8 @@ if (!app.isPackaged && !app.commandLine.hasSwitch('remote-debugging-port')) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222')
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await startBrain()
   const windows = new WindowManager()
   const tray = new AppTray(windows)
   registerIpcHandlers(windows, (lang) => {
@@ -40,4 +42,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  stopBrain()
 })

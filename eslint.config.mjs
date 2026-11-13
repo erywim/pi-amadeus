@@ -15,7 +15,8 @@ export default tseslint.config(
       '**/release/**',
       '**/dist/**',
       '**/node_modules/**',
-      '**/src/renderer/public/**'
+      '**/src/renderer/public/**',
+      '**/resources/brain/**'
     ]
   },
   js.configs.recommended,

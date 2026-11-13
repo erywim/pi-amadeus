@@ -7,7 +7,15 @@ import tailwindcss from '@tailwindcss/vite'
 // npm workspace 脚本的 cwd 即 apps/desktop，两侧一致。
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/main/index.ts'),
+          brainProcess: resolve('src/main/brain-process.ts')
+        }
+      }
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()]
