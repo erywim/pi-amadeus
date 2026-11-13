@@ -77,6 +77,10 @@ function validateAction(action: unknown): asserts action is ComputerAction {
     if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > MAX_COORDINATE)) throw new Error('坐标超出范围')
   }
   if (typed.text !== undefined && (typeof typed.text !== 'string' || typed.text.length > MAX_TEXT)) throw new Error('输入文本过长')
+  if (typed.button !== undefined && !['left', 'middle', 'right'].includes(typed.button)) throw new Error('鼠标按钮不在允许列表')
+  for (const value of [typed.scroll_x, typed.scroll_y]) {
+    if (value !== undefined && (!Number.isInteger(value) || value < -MAX_COORDINATE || value > MAX_COORDINATE)) throw new Error('滚动量超出范围')
+  }
   if (typed.keys && (!Array.isArray(typed.keys) || typed.keys.length > 4 || typed.keys.some((key) => typeof key !== 'string' || (!ALLOWED_KEYS.has(key.toUpperCase()) && !/^[a-z0-9]$/i.test(key))))) {
     throw new Error('按键不在允许列表')
   }
