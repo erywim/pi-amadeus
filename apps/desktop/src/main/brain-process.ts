@@ -58,7 +58,7 @@ export async function startBrain(): Promise<void> {
     return
   }
 
-  const entry = join(__dirname, '../brain/index.mjs')
+  const entry = join(process.resourcesPath, 'brain', 'index.mjs')
   if (!existsSync(entry)) {
     console.error(`[brain] 打包服务不存在：${entry}`)
     return
