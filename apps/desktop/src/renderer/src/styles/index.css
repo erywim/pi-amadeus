@@ -526,13 +526,13 @@ body.theme-amadeus .stage-tip {
 }
 
 /* ============================================================
- * Lancer 式工作台（文本/agent 主界面）
+ * Agent 工作台（文本/agent 主界面）
  *
- * 设计参考 Lancer（MIT）的桌面工作区：白/浅灰画布、细描边、
+ * 设计参考常见的并行 agent 工作区：白/浅灰画布、细描边、
  * 11~14px 紧凑字阶、会话运行图、流动边框与暗色终端。
- * 颜色只作用于 .lancer-workbench 内部，不影响陪伴/记忆/设置等页面。
+ * 颜色只作用于 .agent-workbench 内部，不影响陪伴/记忆/设置等页面。
  * ============================================================ */
-.lancer-workbench {
+.agent-workbench {
   --background: #f7f7f5;
   --foreground: #282825;
   --card: #ffffff;
@@ -568,7 +568,7 @@ body.theme-amadeus .stage-tip {
   --lane-line: #e2e2dd;
 }
 
-body.dark .lancer-workbench {
+body.dark .agent-workbench {
   --background: #141416;
   --foreground: #eeeeea;
   --card: #1c1c1f;
@@ -603,8 +603,8 @@ body.dark .lancer-workbench {
   --lane-line: #2f2f34;
 }
 
-/* 运行中的气泡：同色细窄流动边框（Lancer Light UI 的 restrained outline） */
-.lancer-running-border {
+/* 运行中的气泡：同色细窄流动边框（细窄的流动描边） */
+.agent-running-border {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -616,31 +616,31 @@ body.dark .lancer-workbench {
   stroke-width: 1.2px;
   filter: drop-shadow(0 0 2px color-mix(in srgb, var(--light-color, var(--primary)) 40%, transparent));
 }
-.lancer-running-border rect {
+.agent-running-border rect {
   vector-effect: non-scaling-stroke;
   stroke-dasharray: 9 91;
-  animation: lancer-execution-border 3.6s linear infinite;
+  animation: agent-execution-border 3.6s linear infinite;
 }
-@keyframes lancer-execution-border {
+@keyframes agent-execution-border {
   to {
     stroke-dashoffset: -100;
   }
 }
 
 /* 运行图：活动泳道的流光与在线节点脉冲 */
-.lancer-ray {
+.agent-ray {
   stroke-dasharray: 2 6;
-  animation: lancer-ray-flow 1.4s linear infinite;
+  animation: agent-ray-flow 1.4s linear infinite;
 }
-@keyframes lancer-ray-flow {
+@keyframes agent-ray-flow {
   to {
     stroke-dashoffset: -32;
   }
 }
-.lancer-live-node {
-  animation: lancer-node-pulse 1.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+.agent-live-node {
+  animation: agent-node-pulse 1.7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
-@keyframes lancer-node-pulse {
+@keyframes agent-node-pulse {
   0%,
   100% {
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--lane-color) 45%, transparent);
@@ -649,7 +649,7 @@ body.dark .lancer-workbench {
     box-shadow: 0 0 0 5px color-mix(in srgb, var(--lane-color) 0%, transparent);
   }
 }
-.lancer-caret::after {
+.agent-caret::after {
   content: '';
   display: inline-block;
   width: 7px;
@@ -657,46 +657,46 @@ body.dark .lancer-workbench {
   margin-left: 2px;
   vertical-align: -1px;
   background: #7ee787;
-  animation: lancer-caret-blink 1.1s steps(1) infinite;
+  animation: agent-caret-blink 1.1s steps(1) infinite;
 }
-@keyframes lancer-caret-blink {
+@keyframes agent-caret-blink {
   50% {
     opacity: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lancer-running-border rect,
-  .lancer-ray,
-  .lancer-live-node,
-  .lancer-caret::after {
+  .agent-running-border rect,
+  .agent-ray,
+  .agent-live-node,
+  .agent-caret::after {
     animation: none;
   }
 }
 
-/* 工作台滚动条更细，接近 Lancer 的 hairline 风格 */
-.lancer-workbench ::-webkit-scrollbar {
+/* 工作台滚动条更细，接近 hairline 风格 */
+.agent-workbench ::-webkit-scrollbar {
   width: 9px;
   height: 9px;
 }
-.lancer-workbench ::-webkit-scrollbar-thumb {
+.agent-workbench ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--foreground) 16%, transparent);
   border-radius: 999px;
 }
 
-/* 运行图中的活动泳道：纵向虚线向前流动（对应 Lancer 的 activity ray） */
-.lancer-track-live {
+/* 运行图中的活动泳道：纵向虚线向前流动（对应活动光线） */
+.agent-track-live {
   background-image: linear-gradient(to bottom, var(--lane-color) 55%, transparent 55%);
   background-size: 1px 8px;
-  animation: lancer-track-flow 1.15s linear infinite;
+  animation: agent-track-flow 1.15s linear infinite;
 }
-@keyframes lancer-track-flow {
+@keyframes agent-track-flow {
   to {
     background-position-y: 8px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .lancer-track-live {
+  .agent-track-live {
     animation: none;
   }
 }

@@ -12,7 +12,7 @@ const timeFormatter = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit'
 })
 
-/** 底部状态条（Lancer 的 workspace status bar）：全部数字来自真实会话与回合 */
+/** 底部状态条（工作区状态条）：全部数字来自真实会话与回合 */
 export function WorkbenchStatusBar(): React.JSX.Element {
   const { t } = useTranslation()
   const sessions = useSessionStore((s) => s.sessions)

@@ -5,12 +5,13 @@ import { cn } from '@renderer/lib/utils'
 import { activeProviderOf, useProviderStore } from '@renderer/stores/providerStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
+import { EMPTY_MESSAGES } from './helpers'
 
 type Phase = 'idle' | 'think' | 'tool' | 'reply' | 'done'
 type StepState = 'idle' | 'active' | 'done'
 
 /**
- * 本轮阶段管线（Lancer 工作台顶部那排阶段胶囊）：
+ * 本轮阶段管线（工作台顶部那排阶段胶囊）：
  * 状态全部来自真实回合事件——没有工具调用就不会亮「工具」，
  * 流式正文出现才进入「回复」，回合结束才点亮「完成」。
  */
@@ -18,7 +19,7 @@ export function StagePipeline(): React.JSX.Element {
   const { t } = useTranslation()
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const messages = useSessionStore((s) =>
-    s.activeSessionId ? (s.messages[s.activeSessionId] ?? []) : []
+    s.activeSessionId ? (s.messages[s.activeSessionId] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES
   )
   const stream = useSessionStore((s) => s.stream)
   const turnError = useSessionStore((s) =>
@@ -118,7 +119,8 @@ export function StagePipeline(): React.JSX.Element {
           {t('workbench.stageIdle')}
         </span>
       )}
-      <span className="hidden items-center gap-1.5 sm:inline-flex">
+      {/* 模型名在状态条/服务条里也有；窄窗口（工件面板展开时）优先给阶段让位 */}
+      <span className="hidden items-center gap-1.5 2xl:inline-flex">
         <span
           className={cn(
             'size-1.5 rounded-full',

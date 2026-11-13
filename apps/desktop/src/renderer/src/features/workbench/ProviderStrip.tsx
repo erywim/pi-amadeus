@@ -8,7 +8,7 @@ import { activeProviderOf, useProviderStore } from '@renderer/stores/providerSto
 import { laneColorFor } from './helpers'
 
 /**
- * 工作台顶部的模型服务条（Lancer 的 provider chips）：
+ * 工作台顶部的模型服务条（模型服务 chips）：
  * 每个 chip 是真实的服务记录，点击即激活（写入数据库），
  * 冷却中的服务带警告标记；没有服务时引导去设置页连接。
  */

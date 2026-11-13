@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useArtifactStore } from '@renderer/stores/artifactStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { ArtifactView } from '../chat/ArtifactPanel'
-import { artifactsOf } from './helpers'
+import { artifactsOf, EMPTY_MESSAGES } from './helpers'
 
 /**
  * 工件列表 + 预览：从当前会话的助手消息里提取 HTML / SVG / Mermaid 代码块。
@@ -14,7 +14,7 @@ export function ArtifactsView(): React.JSX.Element {
   const { t } = useTranslation()
   const sessionId = useSessionStore((s) => s.activeSessionId)
   const messages = useSessionStore((s) =>
-    s.activeSessionId ? (s.messages[s.activeSessionId] ?? []) : []
+    s.activeSessionId ? (s.messages[s.activeSessionId] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES
   )
   const artifact = useArtifactStore((s) => s.artifact)
   const show = useArtifactStore((s) => s.show)

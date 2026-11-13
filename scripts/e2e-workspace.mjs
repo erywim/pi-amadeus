@@ -61,17 +61,36 @@ const cdp = await new Promise((resolve, reject) => {
   }
 })
 async function evalJs(expression) {
-  const result = await cdp.call('Runtime.evaluate', {
-    expression,
-    awaitPromise: true,
-    returnByValue: true
-  })
-  if (result.exceptionDetails) {
-    throw new Error(
-      `页面脚本异常: ${result.exceptionDetails.text} ${result.exceptionDetails.exception?.description ?? ''}`
-    )
+  // 页面导航/context 切换期间 Runtime.evaluate 可能被回收；这类错误发生时表达式
+  // 尚未真正执行，重试是安全的（断言本身不依赖“恰好执行一次”）
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const result = await cdp.call('Runtime.evaluate', {
+        expression,
+        awaitPromise: true,
+        returnByValue: true
+      })
+      if (result.exceptionDetails) {
+        throw new Error(
+          `页面脚本异常: ${result.exceptionDetails.text} ${result.exceptionDetails.exception?.description ?? ''}`
+        )
+      }
+      return result.result.value
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const transient = /Promise was collected|Cannot find context|Execution context was destroyed|Target closed/i.test(message)
+      if (attempt < 2 && transient) {
+        await sleep(200)
+        continue
+      }
+      throw error
+    }
   }
-  return result.result.value
+}
+/** 用 CDP 导航而不是在页面里改 location：后者会在上下文销毁时把 evaluate 的 Promise 一起丢掉 */
+async function navigate(path) {
+  const origin = await evalJs('location.origin')
+  await cdp.call('Page.navigate', { url: `${origin}${path}` })
 }
 async function waitFor(expression, timeoutMs = 30_000, label = expression) {
   const start = Date.now()
@@ -150,7 +169,7 @@ try {
   })
   const userId = login.body.userId
   ownerUserId = userId
-  await evalJs(`location.href = '/knowledge'; true`)
+  await navigate('/knowledge')
   await sleep(1800)
   await waitFor(
     `window.__amadeus?.sessionStore.getState().initialized && window.__amadeus.sessionStore.getState().userId === ${JSON.stringify(userId)}`,
@@ -196,7 +215,7 @@ try {
   await evalJs(setInput('[data-testid="kb-search"]', ''))
 
   // ================= 自动化页 =================
-  await evalJs(`location.href = '/automations'; true`)
+  await navigate('/automations')
   await sleep(1600)
   await waitFor(`!!document.querySelector('[data-testid="automation-new"]')`, 15_000, '自动化页')
   await evalJs(click('[data-testid="automation-new"]'))
@@ -276,7 +295,7 @@ try {
   if (badProviderId) createdProviders.push(badProviderId)
   await api(`/api/providers/${badProviderId}/test`, { method: 'POST' })
 
-  await evalJs(`location.href = '/settings'; true`)
+  await navigate('/settings')
   await sleep(1600)
   await waitFor(`document.body.innerText.includes('通讯平台')`, 20_000, '设置页')
   // load() 在已加载时会直接返回：先清 loaded 再拉一次，确保拿到冷却状态
@@ -324,7 +343,7 @@ try {
   )
 
   // ================= 聊天增强 =================
-  await evalJs(`location.href = '/text'; true`)
+  await navigate('/text')
   await sleep(1600)
   await waitFor(`!!window.__amadeus?.sessionStore.getState().userId`, 20_000, '文本模式')
   const sessionId = await evalJs(`window.__amadeus.sessionStore.getState().createSession()`)

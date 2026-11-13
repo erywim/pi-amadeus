@@ -10,7 +10,7 @@ import { TerminalView } from './TerminalView'
 type Tab = 'graph' | 'terminal' | 'artifacts'
 
 /**
- * 右侧工作台面板（Lancer 的三块右侧区域）：
+ * 右侧工作台面板（右侧的三块区域）：
  * 运行图 / 终端 / 工件。点消息里的「预览」会自动切到工件页。
  */
 export function WorkbenchSidePanel({ onCollapse }: { onCollapse: () => void }): React.JSX.Element {
@@ -32,7 +32,11 @@ export function WorkbenchSidePanel({ onCollapse }: { onCollapse: () => void }): 
   return (
     <aside
       data-testid="workbench-side-panel"
-      className="flex w-[330px] shrink-0 flex-col border-l border-border bg-surface"
+      className={cn(
+        'flex shrink-0 flex-col border-l border-border bg-surface transition-[width] duration-150',
+        // 工件预览需要更宽的画布；运行图/终端保持紧凑，给聊天留空间
+        tab === 'artifacts' && artifact ? 'w-[min(46vw,520px)]' : 'w-[330px]'
+      )}
     >
       <div className="flex h-[42px] shrink-0 items-center gap-1 border-b border-border px-2">
         <div role="tablist" className="flex min-w-0 flex-1 items-center gap-0.5">

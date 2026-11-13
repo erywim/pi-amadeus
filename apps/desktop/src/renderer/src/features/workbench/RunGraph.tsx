@@ -3,7 +3,7 @@ import { GitBranch } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
-import { laneColorFor } from './helpers'
+import { EMPTY_MESSAGES, laneColorFor } from './helpers'
 
 interface LaneNode {
   key: string
@@ -17,7 +17,7 @@ const MAX_LANES = 10
 const MAX_NODES = 12
 
 /**
- * 会话运行图（Lancer GitTree 的等价物）：
+ * 会话运行图（并行会话的运行轨道）：
  * 每个会话一条泳道，节点来自真实消息；当前会话用已加载的消息逐条绘制，
  * 其它会话按服务端返回的消息数绘制（不伪造消息内容）。
  * 流式进行中的泳道会点亮流光与脉冲节点。
@@ -27,7 +27,7 @@ export function RunGraph(): React.JSX.Element {
   const sessions = useSessionStore((s) => s.sessions)
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const messages = useSessionStore((s) =>
-    s.activeSessionId ? (s.messages[s.activeSessionId] ?? []) : []
+    s.activeSessionId ? (s.messages[s.activeSessionId] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES
   )
   const stream = useSessionStore((s) => s.stream)
   const workLogs = useSessionStore((s) => s.workLogs)
@@ -87,9 +87,9 @@ export function RunGraph(): React.JSX.Element {
               <div
                 key={session.id}
                 data-testid="run-lane"
-                data-session-id={session.id}
+                data-lane-session-id={session.id}
                 data-active={isActive ? 'true' : 'false'}
-                className="flex w-[88px] shrink-0 flex-col"
+                className="flex w-[76px] shrink-0 flex-col"
                 style={{ '--lane-color': color } as React.CSSProperties}
               >
                 <button
@@ -120,7 +120,7 @@ export function RunGraph(): React.JSX.Element {
                     aria-hidden
                     className={cn(
                       'absolute bottom-0 left-1/2 top-0 w-px -translate-x-1/2',
-                      isActive && streamingHere ? 'lancer-track-live' : 'bg-border'
+                      isActive && streamingHere ? 'agent-track-live' : 'bg-border'
                     )}
                   />
                   {nodes.items.map((node) => (
@@ -239,7 +239,7 @@ function NodeDot({
   if (role === 'live') {
     return (
       <span
-        className="lancer-live-node size-[8px] rounded-full"
+        className="agent-live-node size-[8px] rounded-full"
         style={{ background: color, '--lane-color': color } as React.CSSProperties}
       />
     )

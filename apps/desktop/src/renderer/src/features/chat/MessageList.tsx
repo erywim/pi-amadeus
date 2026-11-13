@@ -130,7 +130,7 @@ export function MessageList(): React.JSX.Element {
               data-testid="streaming-bubble"
               className="anim-msg relative rounded-xl px-2 py-1.5"
             >
-              {/* Lancer 式流动边框：只在流式期间存在，完成即移除 */}
+              {/* 工作台式流动边框：只在流式期间存在，完成即移除 */}
               <RunningBorder />
               <div className="grid grid-cols-[30px_minmax(0,1fr)] gap-3">
                 <div className="grid size-[30px] place-items-center rounded-full border border-line-strong bg-surface">

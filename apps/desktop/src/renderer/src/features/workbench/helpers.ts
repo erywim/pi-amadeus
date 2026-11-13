@@ -5,6 +5,12 @@ import type { Message } from '@pi-amadeus/shared'
  * 会话泳道颜色、可预览工件提取。全部只读真实消息，不生成任何内容。
  */
 
+/**
+ * 稳定的空消息数组：zustand v5 的 selector 如果每次返回新的 `[]`，
+ * useSyncExternalStore 会认为快照一直在变，触发无限重渲染。
+ */
+export const EMPTY_MESSAGES: Message[] = []
+
 const LANE_COLORS = [
   'var(--lane-1)',
   'var(--lane-2)',
@@ -45,13 +51,19 @@ export function artifactsOf(messages: Message[]): SessionArtifact[] {
       if (!PREVIEWABLE.has(lang)) continue
       const code = (match[2] ?? '').trim()
       if (!code) continue
-      const firstLine = code.split('\n').find((line) => line.trim().length > 0) ?? ''
+      const firstLine = (code.split('\n').find((line) => line.trim().length > 0) ?? '').trim()
+      // HTML/SVG 的第一行通常是 <!DOCTYPE>/<svg>，优先取文档自带的 <title>；
+      // 都没有时用语言名，避免列表里出现「HTML <!DOCTYPE html>」这种标题
+      const documentTitle = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(code)?.[1]?.trim() ?? ''
+      const title =
+        documentTitle ||
+        (firstLine && !firstLine.startsWith('<') ? firstLine.slice(0, 48) : `${lang.toUpperCase()} 工件`)
       artifacts.push({
         id: `${message.id}-${index}`,
         messageId: message.id,
         lang,
         code,
-        title: firstLine.trim().slice(0, 48) || `${lang} 工件`
+        title
       })
       index += 1
     }

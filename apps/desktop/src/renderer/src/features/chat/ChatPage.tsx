@@ -44,7 +44,7 @@ export default function ChatPage(): React.JSX.Element {
   return (
     <div
       data-testid="workbench"
-      className="lancer-workbench grid h-full min-h-0 grid-rows-[minmax(0,1fr)_30px] bg-background text-foreground"
+      className="agent-workbench grid h-full min-h-0 grid-rows-[minmax(0,1fr)_30px] bg-background text-foreground"
     >
       <div className="flex min-h-0">
         {sidebarOpen && <SessionSidebar />}

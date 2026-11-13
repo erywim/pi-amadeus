@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import type { ToolActivityItem } from '@pi-amadeus/shared'
 import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
-import { summarizeArgs, summarizeResult } from './helpers'
+import { EMPTY_MESSAGES, summarizeArgs, summarizeResult } from './helpers'
 
 interface TerminalEntry {
   id: string
@@ -12,7 +12,7 @@ interface TerminalEntry {
 }
 
 /**
- * 暗色终端（Lancer 的 Terminal 面板）：
+ * 暗色终端（工具终端）：
  * 只显示当前会话真实发生过的工具调用——历史回合从 workLogs 取，
  * 流式中的从 stream 取，停止的回合从 stoppedLogs 取。没有调用就是空提示。
  */
@@ -20,7 +20,7 @@ export function TerminalView(): React.JSX.Element {
   const { t } = useTranslation()
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const messages = useSessionStore((s) =>
-    s.activeSessionId ? (s.messages[s.activeSessionId] ?? []) : []
+    s.activeSessionId ? (s.messages[s.activeSessionId] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES
   )
   const workLogs = useSessionStore((s) => s.workLogs)
   const stream = useSessionStore((s) => s.stream)
@@ -62,7 +62,7 @@ export function TerminalView(): React.JSX.Element {
         {entries.length === 0 ? (
           <p data-testid="terminal-empty" className="text-white/35">
             <span className="text-[#7ee787]">❯</span> {t('workbench.terminal.idle')}
-            <span className="lancer-caret" />
+            <span className="agent-caret" />
           </p>
         ) : (
           <div className="space-y-2.5">
