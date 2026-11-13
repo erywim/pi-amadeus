@@ -25,7 +25,10 @@
   },
   "channels": {
     "desktop": "桌面",
-    "feishu": "飞书"
+    "feishu": "飞书",
+    "telegram": "Telegram",
+    "onebot": "QQ",
+    "webhook": "Webhook"
   },
   "plugins": {
     "title": "插件中心",
@@ -247,7 +250,8 @@
       "feishu": "飞书",
       "skills": "技能",
       "language": "语言",
-      "general": "通用"
+      "general": "通用",
+      "platforms": "通讯平台"
     },
     "ai": {
       "title": "AI 配置",
@@ -334,6 +338,44 @@
       "proxy": "代理（可选）",
       "enabled": "启用",
       "confirmDelete": "确认删除"
+    },
+    "platforms": {
+      "title": "通讯平台",
+      "desc": "把 Amadeus 接到 Telegram、QQ（OneBot v11）或任意 Webhook 服务；各平台共用同一套会话、记忆与好感度，桌面端也能看到并继续。",
+      "add": "添加平台",
+      "empty": "还没有接入通讯平台。添加后，外部消息会进入同一个 Amadeus。",
+      "saved": "已保存",
+      "deleted": "已删除",
+      "test": "测试",
+      "testSent": "测试消息已发送",
+      "copyWebhook": "复制入站地址",
+      "bindHint": "在平台里发送 /bind <绑定码> 可把外部账号绑定到桌面用户（绑定码在「飞书」设置页生成）；未绑定时会按平台 + 账号自动建档。",
+      "kind": {
+        "telegram": "Telegram",
+        "onebot": "QQ（OneBot）",
+        "webhook": "Webhook"
+      },
+      "state": {
+        "running": "运行中",
+        "stopped": "已停止",
+        "error": "异常"
+      },
+      "editTitle": "编辑通讯平台",
+      "addTitle": "添加通讯平台",
+      "dialogDesc": "配置只保存在本机大脑服务；密钥字段留空表示保持原值。",
+      "name": "名称",
+      "namePlaceholder": "例如：我的 Telegram Bot",
+      "telegramToken": "Bot Token",
+      "telegramBaseUrl": "API 地址（可选）",
+      "testChatId": "测试会话 ID（可选）",
+      "testChatPlaceholder": "例如 123456789",
+      "onebotUrl": "OneBot WebSocket 地址",
+      "onebotToken": "Access Token（可选）",
+      "onebotTestChatPlaceholder": "例如 group:123456 或 123456",
+      "outboundUrl": "出站地址",
+      "secret": "签名密钥（可选）",
+      "secretKeep": "已保存，留空保持不变",
+      "optional": "可选"
     }
   },
   "live2d": {

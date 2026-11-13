@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { SQLInputValue } from 'node:sqlite'
-import type { Channel, MemoryKind, PluginKind, TurnMode } from '@pi-amadeus/shared'
+import type { Channel, MemoryKind, PlatformKind, PluginKind, TurnMode } from '@pi-amadeus/shared'
 import type { UserConfig } from '@pi-amadeus/shared'
 import type { BrainConfig } from './config.ts'
 
@@ -71,6 +71,16 @@ export interface AffinityEventRow {
   createdAt: number
 }
 
+export interface PlatformRow {
+  id: string
+  kind: PlatformKind
+  name: string
+  enabled: boolean
+  config: Record<string, unknown>
+  createdAt: number
+  updatedAt: number
+}
+
 export interface ProviderRow {
   id: string
   name: string
@@ -112,6 +122,8 @@ export interface Db {
   setSessionTitle(id: string, title: string): Promise<void>
   /** 用户手动重命名：只改标题，不动 updated_at（重命名不是一次活动，不该把会话顶到最前） */
   renameSession(id: string, title: string): Promise<void>
+  /** 会话换归属（平台账号绑定到桌面用户后，把该平台的会话交给绑定用户） */
+  reassignSession(id: string, userId: string): Promise<void>
   // messages
   listMessages(sessionId: string, limit?: number): Promise<MessageRow[]>
   /** 会话最后一条消息（重新生成时定位用户消息与待替换的助手回复） */
@@ -191,6 +203,22 @@ export interface Db {
   ): Promise<ProviderRow | null>
   deleteProvider(id: string): Promise<void>
   setActiveProvider(id: string): Promise<void>
+  // platforms（通讯平台适配器）
+  listPlatforms(): Promise<PlatformRow[]>
+  getPlatform(id: string): Promise<PlatformRow | null>
+  createPlatform(input: {
+    kind: PlatformKind
+    name: string
+    enabled: boolean
+    config: Record<string, unknown>
+  }): Promise<PlatformRow>
+  updatePlatform(
+    id: string,
+    patch: { name?: string; enabled?: boolean; config?: Record<string, unknown> }
+  ): Promise<PlatformRow | null>
+  deletePlatform(id: string): Promise<void>
+  findPlatformAccount(platformId: string, externalUserId: string): Promise<{ userId: string } | null>
+  upsertPlatformAccount(platformId: string, externalUserId: string, userId: string): Promise<void>
 }
 
 /** 读取一行并收窄为业务类型（node:sqlite 返回宽泛的 SQLOutputValue 记录） */
@@ -348,6 +376,24 @@ export function createDb(cfg: BrainConfig['db']): Db {
             priority INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL
+          );
+
+          CREATE TABLE IF NOT EXISTS platforms (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            config TEXT NOT NULL DEFAULT '{}',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+
+          CREATE TABLE IF NOT EXISTS platform_accounts (
+            platform_id TEXT NOT NULL,
+            external_user_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (platform_id, external_user_id)
           );
         `)
 
@@ -554,6 +600,10 @@ export function createDb(cfg: BrainConfig['db']): Db {
 
     async renameSession(id, title) {
       run(getConn(), 'UPDATE sessions SET title = ? WHERE id = ?', [title, id])
+    },
+
+    async reassignSession(id, userId) {
+      run(getConn(), 'UPDATE sessions SET user_id = ? WHERE id = ?', [userId, id])
     },
 
     async listMessages(sessionId, limit = 200) {
@@ -975,6 +1025,92 @@ export function createDb(cfg: BrainConfig['db']): Db {
         sqlite.exec('ROLLBACK')
         throw error
       }
+    },
+
+    // ---------- platforms ----------
+
+    async listPlatforms() {
+      const rows = all<PlatformDbRow>(
+        getConn(),
+        `SELECT ${PLATFORM_COLUMNS} FROM platforms ORDER BY created_at ASC`
+      )
+      return rows.map(toPlatformRow)
+    },
+
+    async getPlatform(id) {
+      const row = first<PlatformDbRow>(
+        getConn(),
+        `SELECT ${PLATFORM_COLUMNS} FROM platforms WHERE id = ?`,
+        [id]
+      )
+      return row ? toPlatformRow(row) : null
+    },
+
+    async createPlatform(input) {
+      const { randomUUID } = await import('node:crypto')
+      const id = randomUUID()
+      const now = Date.now()
+      run(
+        getConn(),
+        `INSERT INTO platforms (id, kind, name, enabled, config, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [id, input.kind, input.name, input.enabled ? 1 : 0, JSON.stringify(input.config), now, now]
+      )
+      return (await db.getPlatform(id))!
+    },
+
+    async updatePlatform(id, patch) {
+      const sets: string[] = []
+      const params: SQLInputValue[] = []
+      if (patch.name !== undefined) {
+        sets.push('name = ?')
+        params.push(patch.name)
+      }
+      if (patch.enabled !== undefined) {
+        sets.push('enabled = ?')
+        params.push(patch.enabled ? 1 : 0)
+      }
+      if (patch.config !== undefined) {
+        sets.push('config = ?')
+        params.push(JSON.stringify(patch.config))
+      }
+      sets.push('updated_at = ?')
+      params.push(Date.now())
+      params.push(id)
+      run(getConn(), `UPDATE platforms SET ${sets.join(', ')} WHERE id = ?`, params)
+      return db.getPlatform(id)
+    },
+
+    async deletePlatform(id) {
+      const sqlite = getConn()
+      sqlite.exec('BEGIN')
+      try {
+        run(sqlite, 'DELETE FROM platform_accounts WHERE platform_id = ?', [id])
+        run(sqlite, 'DELETE FROM platforms WHERE id = ?', [id])
+        sqlite.exec('COMMIT')
+      } catch (error) {
+        sqlite.exec('ROLLBACK')
+        throw error
+      }
+    },
+
+    async findPlatformAccount(platformId, externalUserId) {
+      const row = first<{ user_id: string }>(
+        getConn(),
+        'SELECT user_id FROM platform_accounts WHERE platform_id = ? AND external_user_id = ?',
+        [platformId, externalUserId]
+      )
+      return row ? { userId: row.user_id } : null
+    },
+
+    async upsertPlatformAccount(platformId, externalUserId, userId) {
+      run(
+        getConn(),
+        `INSERT INTO platform_accounts (platform_id, external_user_id, user_id, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(platform_id, external_user_id) DO UPDATE SET user_id = excluded.user_id`,
+        [platformId, externalUserId, userId, Date.now()]
+      )
     }
   }
 
@@ -985,6 +1121,7 @@ const MEMORY_COLUMNS =
   'id, user_id, content, kind, pinned, source_session_id, source_message_id, created_at, last_used_at'
 const PROVIDER_COLUMNS =
   'id, name, base_url, api_key, model, proxy, enabled, active, priority, created_at, updated_at'
+const PLATFORM_COLUMNS = 'id, kind, name, enabled, config, created_at, updated_at'
 
 interface MemoryDbRow {
   id: string
@@ -1023,6 +1160,41 @@ function toMemoryRow(row: MemoryDbRow): MemoryRow {
     sourceMessageId: row.source_message_id,
     createdAt: Number(row.created_at),
     lastUsedAt: row.last_used_at === null ? null : Number(row.last_used_at)
+  }
+}
+
+interface PlatformDbRow {
+  id: string
+  kind: PlatformKind
+  name: string
+  enabled: number
+  config: string
+  created_at: number
+  updated_at: number
+}
+
+function toPlatformRow(row: PlatformDbRow): PlatformRow {
+  let config: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = JSON.parse(row.config)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      config = parsed as Record<string, unknown>
+    } else {
+      console.warn(`[db] 平台 ${row.id} 的配置不是对象，按空配置展示`)
+    }
+  } catch (error) {
+    console.warn(
+      `[db] 平台 ${row.id} 的配置解析失败，按空配置展示（不会回写）：${error instanceof Error ? error.message : error}`
+    )
+  }
+  return {
+    id: row.id,
+    kind: row.kind,
+    name: row.name,
+    enabled: row.enabled === 1,
+    config,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at)
   }
 }
 

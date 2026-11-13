@@ -25,7 +25,10 @@
   },
   "channels": {
     "desktop": "デスクトップ",
-    "feishu": "飛書"
+    "feishu": "飛書",
+    "telegram": "Telegram",
+    "onebot": "QQ",
+    "webhook": "Webhook"
   },
   "plugins": {
     "title": "プラグインセンター",
@@ -247,7 +250,8 @@
       "feishu": "飛書",
       "skills": "スキル",
       "language": "言語",
-      "general": "一般"
+      "general": "一般",
+      "platforms": "連携プラットフォーム"
     },
     "ai": {
       "title": "AI 設定",
@@ -334,6 +338,44 @@
       "proxy": "プロキシ（任意）",
       "enabled": "有効",
       "confirmDelete": "削除を確認"
+    },
+    "platforms": {
+      "title": "連携プラットフォーム",
+      "desc": "Amadeus を Telegram・QQ（OneBot v11）・任意の Webhook に接続します。会話・記憶・好感度は共通で、デスクトップからも確認できます。",
+      "add": "プラットフォームを追加",
+      "empty": "まだ接続していません。追加すると外部メッセージが同じ Amadeus に入ります。",
+      "saved": "保存しました",
+      "deleted": "削除しました",
+      "test": "テスト",
+      "testSent": "テストメッセージを送信しました",
+      "copyWebhook": "受信 URL をコピー",
+      "bindHint": "プラットフォームで /bind <コード> を送ると外部アカウントをデスクトップユーザーに紐付けられます（コードは「飛書」設定で生成）。未紐付けの場合はプラットフォーム + アカウントで自動作成されます。",
+      "kind": {
+        "telegram": "Telegram",
+        "onebot": "QQ（OneBot）",
+        "webhook": "Webhook"
+      },
+      "state": {
+        "running": "実行中",
+        "stopped": "停止",
+        "error": "エラー"
+      },
+      "editTitle": "プラットフォームを編集",
+      "addTitle": "プラットフォームを追加",
+      "dialogDesc": "設定はローカルのブレインサービスのみに保存されます。シークレットは空欄なら変更しません。",
+      "name": "名前",
+      "namePlaceholder": "例：マイ Telegram Bot",
+      "telegramToken": "Bot Token",
+      "telegramBaseUrl": "API アドレス（任意）",
+      "testChatId": "テスト会話 ID（任意）",
+      "testChatPlaceholder": "例 123456789",
+      "onebotUrl": "OneBot WebSocket アドレス",
+      "onebotToken": "Access Token（任意）",
+      "onebotTestChatPlaceholder": "例 group:123456 または 123456",
+      "outboundUrl": "送信先 URL",
+      "secret": "署名キー（任意）",
+      "secretKeep": "保存済み。空欄なら変更しません",
+      "optional": "任意"
     }
   },
   "live2d": {

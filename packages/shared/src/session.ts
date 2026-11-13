@@ -1,8 +1,11 @@
 import type { Emotion } from './emotion.ts'
 import type { ToolStatus } from './sse.ts'
 
-/** 渠道：桌面客户端 / 飞书机器人，会话按渠道存同一数据库 */
-export type Channel = 'desktop' | 'feishu'
+/**
+ * 渠道：桌面客户端 / 飞书 / 各通讯平台适配器，会话按渠道存同一数据库。
+ * 平台渠道值就是 PlatformKind（telegram / onebot / webhook），看板按它分组。
+ */
+export type Channel = 'desktop' | 'feishu' | 'telegram' | 'onebot' | 'webhook'
 
 export type Role = 'user' | 'assistant'
 

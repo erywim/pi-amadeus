@@ -5,6 +5,8 @@ import type {
   MemoryKind,
   MemoryListResponse,
   Message,
+  PlatformInput,
+  PlatformItem,
   PluginListResponse,
   ProviderInput,
   ProviderItem,
@@ -451,6 +453,63 @@ export async function testProviderApi(id: string): Promise<ProviderTestResult> {
   })
   if (!res.ok) throw new Error(await readError(res, '连通性测试失败'))
   return (await res.json()) as ProviderTestResult
+}
+
+// ---------- 通讯平台 ----------
+
+export async function fetchPlatforms(): Promise<PlatformItem[]> {
+  const res = await fetch(`${BRAIN_URL}/api/platforms`)
+  if (!res.ok) throw new Error(await readError(res, '通讯平台加载失败'))
+  const json = (await res.json()) as { platforms: PlatformItem[] }
+  return json.platforms
+}
+
+export async function createPlatformApi(input: PlatformInput): Promise<PlatformItem> {
+  const res = await fetch(`${BRAIN_URL}/api/platforms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(await readError(res, '新增通讯平台失败'))
+  const json = (await res.json()) as { platform: PlatformItem }
+  return json.platform
+}
+
+export async function updatePlatformApi(
+  id: string,
+  input: { name?: string; enabled?: boolean; config?: Record<string, string> }
+): Promise<PlatformItem> {
+  const res = await fetch(`${BRAIN_URL}/api/platforms/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(await readError(res, '更新通讯平台失败'))
+  const json = (await res.json()) as { platform: PlatformItem }
+  return json.platform
+}
+
+export async function deletePlatformApi(id: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/platforms/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await readError(res, '删除通讯平台失败'))
+}
+
+export async function setPlatformEnabledApi(id: string, enabled: boolean): Promise<PlatformItem> {
+  const res = await fetch(`${BRAIN_URL}/api/platforms/${encodeURIComponent(id)}/enabled`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
+  })
+  if (!res.ok) throw new Error(await readError(res, '通讯平台启停失败'))
+  const json = (await res.json()) as { platform: PlatformItem }
+  return json.platform
+}
+
+export async function testPlatformApi(id: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/platforms/${encodeURIComponent(id)}/test`, {
+    method: 'POST'
+  })
+  if (!res.ok) throw new Error(await readError(res, '测试消息发送失败'))
 }
 
 // ---------- 数据看板 ----------

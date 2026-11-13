@@ -25,7 +25,10 @@
   },
   "channels": {
     "desktop": "Desktop",
-    "feishu": "Feishu"
+    "feishu": "Feishu",
+    "telegram": "Telegram",
+    "onebot": "QQ",
+    "webhook": "Webhook"
   },
   "plugins": {
     "title": "Plugin Center",
@@ -247,7 +250,8 @@
       "feishu": "Feishu",
       "skills": "Skills",
       "language": "Language",
-      "general": "General"
+      "general": "General",
+      "platforms": "Platforms"
     },
     "ai": {
       "title": "AI Configuration",
@@ -334,6 +338,44 @@
       "proxy": "Proxy (optional)",
       "enabled": "Enabled",
       "confirmDelete": "Confirm delete"
+    },
+    "platforms": {
+      "title": "Messaging platforms",
+      "desc": "Connect Amadeus to Telegram, QQ (OneBot v11), or any webhook service. Sessions, memory, and affinity are shared, and the desktop can see and continue them.",
+      "add": "Add platform",
+      "empty": "No platforms connected yet. Once added, external messages reach the same Amadeus.",
+      "saved": "Saved",
+      "deleted": "Deleted",
+      "test": "Test",
+      "testSent": "Test message sent",
+      "copyWebhook": "Copy inbound URL",
+      "bindHint": "Send /bind <code> in the platform to link an external account to a desktop user (codes are generated in Settings → Feishu). Unlinked accounts get an automatic profile per platform + account.",
+      "kind": {
+        "telegram": "Telegram",
+        "onebot": "QQ (OneBot)",
+        "webhook": "Webhook"
+      },
+      "state": {
+        "running": "Running",
+        "stopped": "Stopped",
+        "error": "Error"
+      },
+      "editTitle": "Edit platform",
+      "addTitle": "Add platform",
+      "dialogDesc": "Configuration stays in the local brain service; leaving a secret blank keeps the saved value.",
+      "name": "Name",
+      "namePlaceholder": "e.g. My Telegram Bot",
+      "telegramToken": "Bot Token",
+      "telegramBaseUrl": "API base URL (optional)",
+      "testChatId": "Test chat ID (optional)",
+      "testChatPlaceholder": "e.g. 123456789",
+      "onebotUrl": "OneBot WebSocket URL",
+      "onebotToken": "Access Token (optional)",
+      "onebotTestChatPlaceholder": "e.g. group:123456 or 123456",
+      "outboundUrl": "Outbound URL",
+      "secret": "Signing secret (optional)",
+      "secretKeep": "Saved — leave blank to keep",
+      "optional": "Optional"
     }
   },
   "live2d": {

@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useState } from 'react'
-import { Bot, Languages, MonitorCog, Send, Sparkles } from 'lucide-react'
+import { Bot, Languages, MessagesSquare, MonitorCog, Send, Sparkles } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
@@ -8,9 +8,10 @@ import { AiPanel } from './AiPanel'
 import { FeishuPanel } from './FeishuPanel'
 import { GeneralPanel } from './GeneralPanel'
 import { LanguagePanel } from './LanguagePanel'
+import { PlatformsPanel } from './PlatformsPanel'
 import { SkillsPanel } from './SkillsPanel'
 
-type Section = 'ai' | 'feishu' | 'skills' | 'language' | 'general'
+type Section = 'ai' | 'feishu' | 'platforms' | 'skills' | 'language' | 'general'
 
 /** 设置页（原型布局）：左侧分类导航 + 右侧面板（max-w 居中） */
 export default function SettingsPage(): React.JSX.Element {
@@ -20,6 +21,7 @@ export default function SettingsPage(): React.JSX.Element {
   const items: Array<{ key: Section; icon: LucideIcon; label: string }> = [
     { key: 'ai', icon: Bot, label: t('settings.nav.ai') },
     { key: 'feishu', icon: Send, label: t('settings.nav.feishu') },
+    { key: 'platforms', icon: MessagesSquare, label: t('settings.nav.platforms') },
     { key: 'skills', icon: Sparkles, label: t('settings.nav.skills') },
     { key: 'language', icon: Languages, label: t('settings.nav.language') },
     { key: 'general', icon: MonitorCog, label: t('settings.nav.general') }
@@ -49,6 +51,7 @@ export default function SettingsPage(): React.JSX.Element {
         <div className="mx-auto max-w-[760px] px-8 pb-8 pt-7">
           {section === 'ai' && <AiPanel />}
           {section === 'feishu' && <FeishuPanel />}
+          {section === 'platforms' && <PlatformsPanel />}
           {section === 'skills' && <SkillsPanel />}
           {section === 'language' && <LanguagePanel />}
           {section === 'general' && <GeneralPanel />}
