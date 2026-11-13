@@ -22,7 +22,7 @@ Amadeus 提供一个独立的本地文件转换页（`/conversion`）。它参�
 - `sharp`：常见图片解码、EXIF 方向校正与 PNG/JPEG/WebP/AVIF/TIFF/GIF 输出。
 - `pdf-lib`：图片转 PDF 与 PDF 合并。
 - `fflate`：在本机内存中把多张图片打包为 ZIP，不写入用户目录。
-- 生产桌面包会携带 bundled brain 服务并由 Electron 主进程托管；Sharp 等原生依赖随单文件 brain bundle 解析，外部 FFmpeg/Poppler/LibreOffice/Tesseract/Pandoc 仍要求系统已安装。
+- 生产桌面包会携带 bundled brain 服务并由 Electron 主进程托管；当前 macOS arm64 资源同时携带 Sharp/libvips 原生文件，其他平台需各自构建原生资源；外部 FFmpeg/Poppler/LibreOffice/Tesseract/Pandoc 仍要求系统已安装。
 - `officeparser`：DOCX/PPTX/XLSX/ODF/RTF/PDF/EPUB 等文档解析与文本、Markdown、HTML、PDF、CSV、RTF、EPUB、DOCX、ODT、XLSX、ODS、PPTX、ODP、TEX 输出；复杂版式、字体、表格与图片可能有损。
 - 文本格式转换按源格式返回真实目标矩阵；不在矩阵中的组合会直接标记为不支持，而不是显示后再失败。
 
