@@ -54,6 +54,11 @@ export interface Message {
   attachments?: MessageAttachment[]
   /** 本回合工作区改动（仅桌面端真实 git 快照有差异时才有） */
   changedFiles?: TurnChangedFile[]
+  /**
+   * 思考过程（模型真实返回的 reasoning 内容；未开启思考或供应商不返回时为空）。
+   * 只展示，不回灌 LLM 上下文——重放思考块会显著增加成本且易被供应商拒收。
+   */
+  thinking?: string
   createdAt: number
 }
 
@@ -138,6 +143,8 @@ export interface StreamState {
     messageId: string
     content: string
     emotion?: Emotion
+    /** 流式中的思考内容（供应商真实返回的 reasoning 增量） */
+    thinking?: string
   }
   /** 本回合 turnId（首个 tool 事件到来时设置） */
   turnId?: string

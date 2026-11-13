@@ -1,6 +1,7 @@
-import type { ProviderInput, ProviderItem, ProviderTestResult } from '@pi-amadeus/shared'
+import type { ProviderInput, ProviderItem, ProviderTestResult, ThinkingLevel } from '@pi-amadeus/shared'
+import { THINKING_LEVELS } from '@pi-amadeus/shared'
 import type { Db, ProviderRow } from '../db.ts'
-import { completeText, supportsVision, type LlmTarget } from '../llm.ts'
+import { completeText, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, supportsVision, type LlmTarget } from '../llm.ts'
 import { isProviderCoolingDown, markProviderFailure, markProviderSuccess } from './failover.ts'
 
 /**
@@ -9,6 +10,11 @@ import { isProviderCoolingDown, markProviderFailure, markProviderSuccess } from 
  */
 
 const ROUTE_TAGS = new Set(['chat', 'vision', 'summary', 'memory'])
+const THINKING_SET = new Set<string>(THINKING_LEVELS)
+
+export function parseThinkingLevel(value: string | undefined): ThinkingLevel {
+  return value && THINKING_SET.has(value) ? (value as ThinkingLevel) : 'off'
+}
 
 export function parseTags(tags: string): string[] {
   const list = tags
@@ -35,6 +41,9 @@ export function toProviderItem(row: ProviderRow, todayTokens = 0): ProviderItem 
     priority: row.priority,
     tags: parseTags(row.tags),
     dailyTokenQuota: row.dailyTokenQuota,
+    thinkingLevel: parseThinkingLevel(row.thinkingLevel),
+    contextWindow: row.contextWindow,
+    maxTokens: row.maxTokens,
     todayTokens,
     quotaExceeded: row.dailyTokenQuota > 0 && todayTokens >= row.dailyTokenQuota,
     apiKeySet: row.apiKey.trim().length > 0,
@@ -73,6 +82,9 @@ export async function createProviderItem(
     proxy: (input.proxy ?? '').trim(),
     tags: parseTags((input.tags ?? ['chat']).join(',')).join(','),
     dailyTokenQuota: Math.max(0, Math.floor(input.dailyTokenQuota ?? 0)),
+    thinkingLevel: parseThinkingLevel(input.thinkingLevel),
+    contextWindow: Math.max(0, Math.floor(input.contextWindow ?? 0)),
+    maxTokens: Math.max(0, Math.floor(input.maxTokens ?? 0)),
     enabled: input.enabled !== false,
     priority: input.priority ?? maxPriority + 10
   })
@@ -101,6 +113,13 @@ export async function updateProviderItem(
     ...(input.dailyTokenQuota !== undefined
       ? { dailyTokenQuota: Math.max(0, Math.floor(input.dailyTokenQuota)) }
       : {}),
+    ...(input.thinkingLevel !== undefined
+      ? { thinkingLevel: parseThinkingLevel(input.thinkingLevel) }
+      : {}),
+    ...(input.contextWindow !== undefined
+      ? { contextWindow: Math.max(0, Math.floor(input.contextWindow)) }
+      : {}),
+    ...(input.maxTokens !== undefined ? { maxTokens: Math.max(0, Math.floor(input.maxTokens)) } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.priority !== undefined ? { priority: input.priority } : {})
   })
@@ -140,7 +159,10 @@ export async function testProvider(db: Db, id: string): Promise<ProviderTestResu
     apiKey: row.apiKey,
     model: row.model,
     vision: supportsVision(row.model),
-    proxy: row.proxy
+    proxy: row.proxy,
+    // 连通性测试只验证端点/密钥，不请求思考（否则推理预算会拖慢测试并可能空回复）
+    contextWindow: row.contextWindow || DEFAULT_CONTEXT_WINDOW,
+    maxTokens: row.maxTokens || DEFAULT_MAX_TOKENS
   }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 25_000)

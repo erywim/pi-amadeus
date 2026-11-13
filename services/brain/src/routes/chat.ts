@@ -96,7 +96,8 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           target,
           userText: content || attachments.map((item) => item.name).join('、'),
           toolCalls: result.toolCalls,
-          changedFiles: result.changedFiles
+          changedFiles: result.changedFiles,
+          thinking: result.thinking
         })
         await recordTurnMetric(db, {
           sessionId,
@@ -206,7 +207,8 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           userText,
           parentMessageId: lastUser.id,
           toolCalls: result.toolCalls,
-          changedFiles: result.changedFiles
+          changedFiles: result.changedFiles,
+          thinking: result.thinking
         })
         await recordTurnMetric(db, {
           sessionId,
@@ -301,7 +303,8 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           userText: content,
           parentMessageId: result.userMessageId,
           toolCalls: result.toolCalls,
-          changedFiles: result.changedFiles
+          changedFiles: result.changedFiles,
+          thinking: result.thinking
         })
         await recordTurnMetric(db, {
           sessionId,

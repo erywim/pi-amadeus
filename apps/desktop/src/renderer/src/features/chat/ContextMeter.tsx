@@ -6,7 +6,10 @@ import { activeProviderOf, useProviderStore } from '@renderer/stores/providerSto
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 
-/** 常见模型的上下文上限；仅用于进度条刻度，识别不了时按 128k 估算 */
+/**
+ * 常见模型的上下文上限：只在用户没显式配置窗口时兜底估算。
+ * 显式配置（模型服务 / 内置配置里的 contextWindow）优先——那才是真实值。
+ */
 const CONTEXT_WINDOWS: Array<[RegExp, number]> = [
   [/gemini/i, 1_000_000],
   [/claude/i, 200_000],
@@ -19,7 +22,8 @@ const CONTEXT_WINDOWS: Array<[RegExp, number]> = [
   [/llama|mistral|mixtral/i, 128_000]
 ]
 
-function contextWindowForModel(model: string): number {
+function contextWindowForModel(model: string, configured?: number): number {
+  if (configured && configured > 0) return configured
   for (const [pattern, window] of CONTEXT_WINDOWS) {
     if (pattern.test(model)) return window
   }
@@ -53,14 +57,16 @@ export function ContextMeter(): React.JSX.Element | null {
     s.stream.sessionId === s.activeSessionId ? (s.stream.draft?.content ?? '') : ''
   )
   const provider = activeProviderOf(useProviderStore((s) => s.providers))
-  const model = provider?.model ?? useSettingsStore((s) => s.aiConfig.provider.model)
+  const fallbackModel = useSettingsStore((s) => s.aiConfig.provider.model)
+  const fallbackWindow = useSettingsStore((s) => s.aiConfig.provider.contextWindow)
+  const model = provider?.model ?? fallbackModel
 
   let used = 0
   for (const message of messages ?? []) used += estimateTokens(message.content)
   if (draft) used += estimateTokens(draft)
   if (used === 0) return null
 
-  const limit = contextWindowForModel(model)
+  const limit = contextWindowForModel(model, provider?.contextWindow || fallbackWindow)
   const ratio = Math.min(1, used / limit)
   const tone = ratio >= 0.9 ? 'bg-destructive' : ratio >= 0.75 ? 'bg-amber-500' : 'bg-primary'
 

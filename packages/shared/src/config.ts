@@ -11,9 +11,44 @@ export interface LlmProviderConfig {
   model: string
   /** LLM 请求走本地 HTTP 代理（如中转服务国内不可直连时配 Clash 7890）；留空直连 */
   proxy?: string
+  /** 思考级别（缺省 off = 不请求思考） */
+  thinkingLevel?: ThinkingLevel
+  /** 上下文窗口（token）：输出上限裁剪与上下文读数用；缺省按 128k */
+  contextWindow?: number
+  /** 单次回复输出上限（token）；缺省 8192 */
+  maxTokens?: number
 }
 
 export type OutputLanguage = 'zh' | 'en' | 'ja'
+
+/**
+ * 思考（推理）级别：直接对应 pi-ai 基座的 ThinkingLevel。
+ * off = 不请求思考，与旧行为一致；其余级别由供应商按自己的参数格式映射
+ * （reasoning_effort / thinking.type / enable_thinking 等）。
+ */
+export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export const THINKING_LEVELS: ThinkingLevel[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max'
+]
+
+/**
+ * 模型运行参数（服务与内置配置共用）：
+ * - thinkingLevel 决定是否向供应商请求思考内容
+ * - contextWindow 决定输出上限裁剪（pi 会用它保证 maxTokens 不超过窗口）
+ * - maxTokens 是单次回复的输出上限（思考与正文共享）
+ */
+export interface ModelRuntimeOptions {
+  thinkingLevel?: ThinkingLevel
+  contextWindow?: number
+  maxTokens?: number
+}
 
 /** 工具调用配置（v1：仅一个总开关，缺省视为开启） */
 export interface ToolConfig {

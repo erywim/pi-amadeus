@@ -207,7 +207,9 @@
     "exportUser": "You",
     "archive": "Archive session",
     "unarchive": "Unarchive",
-    "archived": "Archived"
+    "archived": "Archived",
+    "thinking": "Thinking",
+    "thinkingRunning": "Thinking…"
   },
   "companion": {
     "charName": "Kurisu Makise",
@@ -338,7 +340,23 @@
       "loginRequired": "Log in on the Companion page first",
       "toolsEnable": "Tool Calling",
       "toolsDesc": "Let the assistant use tools: time, calculator, weather, web search, terminal commands (dangerous commands are blocked by the safety policy)",
-      "fallbackHint": "The built-in config below is used only when no model service is active."
+      "fallbackHint": "The built-in config below is used only when no model service is active.",
+      "thinkingLevel": "Thinking mode",
+      "thinkingHint": "Show the model’s real reasoning when the provider returns it (collapsible). Off sends no thinking parameters.",
+      "contextWindow": "Context window (tokens)",
+      "contextWindowHint": "0 = assume 128k. Set the model’s real window; output limit is clamped to it.",
+      "maxTokens": "Max output (tokens)",
+      "maxTokensHint": "0 = default 8192. Thinking and answer share this ceiling.",
+      "modelRuntimeHint": "Thinking level / context window / max output are sent with requests; 0 means default.",
+      "thinking": {
+        "off": "Off",
+        "minimal": "Minimal",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "xhigh": "Extra high",
+        "max": "Max"
+      }
     },
     "feishu": {
       "title": "Feishu",

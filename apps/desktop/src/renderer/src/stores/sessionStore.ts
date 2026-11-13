@@ -303,6 +303,17 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           }
         }))
         return
+      case 'thinking':
+        if (!draft) return
+        // 思考增量单独累积到 draft.thinking：折叠区展示，不混进正文
+        set((s) => ({
+          stream: {
+            ...s.stream,
+            streaming: true,
+            draft: { ...draft, thinking: (draft.thinking ?? '') + event.delta }
+          }
+        }))
+        return
       case 'tool_start':
         set((s) => ({
           stream: {
@@ -378,6 +389,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           content: finalDraft.content,
           ttsText: null,
           mode: 'text',
+          ...(finalDraft.thinking ? { thinking: finalDraft.thinking } : {}),
           createdAt: Date.now()
         }
         set((s) => {

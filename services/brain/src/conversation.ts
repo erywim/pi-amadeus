@@ -94,14 +94,17 @@ export async function resolveTarget(
   const stored = await db.getUserConfig(userId)
   const provider = stored?.provider
   const model = provider?.model || cfg.llm.model
-  return {
+  return targetOfProvider({
+    id: '',
+    name: '',
     baseUrl: provider?.baseUrl || cfg.llm.baseUrl,
     apiKey: provider?.apiKey || cfg.llm.apiKey,
     model,
-    vision: supportsVision(model),
     proxy: provider?.proxy || '',
-    providerName: ''
-  }
+    ...(provider?.thinkingLevel ? { thinkingLevel: provider.thinkingLevel } : {}),
+    ...(provider?.contextWindow ? { contextWindow: provider.contextWindow } : {}),
+    ...(provider?.maxTokens ? { maxTokens: provider.maxTokens } : {})
+  })
 }
 
 function targetOfProvider(provider: {
@@ -111,6 +114,9 @@ function targetOfProvider(provider: {
   apiKey: string
   model: string
   proxy: string
+  thinkingLevel?: string
+  contextWindow?: number
+  maxTokens?: number
 }): LlmTarget {
   return {
     baseUrl: provider.baseUrl,
@@ -119,7 +125,14 @@ function targetOfProvider(provider: {
     vision: supportsVision(provider.model),
     proxy: provider.proxy,
     providerId: provider.id,
-    providerName: provider.name
+    providerName: provider.name,
+    ...(provider.thinkingLevel && provider.thinkingLevel !== 'off'
+      ? { thinkingLevel: provider.thinkingLevel as LlmTarget['thinkingLevel'] }
+      : {}),
+    ...(provider.contextWindow && provider.contextWindow > 0
+      ? { contextWindow: provider.contextWindow }
+      : {}),
+    ...(provider.maxTokens && provider.maxTokens > 0 ? { maxTokens: provider.maxTokens } : {})
   }
 }
 
@@ -352,6 +365,8 @@ export async function finishTurn(
     toolCalls?: number
     /** 本回合工作区改动（桌面端真实 git 快照差集） */
     changedFiles?: Array<{ path: string; status: string }>
+    /** 模型真实返回的思考内容（开启思考的回合才有） */
+    thinking?: string
   }
 ): Promise<string> {
   const assistantId = randomUUID()
@@ -367,7 +382,8 @@ export async function finishTurn(
     ...(input.parentMessageId ? { parentId: input.parentMessageId } : {}),
     ...(input.changedFiles && input.changedFiles.length > 0
       ? { changedFiles: input.changedFiles }
-      : {})
+      : {}),
+    ...(input.thinking ? { thinking: input.thinking } : {})
   })
   await db.touchSession({ id: input.sessionId, userId: input.userId, channel: input.channel })
 

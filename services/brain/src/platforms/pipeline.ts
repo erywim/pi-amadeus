@@ -116,7 +116,8 @@ export async function handlePlatformMessage(opts: {
         ttsText: null,
         target: turn.target,
         userText: content || media.map((item) => item.name).join('、'),
-        toolCalls: turn.toolCalls
+        toolCalls: turn.toolCalls,
+        ...(turn.thinking ? { thinking: turn.thinking } : {})
       })
       await recordTurnMetric(db, {
         sessionId,

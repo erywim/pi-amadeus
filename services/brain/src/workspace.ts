@@ -248,16 +248,35 @@ export async function readWorkspaceFile(root: string, relativePath: string): Pro
   }
 }
 
+/** 回合前后快照里每个脏文件的一项：状态码 + 内容指纹 */
+export interface GitSnapshotEntry {
+  status: string
+  /**
+   * 文件指纹（mtime + size）。只比状态码会漏掉「回合开始前就是 M、回合中又被改了一次」
+   * 的文件——那正是 agent 最常干的事，必须靠指纹才能发现。
+   */
+  fingerprint: string
+}
+
+async function fingerprintOf(fullPath: string): Promise<string> {
+  try {
+    const info = await stat(fullPath)
+    return `${info.mtimeMs}:${info.size}`
+  } catch {
+    return ''
+  }
+}
+
 /**
- * 回合级变更快照：path → 状态码。非 Git 仓库/命令失败返回 null
+ * 回合级变更快照：path → 状态码 + 指纹。非 Git 仓库/命令失败返回 null
  * （null 表示「不知道」，绝不与「没有变化」混为一谈）。
  */
-export async function gitSnapshot(root: string): Promise<Map<string, string> | null> {
+export async function gitSnapshot(root: string): Promise<Map<string, GitSnapshotEntry> | null> {
   const inside = (await tryGit(root, ['rev-parse', '--is-inside-work-tree']))?.trim() === 'true'
   if (!inside) return null
   const raw = await tryGit(root, ['status', '--porcelain=v1', '-z', '-uall'])
   if (raw === null) return null
-  const snapshot = new Map<string, string>()
+  const snapshot = new Map<string, GitSnapshotEntry>()
   const tokens = raw.split('\0')
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index]
@@ -266,23 +285,29 @@ export async function gitSnapshot(root: string): Promise<Map<string, string> | n
     const path = normalizeGitPath(token.slice(3))
     if (code.includes('R') || code.includes('C')) index += 1
     if (!isSafeRelative(path) || isSensitive(path) || isInternal(path)) continue
-    snapshot.set(path, code.trim() || '??')
+    snapshot.set(path, {
+      status: code.trim() || '??',
+      fingerprint: await fingerprintOf(resolve(root, path))
+    })
   }
   return snapshot
 }
 
 /**
- * 两次快照的差集：回合期间新出现或状态变化的文件。
+ * 两次快照的差集：回合期间新出现、状态变化或内容又被改过的文件。
  * before 为 null（回合开始时还不知道）时不报任何改动——宁缺勿假。
  */
 export function diffSnapshots(
-  before: Map<string, string> | null,
-  after: Map<string, string> | null
+  before: Map<string, GitSnapshotEntry> | null,
+  after: Map<string, GitSnapshotEntry> | null
 ): Array<{ path: string; status: string }> {
   if (!before || !after) return []
   const changed: Array<{ path: string; status: string }> = []
-  for (const [path, status] of after) {
-    if (before.get(path) !== status) changed.push({ path, status })
+  for (const [path, entry] of after) {
+    const previous = before.get(path)
+    if (!previous || previous.status !== entry.status || previous.fingerprint !== entry.fingerprint) {
+      changed.push({ path, status: entry.status })
+    }
   }
   changed.sort((a, b) => a.path.localeCompare(b.path))
   return changed.slice(0, 60)

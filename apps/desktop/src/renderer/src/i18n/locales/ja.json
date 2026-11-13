@@ -207,7 +207,9 @@
     "exportUser": "あなた",
     "archive": "セッションをアーカイブ",
     "unarchive": "アーカイブを解除",
-    "archived": "アーカイブ済み"
+    "archived": "アーカイブ済み",
+    "thinking": "思考プロセス",
+    "thinkingRunning": "思考中…"
   },
   "companion": {
     "charName": "牧瀬紅莉栖",
@@ -338,7 +340,23 @@
       "loginRequired": "先にコンパニオンモードでログインしてください",
       "toolsEnable": "ツール呼び出し",
       "toolsDesc": "アシスタントに時刻・計算機・天気・検索・ターミナルコマンドなどのツール使用を許可（危険なコマンドは安全ポリシーでブロック）",
-      "fallbackHint": "以下の内蔵設定は、有効なモデルサービスがない場合にのみ使われます。"
+      "fallbackHint": "以下の内蔵設定は、有効なモデルサービスがない場合にのみ使われます。",
+      "thinkingLevel": "思考モード",
+      "thinkingHint": "プロバイダーが返す実際の思考内容を表示します（折りたたみ可）。オフなら思考パラメータを送りません。",
+      "contextWindow": "コンテキストウィンドウ（token）",
+      "contextWindowHint": "0 = 128k で推定。モデルの実値に合わせると出力上限がそれに合わせて調整されます。",
+      "maxTokens": "最大出力（token）",
+      "maxTokensHint": "0 = 既定 8192。思考と本文で共有します。",
+      "modelRuntimeHint": "思考レベル / コンテキストウィンドウ / 最大出力はリクエストに反映されます。0 は既定値。",
+      "thinking": {
+        "off": "オフ",
+        "minimal": "最小",
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "xhigh": "極高",
+        "max": "最大"
+      }
     },
     "feishu": {
       "title": "飛書",

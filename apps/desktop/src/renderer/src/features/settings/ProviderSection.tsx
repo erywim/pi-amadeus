@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { LoaderCircle, Pencil, PlugZap, Plus, Radio, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
-import type { ProviderItem } from '@pi-amadeus/shared'
+import { THINKING_LEVELS, type ProviderItem, type ThinkingLevel } from '@pi-amadeus/shared'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import {
@@ -16,6 +16,13 @@ import {
 } from '@renderer/components/ui/dialog'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
 import { useProviderStore } from '@renderer/stores/providerStore'
 
@@ -27,6 +34,9 @@ interface FormState {
   proxy: string
   tags: string[]
   dailyTokenQuota: number
+  thinkingLevel: ThinkingLevel
+  contextWindow: number
+  maxTokens: number
   enabled: boolean
 }
 
@@ -38,6 +48,9 @@ const EMPTY_FORM: FormState = {
   proxy: '',
   tags: ['chat'],
   dailyTokenQuota: 0,
+  thinkingLevel: 'off',
+  contextWindow: 0,
+  maxTokens: 0,
   enabled: true
 }
 
@@ -80,6 +93,9 @@ export function ProviderSection(): React.JSX.Element {
       proxy: provider.proxy,
       tags: provider.tags.length > 0 ? provider.tags : ['chat'],
       dailyTokenQuota: provider.dailyTokenQuota,
+      thinkingLevel: provider.thinkingLevel,
+      contextWindow: provider.contextWindow,
+      maxTokens: provider.maxTokens,
       enabled: provider.enabled
     })
     setDialog({ mode: 'edit', provider })
@@ -96,6 +112,9 @@ export function ProviderSection(): React.JSX.Element {
         proxy: form.proxy,
         tags: form.tags,
         dailyTokenQuota: form.dailyTokenQuota,
+        thinkingLevel: form.thinkingLevel,
+        contextWindow: form.contextWindow,
+        maxTokens: form.maxTokens,
         enabled: form.enabled,
         ...(form.apiKey ? { apiKey: form.apiKey } : {})
       }
@@ -378,6 +397,53 @@ export function ProviderSection(): React.JSX.Element {
                 }
               />
             </div>
+            <div className="grid gap-1.5">
+              <Label className="text-[12.5px]">{t('settings.ai.thinkingLevel')}</Label>
+              <Select
+                value={form.thinkingLevel}
+                onValueChange={(v) => setForm({ ...form, thinkingLevel: v as ThinkingLevel })}
+              >
+                <SelectTrigger data-testid="provider-thinking-level">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {THINKING_LEVELS.map((level) => (
+                    <SelectItem key={level} value={level}>
+                      {t(`settings.ai.thinking.${level}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-[12.5px]">{t('settings.ai.contextWindow')}</Label>
+                <Input
+                  data-testid="provider-context-window"
+                  type="number"
+                  min={0}
+                  value={form.contextWindow}
+                  onChange={(e) =>
+                    setForm({ ...form, contextWindow: Math.max(0, Number(e.target.value) || 0) })
+                  }
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-[12.5px]">{t('settings.ai.maxTokens')}</Label>
+                <Input
+                  data-testid="provider-max-tokens"
+                  type="number"
+                  min={0}
+                  value={form.maxTokens}
+                  onChange={(e) =>
+                    setForm({ ...form, maxTokens: Math.max(0, Number(e.target.value) || 0) })
+                  }
+                />
+              </div>
+            </div>
+            <p className="-mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {t('settings.ai.modelRuntimeHint')}
+            </p>
             <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
               <Switch checked={form.enabled} onCheckedChange={(checked) => setForm({ ...form, enabled: checked })} />
               {t('settings.providers.enabled')}

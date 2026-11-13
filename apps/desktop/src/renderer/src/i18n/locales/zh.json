@@ -207,7 +207,9 @@
     "exportUser": "你",
     "archive": "归档会话",
     "unarchive": "取消归档",
-    "archived": "已归档"
+    "archived": "已归档",
+    "thinking": "思考过程",
+    "thinkingRunning": "正在思考…"
   },
   "companion": {
     "charName": "牧濑红莉栖",
@@ -338,7 +340,23 @@
       "loginRequired": "请先在陪伴模式登录后配置",
       "toolsEnable": "工具调用",
       "toolsDesc": "允许助手使用时间/计算器/天气/搜索/终端命令等工具（危险命令会被安全策略拦截）",
-      "fallbackHint": "以下内置配置仅在没有任何激活的模型服务时生效。"
+      "fallbackHint": "以下内置配置仅在没有任何激活的模型服务时生效。",
+      "thinkingLevel": "思考模式",
+      "thinkingHint": "让模型返回思考过程（供应商支持时真实展示，可折叠）。关闭时不发送任何思考参数。",
+      "contextWindow": "上下文窗口（token）",
+      "contextWindowHint": "0 = 按 128k 估算；按模型的真实窗口填写，输出上限会据此裁剪。",
+      "maxTokens": "输出上限（token）",
+      "maxTokensHint": "0 = 默认 8192；思考与正文共享这个上限。",
+      "modelRuntimeHint": "思考级别 / 上下文窗口 / 输出上限都会真实下发到请求；0 表示用默认值。",
+      "thinking": {
+        "off": "关闭",
+        "minimal": "最少",
+        "low": "低",
+        "medium": "中",
+        "high": "高",
+        "xhigh": "极高",
+        "max": "最大"
+      }
     },
     "feishu": {
       "title": "飞书",

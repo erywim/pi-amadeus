@@ -1,3 +1,4 @@
+import { unlinkSync } from 'node:fs'
 import { Hono } from 'hono'
 import type { BranchTreeNode, BranchTreeResponse, MessageSearchHit, Session } from '@pi-amadeus/shared'
 import type { Db } from '../db.ts'
@@ -188,8 +189,24 @@ export function sessionRoutes(db: Db): Hono {
     })
   })
 
+  /**
+   * 删除会话：先取该会话所有附件的磁盘路径，删库（消息/附件元数据级联删除），
+   * 再清理文件本体——否则每删一个带附件的会话就在数据目录里留下孤儿文件。
+   * 文件删除失败不影响接口结果（元数据已经没了，重删也不会再找到它们）。
+   */
   app.delete('/sessions/:id', async (c) => {
-    await db.deleteSession(c.req.param('id'))
+    const id = c.req.param('id')
+    const files = await db.sessionMediaPaths(id).catch(() => [] as string[])
+    await db.deleteSession(id)
+    for (const file of files) {
+      try {
+        unlinkSync(file)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          console.warn(`[sessions] 附件文件清理失败 ${file}：`, error instanceof Error ? error.message : error)
+        }
+      }
+    }
     return c.json({ ok: true })
   })
 

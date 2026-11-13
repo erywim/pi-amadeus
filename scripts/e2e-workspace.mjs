@@ -298,9 +298,16 @@ try {
   await navigate('/settings')
   await sleep(1600)
   await waitFor(`document.body.innerText.includes('通讯平台')`, 20_000, '设置页')
-  // load() 在已加载时会直接返回：先清 loaded 再拉一次，确保拿到冷却状态
+  // load() 在已加载时会直接返回：先清 loaded 再拉一次，确保拿到冷却状态。
+  // 把 Promise 挂到 window 上：CDP 的 awaitPromise 期间没有强引用时 V8 会回收它
+  // （Promise was collected），挂住引用才能稳定等到结果
   await evalJs(
-    `(() => { const store = window.__amadeus.providerStore; store.setState({ loaded: false }); return store.getState().load() })()`
+    `(() => {
+       const store = window.__amadeus.providerStore
+       store.setState({ loaded: false })
+       window.__e2eProviderLoad = store.getState().load()
+       return window.__e2eProviderLoad.then(() => true)
+     })()`
   )
   await waitFor(
     `!!document.querySelector('[data-provider-id="${badProviderId}"] [data-testid="provider-cooling"]')`,

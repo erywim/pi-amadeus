@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { BashConfirmCard } from './BashConfirmCard'
 import { MessageBubble } from './MessageBubble'
 import { RunningBorder } from './RunningBorder'
+import { ThinkingBlock } from './ThinkingBlock'
 import { TurnErrorCard } from './TurnErrorCard'
 import { WorkProcessCard } from './WorkProcessCard'
 import { useSessionStore } from '@renderer/stores/sessionStore'
@@ -42,10 +43,14 @@ export function MessageList(): React.JSX.Element {
   const draftLength = stream.draft?.content.length ?? 0
   // 流式区块只展示给产生它的会话：流全局唯一，切会话后不串台渲染
   const streamInView = stream.sessionId != null && stream.sessionId === activeSessionId
+  // 思考阶段也是「模型在干活」：只在思考、正文还没开始时不能显示成空白
+  const hasThinking = Boolean(stream.draft?.thinking)
   const showTyping =
-    stream.streaming && stream.tools.length === 0 && draftLength < TYPING_THRESHOLD
+    stream.streaming && stream.tools.length === 0 && !hasThinking && draftLength < TYPING_THRESHOLD
   const showDraftBubble =
-    stream.streaming && stream.draft && (stream.tools.length > 0 || draftLength >= TYPING_THRESHOLD)
+    stream.streaming &&
+    stream.draft &&
+    (stream.tools.length > 0 || hasThinking || draftLength >= TYPING_THRESHOLD)
   // 最后一条助手消息挂「重新生成」入口（末尾是用户消息时由错误卡/重试承担）
   const lastAssistantId = [...list].reverse().find((m) => m.role === 'assistant')?.id
 
@@ -138,6 +143,9 @@ export function MessageList(): React.JSX.Element {
                 </div>
                 <div className="flex min-w-0 flex-col gap-2 text-[15px] leading-relaxed">
                   {stream.tools.length > 0 && <WorkProcessCard live={{ tools: stream.tools }} />}
+                  {stream.draft?.thinking && (
+                    <ThinkingBlock content={stream.draft.thinking} streaming />
+                  )}
                   {showTyping && (
                     <span className="inline-flex h-[1em] items-center gap-1">
                       {[0, 1, 2].map((i) => (

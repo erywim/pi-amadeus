@@ -5,6 +5,8 @@
  * 密钥只存在于服务端，列表接口只回传「是否已配置」。
  */
 
+import type { ThinkingLevel } from './config.ts'
+
 export interface ProviderItem {
   id: string
   name: string
@@ -19,6 +21,12 @@ export interface ProviderItem {
   tags: string[]
   /** 每日 token 配额（0 = 不限） */
   dailyTokenQuota: number
+  /** 思考级别（缺省 off） */
+  thinkingLevel: ThinkingLevel
+  /** 上下文窗口（token）；0 = 用默认 128k */
+  contextWindow: number
+  /** 单次回复输出上限（token）；0 = 用默认 8192 */
+  maxTokens: number
   /** 今天已使用的 token（来自真实回合指标） */
   todayTokens: number
   /** 今天是否已超过配额 */
@@ -47,6 +55,12 @@ export interface ProviderInput {
   dailyTokenQuota?: number
   enabled?: boolean
   priority?: number
+  /** 思考级别；缺省 off（不请求思考） */
+  thinkingLevel?: ThinkingLevel
+  /** 上下文窗口；0/缺省 = 128k */
+  contextWindow?: number
+  /** 输出上限；0/缺省 = 8192 */
+  maxTokens?: number
 }
 
 export interface ProviderTestResult {

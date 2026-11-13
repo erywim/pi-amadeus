@@ -294,17 +294,19 @@ try {
     '重新生成分支'
   )
   serverMessages = await api(`/api/sessions/${sessionId}/messages`)
-  const assistant = serverMessages.body.messages?.find((message) => message.role === 'assistant')
+  // 活跃路径上只有新回复这一条；旧回复留在另一分支（不在当前路径里）
+  const assistant = serverMessages.body.messages?.filter((message) => message.role === 'assistant').at(-1)
   report(
     '分支：重新生成产生 2/2 助手分支',
-    assistant?.branchCount === 2 && assistant?.branchIndex === 2
+    assistant?.branchCount === 2 && assistant?.branchIndex === 2,
+    `index=${assistant?.branchIndex}/${assistant?.branchCount}`
   )
   await evalJs(`document.querySelector('[data-testid="branch-prev"]')?.click(); true`)
   await sleep(800)
   const afterSwitch = await api(`/api/sessions/${sessionId}/messages`)
   report(
     '分支：助手分支可切回 1/2',
-    afterSwitch.body.messages?.find((message) => message.role === 'assistant')?.branchIndex === 1
+    afterSwitch.body.messages?.filter((message) => message.role === 'assistant').at(-1)?.branchIndex === 1
   )
 } catch (error) {
   console.error('E2E 异常：', error)

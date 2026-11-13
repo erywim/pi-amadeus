@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { ProviderInput } from '@pi-amadeus/shared'
+import type { ProviderInput, ThinkingLevel } from '@pi-amadeus/shared'
 import type { Db } from '../db.ts'
 import {
   activateProvider,
@@ -68,6 +68,10 @@ async function readInput(c: { req: { json: () => Promise<unknown> } }): Promise<
       : undefined,
     dailyTokenQuota:
       typeof body.dailyTokenQuota === 'number' ? body.dailyTokenQuota : undefined,
+    thinkingLevel:
+      typeof body.thinkingLevel === 'string' ? (body.thinkingLevel as ThinkingLevel) : undefined,
+    contextWindow: typeof body.contextWindow === 'number' ? body.contextWindow : undefined,
+    maxTokens: typeof body.maxTokens === 'number' ? body.maxTokens : undefined,
     enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
     priority: typeof body.priority === 'number' ? body.priority : undefined
   }

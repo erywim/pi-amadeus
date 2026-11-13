@@ -7,6 +7,7 @@ import type { Emotion, Gesture } from './emotion.ts'
  */
 export type SseEventType =
   | 'delta'
+  | 'thinking'
   | 'done'
   | 'error'
   | 'transcript'
@@ -28,6 +29,15 @@ export interface SseEventBase {
 /** 流式增量：永远只有中文（canonical 内容） */
 export interface SseDeltaEvent extends SseEventBase {
   type: 'delta'
+  delta: string
+}
+
+/**
+ * 思考增量：模型真实返回的 reasoning 内容（仅在开启思考且供应商返回时出现）。
+ * 与 delta 分开，UI 用折叠区展示，不混进正文。
+ */
+export interface SseThinkingEvent extends SseEventBase {
+  type: 'thinking'
   delta: string
 }
 
@@ -125,6 +135,7 @@ export interface SseToolConfirmEvent extends SseEventBase {
 
 export type SseEvent =
   | SseDeltaEvent
+  | SseThinkingEvent
   | SseDoneEvent
   | SseErrorEvent
   | SseTranscriptEvent

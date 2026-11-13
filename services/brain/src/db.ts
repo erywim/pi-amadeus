@@ -127,6 +127,8 @@ export interface MessageRow {
   attachments: MessageMediaRow[]
   /** 本回合工作区改动（桌面端真实 git 状态快照差集；其它渠道为空） */
   changedFiles: Array<{ path: string; status: string }>
+  /** 模型真实返回的思考内容（开启思考的回合才有） */
+  thinking: string | null
   createdAt: number
 }
 
@@ -199,6 +201,12 @@ export interface ProviderRow {
   tags: string
   /** 每日 token 配额；0 = 不限 */
   dailyTokenQuota: number
+  /** 思考级别：off / minimal / low / medium / high / xhigh / max */
+  thinkingLevel: string
+  /** 上下文窗口（token）；0 = 默认 128k */
+  contextWindow: number
+  /** 输出上限（token）；0 = 默认 8192 */
+  maxTokens: number
   enabled: boolean
   active: boolean
   priority: number
@@ -279,6 +287,8 @@ export interface Db {
   ): Promise<void>
   /** 媒体路由用：按 id 查附件（含磁盘路径） */
   getMedia(id: string): Promise<MessageMediaRow | null>
+  /** 会话下所有附件的磁盘路径（删会话前取，用于一并清理文件本体） */
+  sessionMediaPaths(sessionId: string): Promise<string[]>
   appendMessage(input: {
     id: string
     sessionId: string
@@ -290,6 +300,8 @@ export interface Db {
     parentId?: string | null
     /** 本回合工作区改动（只有桌面端回合会带） */
     changedFiles?: Array<{ path: string; status: string }>
+    /** 模型真实返回的思考内容（开启思考的回合才有） */
+    thinking?: string | null
   }): Promise<void>
   countMessages(sessionId: string): Promise<number>
   // auth: 当前登录用户
@@ -342,6 +354,9 @@ export interface Db {
     proxy: string
     tags: string
     dailyTokenQuota: number
+    thinkingLevel: string
+    contextWindow: number
+    maxTokens: number
     enabled: boolean
     priority: number
   }): Promise<ProviderRow>
@@ -355,6 +370,9 @@ export interface Db {
       proxy?: string
       tags?: string
       dailyTokenQuota?: number
+      thinkingLevel?: string
+      contextWindow?: number
+      maxTokens?: number
       enabled?: boolean
       priority?: number
     }
@@ -636,6 +654,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
             mode TEXT NOT NULL,
             parent_id TEXT,
             changed_files TEXT NOT NULL DEFAULT '[]',
+            thinking TEXT,
             created_at INTEGER NOT NULL
           );
           CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
@@ -715,6 +734,9 @@ export function createDb(cfg: BrainConfig['db']): Db {
             proxy TEXT NOT NULL DEFAULT '',
             tags TEXT NOT NULL DEFAULT 'chat',
             daily_token_quota INTEGER NOT NULL DEFAULT 0,
+            thinking_level TEXT NOT NULL DEFAULT 'off',
+            context_window INTEGER NOT NULL DEFAULT 0,
+            max_tokens INTEGER NOT NULL DEFAULT 0,
             enabled INTEGER NOT NULL DEFAULT 1,
             active INTEGER NOT NULL DEFAULT 0,
             priority INTEGER NOT NULL DEFAULT 0,
@@ -893,6 +915,16 @@ export function createDb(cfg: BrainConfig['db']): Db {
         if (!providerColumns.some((column) => column.name === 'daily_token_quota')) {
           sqlite.exec('ALTER TABLE providers ADD COLUMN daily_token_quota INTEGER NOT NULL DEFAULT 0')
         }
+        // 老库升级：思考级别 / 上下文窗口 / 输出上限
+        if (!providerColumns.some((column) => column.name === 'thinking_level')) {
+          sqlite.exec("ALTER TABLE providers ADD COLUMN thinking_level TEXT NOT NULL DEFAULT 'off'")
+        }
+        if (!providerColumns.some((column) => column.name === 'context_window')) {
+          sqlite.exec('ALTER TABLE providers ADD COLUMN context_window INTEGER NOT NULL DEFAULT 0')
+        }
+        if (!providerColumns.some((column) => column.name === 'max_tokens')) {
+          sqlite.exec('ALTER TABLE providers ADD COLUMN max_tokens INTEGER NOT NULL DEFAULT 0')
+        }
         const metricColumns2 = sqlite
           .prepare('PRAGMA table_info(turn_metrics)')
           .all() as unknown as { name: string }[]
@@ -915,6 +947,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
           if (!automationColumns.some((item) => item.name === column)) {
             sqlite.exec(`ALTER TABLE automations ADD COLUMN ${column} ${definition}`)
           }
+        }
+
+        // 老库升级：助手消息的思考过程（开启思考的回合才有）
+        if (!messageColumns.some((column) => column.name === 'thinking')) {
+          sqlite.exec('ALTER TABLE messages ADD COLUMN thinking TEXT')
         }
         conn = sqlite
       } catch (error) {
@@ -1212,6 +1249,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         mode: TurnMode
         parent_id: string | null
         changed_files: string
+        thinking: string | null
         created_ms: number
       }>(
         getConn(),
@@ -1221,10 +1259,10 @@ export function createDb(cfg: BrainConfig['db']): Db {
            SELECT m.parent_id FROM messages m JOIN path p ON m.id = p.id
             WHERE m.parent_id IS NOT NULL
          )
-         SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files, created_ms, seq
+         SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files, thinking, created_ms, seq
          FROM (
            SELECT m.id, m.session_id, m.role, m.content, m.tts_text, m.mode, m.parent_id,
-                  m.changed_files, m.created_at AS created_ms, m.rowid AS seq
+                  m.changed_files, m.thinking, m.created_at AS created_ms, m.rowid AS seq
            FROM messages m
            WHERE m.id IN (SELECT id FROM path)
            ORDER BY m.created_at DESC, m.rowid DESC
@@ -1248,6 +1286,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
           changedFiles: parseChangedFiles(row.changed_files),
+          thinking: row.thinking ?? null,
           createdAt: Number(row.created_ms)
         })
       )
@@ -1263,11 +1302,12 @@ export function createDb(cfg: BrainConfig['db']): Db {
         mode: TurnMode
         parent_id: string | null
         changed_files: string
+        thinking: string | null
         created_ms: number
       }>(
         getConn(),
         `SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files,
-                created_at AS created_ms
+                thinking, created_at AS created_ms
          FROM messages WHERE session_id = ?
          ORDER BY created_at ASC, rowid ASC
          LIMIT ?`,
@@ -1288,6 +1328,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
           changedFiles: parseChangedFiles(row.changed_files),
+          thinking: row.thinking ?? null,
           createdAt: Number(row.created_ms)
         })
       )
@@ -1312,11 +1353,12 @@ export function createDb(cfg: BrainConfig['db']): Db {
         mode: TurnMode
         parent_id: string | null
         changed_files: string
+        thinking: string | null
         created_ms: number
       }>(
         getConn(),
         `SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files,
-                created_at AS created_ms
+                thinking, created_at AS created_ms
          FROM messages WHERE id = ?`,
         [id]
       )
@@ -1334,6 +1376,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         branchCount: branch.get(row.id)?.count ?? 1,
         attachments: mediaFor([row.id]).get(row.id) ?? [],
         changedFiles: parseChangedFiles(row.changed_files),
+        thinking: row.thinking ?? null,
         createdAt: Number(row.created_ms)
       }
     },
@@ -1350,16 +1393,17 @@ export function createDb(cfg: BrainConfig['db']): Db {
         mode: TurnMode
         parent_id: string | null
         changed_files: string
+        thinking: string | null
         created_ms: number
       }>(
         getConn(),
         target.parentId
           ? `SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files,
-                    created_at AS created_ms
+                    thinking, created_at AS created_ms
              FROM messages WHERE session_id = ? AND parent_id = ?
              ORDER BY created_at ASC, rowid ASC`
           : `SELECT id, session_id, role, content, tts_text, mode, parent_id, changed_files,
-                    created_at AS created_ms
+                    thinking, created_at AS created_ms
              FROM messages WHERE session_id = ? AND parent_id IS NULL
              ORDER BY created_at ASC, rowid ASC`,
         target.parentId ? [target.sessionId, target.parentId] : [target.sessionId]
@@ -1379,6 +1423,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
           changedFiles: parseChangedFiles(row.changed_files),
+          thinking: row.thinking ?? null,
           createdAt: Number(row.created_ms)
         })
       )
@@ -1472,6 +1517,17 @@ export function createDb(cfg: BrainConfig['db']): Db {
       }
     },
 
+    async sessionMediaPaths(sessionId) {
+      const rows = all<{ path: string }>(
+        getConn(),
+        `SELECT mm.path FROM message_media mm
+         JOIN messages m ON m.id = mm.message_id
+         WHERE m.session_id = ?`,
+        [sessionId]
+      )
+      return rows.map((row) => row.path).filter(Boolean)
+    },
+
     async deleteMessagesAfter(sessionId, messageId) {
       const result = getConn()
         .prepare(
@@ -1491,8 +1547,9 @@ export function createDb(cfg: BrainConfig['db']): Db {
       try {
         run(
           sqlite,
-          `INSERT INTO messages (id, session_id, role, content, tts_text, mode, parent_id, changed_files, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO messages (id, session_id, role, content, tts_text, mode, parent_id,
+                                 changed_files, thinking, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             input.id,
             input.sessionId,
@@ -1502,6 +1559,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
             input.mode,
             parentId,
             JSON.stringify(input.changedFiles ?? []),
+            input.thinking?.trim() ? input.thinking : null,
             Date.now()
           ]
         )
@@ -1800,9 +1858,10 @@ export function createDb(cfg: BrainConfig['db']): Db {
       run(
         getConn(),
         `INSERT INTO providers
-           (id, name, base_url, api_key, model, proxy, tags, daily_token_quota, enabled, active,
+           (id, name, base_url, api_key, model, proxy, tags, daily_token_quota,
+            thinking_level, context_window, max_tokens, enabled, active,
             priority, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
         [
           id,
           input.name,
@@ -1812,6 +1871,9 @@ export function createDb(cfg: BrainConfig['db']): Db {
           input.proxy,
           input.tags,
           input.dailyTokenQuota,
+          input.thinkingLevel,
+          input.contextWindow,
+          input.maxTokens,
           input.enabled ? 1 : 0,
           input.priority,
           now,
@@ -1832,6 +1894,9 @@ export function createDb(cfg: BrainConfig['db']): Db {
         ['proxy', 'proxy'],
         ['tags', 'tags'],
         ['dailyTokenQuota', 'daily_token_quota'],
+        ['thinkingLevel', 'thinking_level'],
+        ['contextWindow', 'context_window'],
+        ['maxTokens', 'max_tokens'],
         ['priority', 'priority']
       ]
       for (const [key, column] of map) {
@@ -2543,7 +2608,7 @@ function toAutomationRow(row: AutomationDbRow): AutomationRow {
   }
 }
 const PROVIDER_COLUMNS =
-  'id, name, base_url, api_key, model, proxy, tags, daily_token_quota, enabled, active, priority, created_at, updated_at'
+  'id, name, base_url, api_key, model, proxy, tags, daily_token_quota, thinking_level, context_window, max_tokens, enabled, active, priority, created_at, updated_at'
 const PLATFORM_COLUMNS = 'id, kind, name, enabled, config, created_at, updated_at'
 
 interface MemoryDbRow {
@@ -2567,6 +2632,9 @@ interface ProviderDbRow {
   proxy: string
   tags: string
   daily_token_quota: number
+  thinking_level: string
+  context_window: number
+  max_tokens: number
   enabled: number
   active: number
   priority: number
@@ -2633,6 +2701,9 @@ function toProviderRow(row: ProviderDbRow): ProviderRow {
     proxy: row.proxy,
     tags: row.tags || 'chat',
     dailyTokenQuota: Number(row.daily_token_quota ?? 0),
+    thinkingLevel: row.thinking_level || 'off',
+    contextWindow: Number(row.context_window ?? 0),
+    maxTokens: Number(row.max_tokens ?? 0),
     enabled: row.enabled === 1,
     active: row.active === 1,
     priority: Number(row.priority),

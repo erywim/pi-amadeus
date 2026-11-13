@@ -9,6 +9,7 @@ import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { ChangedFilesCard } from './ChangedFilesCard'
 import { Markdown } from './Markdown'
+import { ThinkingBlock } from './ThinkingBlock'
 import { WorkProcessCard } from './WorkProcessCard'
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
@@ -346,6 +347,7 @@ function AssistantNode({
         {!streaming && (message.changedFiles?.length ?? 0) > 0 && (
           <ChangedFilesCard files={message.changedFiles!} />
         )}
+        {message.thinking && <ThinkingBlock content={message.thinking} />}
         <div className="break-words">
           <Markdown content={message.content} />
           {streaming && (

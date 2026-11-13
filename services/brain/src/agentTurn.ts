@@ -65,6 +65,8 @@ export interface AgentTurnResult {
   userMessageId?: string
   /** 本回合工作区改动（桌面端真实 git 快照差集；非 Git 或未知时为空） */
   changedFiles?: Array<{ path: string; status: string }>
+  /** 模型真实返回的思考内容（开启思考且供应商返回时才有；工具循环内各次调用的思考累计） */
+  thinking?: string
 }
 
 /** 工具结果文本的 UI 上限（超出截断） */
@@ -117,8 +119,14 @@ export async function* runAgentTurn(
   }
 
   const toolsEnabled = prepared.userConfig?.tools?.enabled !== false
+  // 思考展示开关：是否把模型返回的 reasoning 上屏与落库
+  // （LlmTarget 只在真正开启时才带 thinkingLevel，off 不会出现在这里）
+  const thinkingEnabled = Boolean(prepared.target.thinkingLevel)
   const queue = new AsyncQueue<SseEvent>()
   let full = ''
+  let thinking = ''
+  /** 最近一条助手消息的停止原因（length = 被输出上限截断） */
+  let lastStopReason = ''
   // 指标：工具循环里每次 LLM 调用都会带 usage，逐次累加才是本回合真实消耗
   const usage: AgentTurnUsage = { input: 0, output: 0, total: 0 }
   const toolNames: string[] = []
@@ -185,6 +193,11 @@ export async function* runAgentTurn(
     initialState: {
       systemPrompt: prepared.systemPrompt + skillsPrompt(skillBundle.skills),
       model: getLlm(prepared.target).model,
+      // 思考级别写进 Agent 状态：pi 每次请求读取它并作为 reasoning 下发。
+      // 未配置时保持默认，参数层面与旧行为完全一致。
+      ...(prepared.target.thinkingLevel
+        ? { thinkingLevel: prepared.target.thinkingLevel }
+        : {}),
       // 历史不含当前用户消息——prompt() 会自行 append，否则上下文里出现两次
       messages: prepared.messages.slice(0, -1),
       tools
@@ -203,14 +216,29 @@ export async function* runAgentTurn(
           const delta = event.assistantMessageEvent.delta
           full += delta
           queue.push({ type: 'delta', delta })
+        } else if (event.assistantMessageEvent.type === 'thinking_delta') {
+          /**
+           * 思考增量单独上屏：不混进正文，也不参与「LLM 返回为空」的判定。
+           * 只有用户开启了思考才转发与落库——部分端点（如推理模型）即使没请求
+           * 也会回 reasoning_content，开关关闭却照常展示就成了一张假开关。
+           */
+          const delta = event.assistantMessageEvent.delta
+          if (delta && thinkingEnabled) {
+            thinking += delta
+            queue.push({ type: 'thinking', delta })
+          }
         }
         return
       case 'message_end':
         // 每条助手消息结束都带 usage；工具循环里的每次调用都要计入本回合
-        if (event.message.role === 'assistant' && event.message.usage) {
-          usage.input += event.message.usage.input ?? 0
-          usage.output += event.message.usage.output ?? 0
-          usage.total += event.message.usage.totalTokens ?? 0
+        if (event.message.role === 'assistant') {
+          if (event.message.usage) {
+            usage.input += event.message.usage.input ?? 0
+            usage.output += event.message.usage.output ?? 0
+            usage.total += event.message.usage.totalTokens ?? 0
+          }
+          // 记录停止原因：length = 被输出上限截断，用于给出可操作的错误提示
+          if (event.message.stopReason) lastStopReason = event.message.stopReason
         }
         return
       case 'tool_execution_start':
@@ -296,11 +324,34 @@ export async function* runAgentTurn(
   // 成功一次立即解除冷却。中止（用户点停止）不算服务故障。
   if (agent.state.errorMessage) {
     markProviderFailure(prepared.target.providerId)
-    throw new Error(agent.state.errorMessage)
+    const raw = agent.state.errorMessage
+    /**
+     * 上游拒绝思考参数时原始报错只有 "400 upstream_rejected"，对用户没有任何指引。
+     * 不同端点支持的思考档位不同（例如只认 low/high/max），这里把这种情况
+     * 翻译成「换一档或关掉」——只改措辞不掩盖失败，错误仍然照实抛出。
+     */
+    if (thinkingEnabled && /\b400\b|upstream_rejected|reasoning/i.test(raw)) {
+      throw new Error(
+        `当前模型服务不接受「${prepared.target.thinkingLevel}」思考档位（原始错误：${raw}）。` +
+          '请在设置里换一个思考档位或关闭思考模式后重试。'
+      )
+    }
+    throw new Error(raw)
   }
   if (!full) {
     markProviderFailure(prepared.target.providerId)
-    throw new Error('LLM 返回为空')
+    if (thinkingEnabled) {
+      // 开了思考但没正文：几乎都是输出上限被思考吃光（推理模型共享 maxTokens）
+      throw new Error(
+        '模型把输出上限全用在思考上了，没有留下正文。请调高「输出上限」，或把「思考模式」调低/关闭。'
+      )
+    }
+    // 停止原因是 length：输出上限/上下文窗口太小，连一句话都放不下
+    throw new Error(
+      lastStopReason === 'length'
+        ? '回复被输出上限截断了（连正文都没留下）。请调高「输出上限」，或核对「上下文窗口」是否填得太小。'
+        : 'LLM 返回为空'
+    )
   }
   markProviderSuccess(prepared.target.providerId)
   // totalTokens 缺失时用输入+输出兜底（部分兼容端点不返回 total）
@@ -315,6 +366,7 @@ export async function* runAgentTurn(
     toolCalls: toolNames.length,
     toolNames,
     userMessageId: prepared.userMessageId,
-    ...(changedFiles.length > 0 ? { changedFiles } : {})
+    ...(changedFiles.length > 0 ? { changedFiles } : {}),
+    ...(thinking.trim() ? { thinking: thinking.trim() } : {})
   }
 }

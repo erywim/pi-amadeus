@@ -210,7 +210,8 @@ class AutomationScheduler {
         ttsText: null,
         target: turn.target,
         userText: row.prompt,
-        toolCalls: turn.toolCalls
+        toolCalls: turn.toolCalls,
+        ...(turn.thinking ? { thinking: turn.thinking } : {})
       })
       await recordTurnMetric(db, {
         sessionId,
