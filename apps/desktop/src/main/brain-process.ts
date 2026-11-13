@@ -7,6 +7,7 @@ import { app } from 'electron'
 const BRAIN_PORT = 3002
 const HEALTH_TIMEOUT_MS = 500
 const STARTUP_TIMEOUT_MS = 10_000
+const SHARP_NATIVE_ROOT = join(process.resourcesPath, 'brain', 'sharp-native')
 
 let brainProcess: ChildProcess | null = null
 
@@ -71,7 +72,8 @@ export async function startBrain(): Promise<void> {
       ELECTRON_RUN_AS_NODE: '1',
       PORT: String(BRAIN_PORT),
       DB_PATH: join(userData, 'data', 'amadeus.db'),
-      BASH_TOOL_CWD: userData
+      BASH_TOOL_CWD: userData,
+      SHARP_NATIVE_ROOT
     },
     stdio: ['ignore', 'pipe', 'pipe']
   })

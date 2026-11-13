@@ -79865,6 +79865,7 @@ var init_libvips = __esm({
 
 // node_modules/sharp/dist/sharp.mjs
 import { createRequire as createRequire2 } from "node:module";
+import path4 from "node:path";
 var import_detect_libc2, require3, version, runtimePlatformArch2, isUnsupportedNodeRuntime2, prebuiltPlatforms2, minimumLibvipsVersion2, runtimePlatform, sharp, errors, sharp_default;
 var init_sharp = __esm({
   "node_modules/sharp/dist/sharp.mjs"() {
@@ -79875,6 +79876,7 @@ var init_sharp = __esm({
     ({ version } = package_default);
     ({ runtimePlatformArch: runtimePlatformArch2, isUnsupportedNodeRuntime: isUnsupportedNodeRuntime2, prebuiltPlatforms: prebuiltPlatforms2, minimumLibvipsVersion: minimumLibvipsVersion2 } = libvips_default);
     runtimePlatform = runtimePlatformArch2();
+    const sharpNativeRoot = process.env.SHARP_NATIVE_ROOT;
     errors = [];
     try {
       sharp = require3(`../src/build/Release/sharp-${runtimePlatform}-${version}.node`);
@@ -79892,10 +79894,10 @@ var init_sharp = __esm({
       try {
         switch (runtimePlatform) {
           case "darwin-arm64":
-            sharp = require3("@img/sharp-darwin-arm64/sharp.node");
+            sharp = sharpNativeRoot ? require3(path4.join(sharpNativeRoot, "darwin-arm64", "sharp.node")) : require3("@img/sharp-darwin-arm64/sharp.node");
             break;
           case "darwin-x64":
-            sharp = require3("@img/sharp-darwin-x64/sharp.node");
+            sharp = sharpNativeRoot ? require3(path4.join(sharpNativeRoot, "darwin-x64", "sharp.node")) : require3("@img/sharp-darwin-x64/sharp.node");
             break;
           case "linux-arm":
             sharp = require3("@img/sharp-linux-arm/sharp.node");
