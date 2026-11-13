@@ -217,6 +217,27 @@ try {
       assert.deepEqual(files(), beforeFiles)
     })
   }
+  await test('edit 提交失败：已写入的新用户节点和附件回滚，旧路径不变', async () => {
+    const f = await fixture()
+    const beforeFiles = files()
+    const beforeMessages = await db.listAllMessages(f.sessionId)
+    const previousLeaf = await db.getActiveLeafId(f.sessionId)
+    const addMessageMedia = db.addMessageMedia
+    db.addMessageMedia = async (...args) => {
+      await addMessageMedia(...args)
+      throw new Error('注入的附件提交失败')
+    }
+    try {
+      const output = await post('/chat/edit', f, { messageId: f.originalUserId, content: '提交失败的编辑' })
+      assert.equal(output.done, undefined)
+      assert.ok(output.events.some((event) => event.type === 'error' && event.message.includes('附件提交失败')))
+      assert.equal(await db.getActiveLeafId(f.sessionId), previousLeaf)
+      assert.deepEqual(await db.listAllMessages(f.sessionId), beforeMessages)
+      assert.deepEqual(files(), beforeFiles)
+    } finally {
+      db.addMessageMedia = addMessageMedia
+    }
+  })
   await test('edit：后一个附件丢失时清理已复制的前件，不改旧分支', async () => {
     const f = await fixture()
     rmSync(f.attachments.at(-1).path)

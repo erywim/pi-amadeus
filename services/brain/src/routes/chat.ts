@@ -291,6 +291,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空' }
             return
           }
+          const userMessageId = result.userMessageId
           const previousLeaf = await db.getActiveLeafId(sessionId)
           try {
             // 成功才从旧路径切到编辑分支；用户与回复共用本轮预留的父节点 ID
@@ -314,9 +315,9 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
             })
             committed = true
           } catch (error) {
-            const pending = (await db.listAllMessages(sessionId)).filter((item) => item.parentId === result.userMessageId)
+            const pending = (await db.listAllMessages(sessionId)).filter((item) => item.parentId === userMessageId)
             for (const item of pending) await db.deleteMessage(item.id)
-            await db.deleteMessage(result.userMessageId)
+            await db.deleteMessage(userMessageId)
             if (previousLeaf) await db.setActiveLeaf(sessionId, previousLeaf)
             throw error
           }
