@@ -34,33 +34,35 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
 | 能力 | 本轮 | 说明 |
 | --- | --- | --- |
 | 会话重命名 | ✅ | 标题栏铅笔或双击标题；只改标题，不刷新 `updated_at`（重命名不该把旧会话顶到最前）；未落库的空会话由服务端按当前身份补建 |
-| 会话搜索 | ✅ | 侧栏按标题过滤；`⌘/Ctrl+K` 聚焦，Esc 清空。只搜标题：逐会话拉消息会把搜索变成 N 次请求 |
+| 会话置顶 | ✅ | 侧栏悬停图钉；置顶会话单独成组排在按天分组之前，置顶不刷新 `updated_at` |
+| 会话搜索 | ✅ | 侧栏按标题本地过滤；同时用 350ms 防抖请求 `/api/sessions/search` 搜正文，命中消息按会话列出（带片段） |
 | 消息复制 | ✅ | 用户 / 助手消息均可复制；Markdown 代码块带语言标签与一键复制 |
 | 重新生成 | ✅ | 只对最后一条助手回复；服务端定位最后一条用户消息重跑，**成功落库时才替换旧回复**，失败保留上一版 |
+| 编辑后重发 | ✅ | 用户消息可内联编辑；服务端改写正文并截断该消息之后的全部消息，再跑一个回合。分支树（保留旧分支可切换）未做 |
 | 失败可见 + 重试 | ✅ | SSE `error` 落到会话级错误卡（含重试/关闭），不再只打 console |
 | 滚动跟随 | ✅ | 用户上滚后暂停自动跟随，出现「回到底部」；自己发消息时强制跟到底部 |
 | 快捷键 | ✅ | `⌘/Ctrl+N` 新会话、`Esc` 停止生成 |
 | 附件 / 图片输入 | ❌ | 后端文本回合尚无多模态入口（v1 视觉仅语音回合），保留占位 |
-| 编辑消息 / 分支 / 消息级重新生成历史 | ❌ | 需要消息树与截断语义，单独立项 |
-| 上下文用量 / token 统计 | ❌ | pi-ai usage 尚未在文本链路透出 |
-| Artifacts / 代码执行预览 | ❌ | 不在「常见助手」最小闭环内 |
+| 上下文用量 / token 统计 | ✅ | 标题栏显示本会话真实 `turn_metrics` 累计（输入/输出在 tooltip）；没有回合就不显示 |
+| Artifacts / 代码执行预览 | ✅ | 助手代码块里的 `html` / `svg` / `mermaid` 可在右侧沙箱预览；HTML/SVG 走 `sandbox` iframe，Mermaid 本地渲染（动态加载，按需分包） |
 
 ## 3. 代码落点
 
 | 位置 | 职责 |
 | --- | --- |
 | `apps/desktop/src/renderer/src/features/chat/ChatPage.tsx` | 文本形态页面与全局快捷键（新会话 / 停止） |
-| `.../features/chat/SessionSidebar.tsx` | 按天分组、标题搜索、`⌘/Ctrl+K` 聚焦、删除 |
-| `.../features/chat/CodexTitlebar.tsx` | 标题内联重命名（Enter / 失焦提交，Esc 取消） |
+| `.../features/chat/SessionSidebar.tsx` | 按天分组、置顶分组、标题过滤 + 正文搜索、`⌘/Ctrl+K` 聚焦、删除 |
+| `.../features/chat/CodexTitlebar.tsx` | 标题内联重命名（Enter / 失焦提交，Esc 取消）+ 会话 token 用量读数 |
 | `.../features/chat/MessageList.tsx` | 流式区块、错误卡、滚动跟随与「回到底部」 |
-| `.../features/chat/MessageBubble.tsx` | 消息复制、最后一条助手回复的重新生成入口 |
+| `.../features/chat/MessageBubble.tsx` | 消息复制、编辑后重发、最后一条助手回复的重新生成入口 |
+| `.../features/chat/ArtifactPanel.tsx` | HTML / SVG / Mermaid 沙箱预览面板 |
 | `.../features/chat/TurnErrorCard.tsx` | 回合失败卡（错误信息 + 重试 + 关闭） |
-| `.../features/chat/Markdown.tsx` | Markdown 渲染与代码块复制 |
-| `.../stores/sessionStore.ts` | 回合事件消费（发送 / 重新生成共用）、`turnErrors`、`renameSession` |
-| `apps/desktop/src/renderer/src/lib/api.ts` | `startRegenerate`、`renameSessionApi` |
-| `services/brain/src/routes/chat.ts` | `POST /api/chat/regenerate` |
-| `services/brain/src/routes/sessions.ts` | `PATCH /api/sessions/:id`（重命名 / 空会话补建） |
-| `services/brain/src/conversation.ts` | `appendUserMessage` / `omitMessageId` / `replaceMessageId`：重新生成不重复写用户消息，成功后替换旧回复 |
+| `.../features/chat/Markdown.tsx` | Markdown 渲染、代码块复制与「预览」入口 |
+| `.../stores/sessionStore.ts` | 回合事件消费（发送 / 重新生成 / 编辑重发共用）、`turnErrors`、`renameSession`、`togglePin`、`editMessage` |
+| `apps/desktop/src/renderer/src/lib/api.ts` | `startRegenerate`、`startEditTurn`、`renameSessionApi`、`setSessionPinnedApi`、`searchMessagesApi`、`fetchSessionUsage` |
+| `services/brain/src/routes/chat.ts` | `POST /api/chat/regenerate`、`POST /api/chat/edit` |
+| `services/brain/src/routes/sessions.ts` | `PATCH /api/sessions/:id`（重命名 / 置顶 / 空会话补建）、`GET /api/sessions/search`、`GET /api/sessions/:id/usage` |
+| `services/brain/src/conversation.ts` | `appendUserMessage` / `omitMessageId` / `replaceMessageId`：重新生成不重复写用户消息，成功后替换旧回复；用户消息 id 随 done 事件返回 |
 
 ## 4. 关键状态与约束
 
@@ -74,8 +76,14 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
   否则「回到底部」按钮会在滚动途中重新弹出。
 - **重命名排序**：`renameSession` 只改 `title`；自动标题 `setSessionTitle` 仍会刷新 `updated_at`
   （自动标题发生在回合结束后，本来就该排到最前）。
-- **空会话**：会话行是首条消息时懒创建的；对尚未落库的会话重命名时，服务端按 `userId` 补建，
-  否则刚开的会话改名会 404。
+- **空会话**：会话行是首条消息时懒创建的；对尚未落库的会话重命名或置顶时，服务端按 `userId` 补建，
+  否则刚开的会话改名/置顶会 404。
+- **本地消息 id**：发送时界面先插一条 `local-…` 临时消息；服务端在 `done` 事件里回传落库后的
+  `userMessageId`，store 用真实 id 替换。否则紧接着「编辑后重发」会拿临时 id 去打服务端，得到 404。
+- **编辑重发**：服务端先改写用户消息正文、再删除它之后的所有消息，然后以 `appendUserMessage: false`
+  跑回合——截断发生在生成之前，模型失败时会话停在「等待回答」，可重试，不会留下半截旧分支。
+- **工件沙箱**：HTML/SVG 走 `iframe sandbox`（允许脚本但**不给** `allow-same-origin`），
+  Mermaid 用 `securityLevel: 'strict'` 本地渲染；模型输出永远不会进应用自身的 DOM。
 
 ## 5. 验证
 
@@ -97,3 +105,7 @@ npm run verify
 （替换而非追加）、重命名（store / 侧栏 / 服务端一致且不动 `updated_at`）、标题搜索与 Esc 恢复、
 消息与代码块复制（逐字断言剪贴板内容）、滚动跟随与「回到底部」。
 LLM 不可用时成功路径明确输出 `not run`，不伪装通过；有真实 key 时失败路径同理。
+
+`scripts/e2e-workspace.mjs` 覆盖本轮新增的聊天增强：置顶同步到服务端、真实回合后侧栏正文搜索、
+标题栏 token 用量、编辑后重发（旧分支截断、服务端只剩一问一答）、HTML 工件在沙箱 iframe 中渲染、
+Mermaid 渲染成 SVG。工件用例向页面 store 注入一条内存消息作为渲染夹具（不落库、脚本结束即随会话清理）。

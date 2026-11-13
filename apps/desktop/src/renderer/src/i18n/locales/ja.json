@@ -11,7 +11,9 @@
     "dashboard": "データ",
     "settings": "設定",
     "modeSwitch": "会話モード",
-    "memory": "記憶"
+    "memory": "記憶",
+    "knowledge": "ナレッジ",
+    "automations": "自動化"
   },
   "topbar": {
     "modelChip": "現在の LLM モデル（テキストモードの入力欄で切替可能）",
@@ -28,7 +30,10 @@
     "feishu": "飛書",
     "telegram": "Telegram",
     "onebot": "QQ",
-    "webhook": "Webhook"
+    "webhook": "Webhook",
+    "discord": "Discord",
+    "slack": "Slack",
+    "automation": "自動化"
   },
   "plugins": {
     "title": "プラグインセンター",
@@ -168,7 +173,26 @@
     "toolApprove": "許可する",
     "toolReject": "拒否する",
     "toolConfirmExpires": "{{seconds}} 秒後に自動拒否",
-    "toolConfirmExpired": "タイムアウトしました。コマンドは実行されていません"
+    "toolConfirmExpired": "タイムアウトしました。コマンドは実行されていません",
+    "pin": "セッションを固定",
+    "unpin": "固定を解除",
+    "pinned": "固定",
+    "edit": "編集して再送",
+    "editSave": "保存して再送",
+    "editCancel": "キャンセル",
+    "editHint": "保存するとこの後の会話は破棄され、新しい内容で回答します。",
+    "searchMessages": "メッセージ本文を検索…",
+    "messageResults": "メッセージ一致",
+    "noMessageResults": "本文に一致なし",
+    "usage": "セッション使用量",
+    "tokens": "tokens",
+    "preview": "プレビュー",
+    "artifact": "成果物プレビュー",
+    "artifactClose": "プレビューを閉じる",
+    "artifactCopy": "コードをコピー",
+    "artifactDownload": "ダウンロード",
+    "artifactError": "描画に失敗",
+    "artifactHint": "モデルが出力した HTML / SVG / Mermaid をサンドボックスで表示します。"
   },
   "companion": {
     "charName": "牧瀬紅莉栖",
@@ -314,7 +338,7 @@
     },
     "providers": {
       "title": "モデルサービス",
-      "desc": "OpenAI 互換サービスを複数追加して切り替えられます。有効なサービスが下の内蔵設定より優先されます。キーはローカルのブレインサービスにのみ保存されます。",
+      "desc": "サービス = OpenAI 互換エンドポイント + キー + 既定モデル。有効なサービスが内蔵設定より優先され、実ターン失敗後は 10 分間冷却して優先度順に次の正常なサービスへ自動切替します。",
       "add": "サービスを追加",
       "empty": "モデルサービスがありません。未追加の場合は下の内蔵設定を使います。",
       "active": "使用中",
@@ -337,11 +361,12 @@
       "model": "モデル",
       "proxy": "プロキシ（任意）",
       "enabled": "有効",
-      "confirmDelete": "削除を確認"
+      "confirmDelete": "削除を確認",
+      "coolingDown": "冷却中"
     },
     "platforms": {
       "title": "連携プラットフォーム",
-      "desc": "Amadeus を Telegram・QQ（OneBot v11）・任意の Webhook に接続します。会話・記憶・好感度は共通で、デスクトップからも確認できます。",
+      "desc": "Amadeus を Telegram、QQ（OneBot v11）、Discord、Slack、任意の Webhook に接続します。全プラットフォームでセッション・記憶・好感度を共有します。",
       "add": "プラットフォームを追加",
       "empty": "まだ接続していません。追加すると外部メッセージが同じ Amadeus に入ります。",
       "saved": "保存しました",
@@ -353,7 +378,9 @@
       "kind": {
         "telegram": "Telegram",
         "onebot": "QQ（OneBot）",
-        "webhook": "Webhook"
+        "webhook": "Webhook",
+        "discord": "Discord",
+        "slack": "Slack"
       },
       "state": {
         "running": "実行中",
@@ -375,7 +402,14 @@
       "outboundUrl": "送信先 URL",
       "secret": "署名キー（任意）",
       "secretKeep": "保存済み。空欄なら変更しません",
-      "optional": "任意"
+      "optional": "任意",
+      "discordToken": "Bot Token",
+      "discordGateway": "Gateway URL（任意、既定は公式）",
+      "discordApiBase": "API ベース URL（任意、既定は公式）",
+      "slackBotToken": "Bot Token（xoxb）",
+      "slackAppToken": "App Token（xapp、Socket Mode）",
+      "slackApiBase": "API ベース URL（任意、既定は公式）",
+      "channelIdPlaceholder": "チャンネル / 会話 ID"
     }
   },
   "live2d": {
@@ -506,5 +540,90 @@
       "empty": "まだやり取りの記録がありません",
       "footnote": "好感度は実際のターンと記憶だけから加算されます。1 ターン +1 から始まり、しっかり話す・深く交流する・一緒にタスクをこなすと増えます。"
     }
+  },
+  "knowledge": {
+    "title": "ナレッジベース",
+    "subtitle": "文書を取り込み、チャット時に原文を検索して参照します。",
+    "create": "ナレッジを作成",
+    "namePlaceholder": "名前（例：製品ドキュメント）",
+    "descPlaceholder": "一言説明（任意）",
+    "empty": "ナレッジがありません",
+    "emptyHint": "作成して txt / md ファイル、URL、貼り付けたテキストを取り込んでください。",
+    "bases": "ナレッジ",
+    "docs": "文書",
+    "chunks": "断片",
+    "docCount": "{{count}} 件",
+    "chunkCount": "{{count}} 断片",
+    "deleteBase": "ナレッジを削除",
+    "confirmDeleteBase": "もう一度押すと削除（文書も含む）",
+    "import": "取り込み",
+    "importText": "テキストを貼り付け",
+    "importFile": "ファイルを選択",
+    "importUrl": "URL から取り込み",
+    "docName": "文書名",
+    "docNamePlaceholder": "文書に名前を付ける",
+    "docContent": "本文",
+    "docContentPlaceholder": "取り込むテキストを貼り付け…",
+    "urlPlaceholder": "https://example.com/article",
+    "importing": "取り込み中…",
+    "imported": "取り込みました",
+    "deleted": "削除しました",
+    "searchPlaceholder": "このナレッジ内を検索…",
+    "searchHint": "チャットと同じ TF-IDF 検索で、実際の原文断片を返します。",
+    "searchEmpty": "該当する内容がありません",
+    "searchResults": "検索結果",
+    "noDocs": "文書がありません",
+    "docChars": "{{count}} 文字",
+    "docChunks": "{{count}} 断片",
+    "source": "出典",
+    "uploadHint": "txt / md / json / csv / log などのテキストファイルに対応。PDF / DOCX はテキストに変換してください。",
+    "close": "閉じる",
+    "loginRequired": "ログインすると利用できます"
+  },
+  "automations": {
+    "title": "自動化タスク",
+    "subtitle": "時間になると Amadeus が実際のターンを実行します。定期整理・確認・リマインドに。",
+    "create": "タスクを作成",
+    "edit": "タスクを編集",
+    "name": "タスク名",
+    "namePlaceholder": "例：「毎朝のテックニュース整理」",
+    "prompt": "指示",
+    "promptPlaceholder": "実行時に Amadeus が行うこと。例：今日の AI ニュースを3件検索して要約する。",
+    "schedule": "スケジュール",
+    "interval": "間隔",
+    "daily": "毎日",
+    "once": "1回だけ",
+    "intervalMinutes": "間隔（分）",
+    "timeOfDay": "時刻（HH:MM）",
+    "runAt": "実行日時",
+    "enabled": "有効",
+    "runNow": "今すぐ実行",
+    "running": "実行中",
+    "nextRun": "次回",
+    "lastRun": "前回",
+    "never": "未実行",
+    "lastResult": "前回の結果",
+    "viewResult": "結果を見る",
+    "hideResult": "結果を閉じる",
+    "openSession": "セッションで開く",
+    "empty": "自動化タスクがありません",
+    "emptyHint": "指示とスケジュールを設定してください。実際に実行され、結果は専用セッションに残ります。",
+    "confirmDelete": "もう一度押すと削除",
+    "created": "タスクを作成しました",
+    "saved": "タスクを更新しました",
+    "deleted": "タスクを削除しました",
+    "started": "タスクを開始しました",
+    "status": {
+      "success": "成功",
+      "error": "失敗",
+      "running": "実行中",
+      "idle": "待機"
+    },
+    "scheduleLabel": {
+      "interval": "{{minutes}} 分ごと",
+      "daily": "毎日 {{time}}",
+      "once": "1回だけ"
+    },
+    "loginRequired": "ログインすると利用できます"
   }
 }

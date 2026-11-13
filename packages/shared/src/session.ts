@@ -5,7 +5,15 @@ import type { ToolStatus } from './sse.ts'
  * 渠道：桌面客户端 / 飞书 / 各通讯平台适配器，会话按渠道存同一数据库。
  * 平台渠道值就是 PlatformKind（telegram / onebot / webhook），看板按它分组。
  */
-export type Channel = 'desktop' | 'feishu' | 'telegram' | 'onebot' | 'webhook'
+export type Channel =
+  | 'desktop'
+  | 'feishu'
+  | 'telegram'
+  | 'onebot'
+  | 'webhook'
+  | 'discord'
+  | 'slack'
+  | 'automation'
 
 export type Role = 'user' | 'assistant'
 
@@ -35,8 +43,32 @@ export interface Session {
   title: string
   createdAt: number
   updatedAt: number
+  /** 置顶会话排在列表最前（置顶不改变 updated_at） */
+  pinned?: boolean
   /** 服务端会话列表附带的消息数（历史页统计用；未加载消息时也可见） */
   messageCount?: number
+}
+
+/** 跨会话消息搜索命中（侧栏全文搜索） */
+export interface MessageSearchHit {
+  sessionId: string
+  sessionTitle: string
+  channel: Channel
+  messageId: string
+  role: Role
+  /** 命中位置前后各 40 字的原文片段 */
+  snippet: string
+  createdAt: number
+}
+
+/** 会话级 token 用量（来自 turn_metrics 的真实累计） */
+export interface SessionUsage {
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  /** 最近一次回合使用的模型 */
+  model: string
 }
 
 /** 会话列表按天分组的组名（今天 / 昨天 / 本周 / 更早） */

@@ -1,6 +1,15 @@
 import * as React from 'react'
 import { useEffect, useRef } from 'react'
-import { BarChart3, Blocks, Brain, Settings, Terminal, UserRound } from 'lucide-react'
+import {
+  BarChart3,
+  Blocks,
+  BookOpen,
+  Brain,
+  CalendarClock,
+  Settings,
+  Terminal,
+  UserRound
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { cn } from '@renderer/lib/utils'
@@ -12,7 +21,15 @@ import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
-const TAB_ROUTES = ['/companion', '/text', '/memory', '/plugins', '/dashboard'] as const
+const TAB_ROUTES = [
+  '/companion',
+  '/text',
+  '/memory',
+  '/knowledge',
+  '/automations',
+  '/plugins',
+  '/dashboard'
+] as const
 
 /**
  * 应用外壳（OpenDesign 原型结构）：56px 顶栏 = 品牌区 + 模式页签
@@ -89,6 +106,8 @@ export default function AppShell(): React.JSX.Element {
     { path: '/companion', icon: UserRound, label: t('nav.companion') },
     { path: '/text', icon: Terminal, label: t('nav.text') },
     { path: '/memory', icon: Brain, label: t('nav.memory') },
+    { path: '/knowledge', icon: BookOpen, label: t('nav.knowledge') },
+    { path: '/automations', icon: CalendarClock, label: t('nav.automations') },
     { path: '/plugins', icon: Blocks, label: t('nav.plugins') },
     { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') }
   ]

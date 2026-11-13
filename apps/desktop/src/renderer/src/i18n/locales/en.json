@@ -11,7 +11,9 @@
     "dashboard": "Insights",
     "settings": "Settings",
     "modeSwitch": "Chat mode",
-    "memory": "Memory"
+    "memory": "Memory",
+    "knowledge": "Knowledge",
+    "automations": "Automations"
   },
   "topbar": {
     "modelChip": "Current LLM (switchable in Text mode)",
@@ -28,7 +30,10 @@
     "feishu": "Feishu",
     "telegram": "Telegram",
     "onebot": "QQ",
-    "webhook": "Webhook"
+    "webhook": "Webhook",
+    "discord": "Discord",
+    "slack": "Slack",
+    "automation": "Automation"
   },
   "plugins": {
     "title": "Plugin Center",
@@ -168,7 +173,26 @@
     "toolApprove": "Allow",
     "toolReject": "Reject",
     "toolConfirmExpires": "Auto-rejected in {{seconds}}s",
-    "toolConfirmExpired": "Timed out — command was not executed"
+    "toolConfirmExpired": "Timed out — command was not executed",
+    "pin": "Pin session",
+    "unpin": "Unpin session",
+    "pinned": "Pinned",
+    "edit": "Edit and resend",
+    "editSave": "Save and resend",
+    "editCancel": "Cancel",
+    "editHint": "Saving discards messages after this one and answers again with the new text.",
+    "searchMessages": "Search message text…",
+    "messageResults": "Message hits",
+    "noMessageResults": "No match in message text",
+    "usage": "Session usage",
+    "tokens": "tokens",
+    "preview": "Preview",
+    "artifact": "Artifact preview",
+    "artifactClose": "Close preview",
+    "artifactCopy": "Copy code",
+    "artifactDownload": "Download",
+    "artifactError": "Render failed",
+    "artifactHint": "HTML / SVG / Mermaid output from the model is previewed in a sandbox."
   },
   "companion": {
     "charName": "Kurisu Makise",
@@ -314,7 +338,7 @@
     },
     "providers": {
       "title": "Model services",
-      "desc": "Add multiple OpenAI-compatible services and switch anytime; the active service takes precedence over the built-in config below. Keys stay in the local brain service.",
+      "desc": "A provider is an OpenAI-compatible endpoint + key + default model. The active provider wins over built-in config; after a real turn fails it cools down for 10 minutes and turns automatically fail over to the next healthy provider by priority.",
       "add": "Add service",
       "empty": "No model services yet. The built-in config below is used until you add one.",
       "active": "Active",
@@ -337,11 +361,12 @@
       "model": "Model",
       "proxy": "Proxy (optional)",
       "enabled": "Enabled",
-      "confirmDelete": "Confirm delete"
+      "confirmDelete": "Confirm delete",
+      "coolingDown": "Cooling down"
     },
     "platforms": {
       "title": "Messaging platforms",
-      "desc": "Connect Amadeus to Telegram, QQ (OneBot v11), or any webhook service. Sessions, memory, and affinity are shared, and the desktop can see and continue them.",
+      "desc": "Connect Amadeus to Telegram, QQ (OneBot v11), Discord, Slack, or any webhook service. Every platform shares the same sessions, memory, and affinity.",
       "add": "Add platform",
       "empty": "No platforms connected yet. Once added, external messages reach the same Amadeus.",
       "saved": "Saved",
@@ -353,7 +378,9 @@
       "kind": {
         "telegram": "Telegram",
         "onebot": "QQ (OneBot)",
-        "webhook": "Webhook"
+        "webhook": "Webhook",
+        "discord": "Discord",
+        "slack": "Slack"
       },
       "state": {
         "running": "Running",
@@ -375,7 +402,14 @@
       "outboundUrl": "Outbound URL",
       "secret": "Signing secret (optional)",
       "secretKeep": "Saved — leave blank to keep",
-      "optional": "Optional"
+      "optional": "Optional",
+      "discordToken": "Bot Token",
+      "discordGateway": "Gateway URL (optional, official by default)",
+      "discordApiBase": "API base URL (optional, official by default)",
+      "slackBotToken": "Bot Token (xoxb)",
+      "slackAppToken": "App Token (xapp, Socket Mode)",
+      "slackApiBase": "API base URL (optional, official by default)",
+      "channelIdPlaceholder": "Channel / conversation ID"
     }
   },
   "live2d": {
@@ -506,5 +540,90 @@
       "empty": "No interactions yet",
       "footnote": "Affinity comes only from real turns and memories: +1 per turn, more for opening up, deep conversation, or finishing a task together."
     }
+  },
+  "knowledge": {
+    "title": "Knowledge base",
+    "subtitle": "Import documents; chat retrieves the real passages and answers only from them.",
+    "create": "New knowledge base",
+    "namePlaceholder": "Name, e.g. \"Product docs\"",
+    "descPlaceholder": "One-line description (optional)",
+    "empty": "No knowledge bases yet",
+    "emptyHint": "Create one, then import txt / md files, web pages, or pasted text.",
+    "bases": "Knowledge bases",
+    "docs": "Documents",
+    "chunks": "Chunks",
+    "docCount": "{{count}} docs",
+    "chunkCount": "{{count}} chunks",
+    "deleteBase": "Delete knowledge base",
+    "confirmDeleteBase": "Click again to delete (documents included)",
+    "import": "Import",
+    "importText": "Paste text",
+    "importFile": "Upload file",
+    "importUrl": "Import from URL",
+    "docName": "Document name",
+    "docNamePlaceholder": "Name this document",
+    "docContent": "Content",
+    "docContentPlaceholder": "Paste the text to import…",
+    "urlPlaceholder": "https://example.com/article",
+    "importing": "Importing…",
+    "imported": "Imported",
+    "deleted": "Deleted",
+    "searchPlaceholder": "Search this knowledge base…",
+    "searchHint": "Uses the same TF-IDF keyword retrieval as chat and returns real passages.",
+    "searchEmpty": "No matching content",
+    "searchResults": "Results",
+    "noDocs": "No documents yet",
+    "docChars": "{{count}} chars",
+    "docChunks": "{{count}} chunks",
+    "source": "Source",
+    "uploadHint": "Plain text files (txt / md / json / csv / log). Convert PDF / DOCX to text first.",
+    "close": "Collapse",
+    "loginRequired": "Sign in to use the knowledge base"
+  },
+  "automations": {
+    "title": "Automations",
+    "subtitle": "Let Amadeus run a real turn on schedule: digests, checks, reminders.",
+    "create": "New task",
+    "edit": "Edit task",
+    "name": "Task name",
+    "namePlaceholder": "e.g. \"Morning tech news digest\"",
+    "prompt": "Instruction",
+    "promptPlaceholder": "What Amadeus should do when it fires, e.g. search three important AI news stories and summarize them.",
+    "schedule": "Schedule",
+    "interval": "Interval",
+    "daily": "Daily",
+    "once": "Once",
+    "intervalMinutes": "Interval (minutes)",
+    "timeOfDay": "Time (HH:MM)",
+    "runAt": "Run at",
+    "enabled": "Enabled",
+    "runNow": "Run now",
+    "running": "Running",
+    "nextRun": "Next run",
+    "lastRun": "Last run",
+    "never": "Never",
+    "lastResult": "Last result",
+    "viewResult": "View result",
+    "hideResult": "Hide result",
+    "openSession": "Open session",
+    "empty": "No automation tasks yet",
+    "emptyHint": "Create one with an instruction and a schedule. It really runs and keeps the result in its own session.",
+    "confirmDelete": "Click again to delete",
+    "created": "Task created",
+    "saved": "Task updated",
+    "deleted": "Task deleted",
+    "started": "Task started",
+    "status": {
+      "success": "Success",
+      "error": "Failed",
+      "running": "Running",
+      "idle": "Idle"
+    },
+    "scheduleLabel": {
+      "interval": "Every {{minutes}} min",
+      "daily": "Daily at {{time}}",
+      "once": "Once"
+    },
+    "loginRequired": "Sign in to use automations"
   }
 }

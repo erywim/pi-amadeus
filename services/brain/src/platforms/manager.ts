@@ -1,8 +1,10 @@
 import type { PlatformInbound, PlatformStatus } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
 import type { Db, PlatformRow } from '../db.ts'
+import { DiscordAdapter } from './discord.ts'
 import { OneBotAdapter } from './onebot.ts'
 import { handlePlatformMessage } from './pipeline.ts'
+import { SlackAdapter } from './slack.ts'
 import { TelegramAdapter } from './telegram.ts'
 import type { PlatformAdapter } from './types.ts'
 import { WebhookAdapter } from './webhook.ts'
@@ -183,6 +185,10 @@ class PlatformManager {
         return new OneBotAdapter(ctx)
       case 'webhook':
         return new WebhookAdapter(ctx)
+      case 'discord':
+        return new DiscordAdapter(ctx)
+      case 'slack':
+        return new SlackAdapter(ctx)
     }
   }
 

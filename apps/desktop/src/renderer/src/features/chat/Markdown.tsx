@@ -1,11 +1,15 @@
 import * as React from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, MonitorPlay } from 'lucide-react'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import { copyText } from '@renderer/lib/clipboard'
+import { useArtifactStore } from '@renderer/stores/artifactStore'
+
+/** 可预览的代码块语言（在右侧沙箱渲染；其它语言只有复制） */
+const PREVIEWABLE = new Set(['html', 'svg', 'mermaid'])
 
 /** 代码块：语言标签 + 一键复制（复制内容取自原始文本，不含 DOM 装饰） */
 function CodeBlock({
@@ -18,7 +22,9 @@ function CodeBlock({
   children: React.ReactNode
 }): React.JSX.Element {
   const { t } = useTranslation()
+  const showArtifact = useArtifactStore((s) => s.show)
   const [copied, setCopied] = React.useState(false)
+  const previewable = PREVIEWABLE.has(lang.toLowerCase())
 
   async function handleCopy(): Promise<void> {
     try {
@@ -37,6 +43,19 @@ function CodeBlock({
     <div className="my-3 overflow-hidden rounded-md border border-border bg-[#0b0f14]">
       <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-3 py-1.5">
         <span className="font-mono text-[11px] uppercase tracking-wider text-white/50">{lang}</span>
+        {previewable && (
+          <button
+            type="button"
+            data-testid="preview-artifact"
+            onClick={() => showArtifact({ lang: lang.toLowerCase(), code })}
+            title={t('chat.preview')}
+            aria-label={t('chat.preview')}
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[11px] text-white/60 transition-colors hover:bg-white/10 hover:text-white/90"
+          >
+            <MonitorPlay className="size-3" />
+            <span>{t('chat.preview')}</span>
+          </button>
+        )}
         <button
           type="button"
           data-testid="copy-code"

@@ -4,7 +4,7 @@
  * 「绑定用户 → 共享会话 → agent 回合 → 回复」管线，桌面端能在会话列表里看到并继续。
  */
 
-export type PlatformKind = 'telegram' | 'onebot' | 'webhook'
+export type PlatformKind = 'telegram' | 'onebot' | 'webhook' | 'discord' | 'slack'
 
 export type PlatformState = 'running' | 'stopped' | 'error'
 
@@ -25,6 +25,8 @@ export interface PlatformItem {
    * telegram: { baseUrl, testChatId, tokenSet }
    * onebot:  { url, testChatId, accessTokenSet }
    * webhook: { outboundUrl, secretSet }
+   * discord: { testChannelId, botTokenSet, gatewayUrl? }
+   * slack:   { testChannelId, botTokenSet, appTokenSet }
    */
   config: Record<string, unknown>
   status: PlatformStatus
@@ -41,6 +43,8 @@ export interface PlatformInput {
    * telegram: { token?, baseUrl?, testChatId? }
    * onebot:  { url?, accessToken?, testChatId? }
    * webhook: { outboundUrl?, secret? }
+   * discord: { botToken?, gatewayUrl?, apiBaseUrl?, testChannelId? }
+   * slack:   { botToken?, appToken?, apiBaseUrl?, testChannelId? }
    */
   config: Record<string, string>
 }

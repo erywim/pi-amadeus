@@ -17,6 +17,11 @@ export interface ProviderItem {
   priority: number
   /** 是否已配置密钥（不返回密钥本身） */
   apiKeySet: boolean
+  /**
+   * 最近一次真实回合/测试失败后进入的临时冷却（10 分钟）。
+   * 冷却期间回合会按优先级自动改用下一个健康服务；成功后立即解除。
+   */
+  coolingDown?: boolean
   createdAt: number
   updatedAt: number
 }

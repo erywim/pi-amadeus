@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Copy, Mic, RotateCcw } from 'lucide-react'
+import { Copy, Mic, Pencil, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { Message } from '@pi-amadeus/shared'
@@ -27,11 +27,13 @@ interface MessageBubbleProps {
 function MessageActions({
   content,
   showRegenerate,
-  onRegenerate
+  onRegenerate,
+  onEdit
 }: {
   content: string
   showRegenerate: boolean
   onRegenerate?: () => void
+  onEdit?: () => void
 }): React.JSX.Element {
   const { t } = useTranslation()
   const [copied, setCopied] = React.useState(false)
@@ -60,6 +62,18 @@ function MessageActions({
       >
         <Copy className={cn('size-3', copied && 'text-mint')} />
       </button>
+      {onEdit && (
+        <button
+          type="button"
+          data-testid="edit-message"
+          onClick={onEdit}
+          title={t('chat.edit')}
+          aria-label={t('chat.edit')}
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-soft hover:text-foreground"
+        >
+          <Pencil className="size-3" />
+        </button>
+      )}
       {showRegenerate && onRegenerate && (
         <button
           type="button"
@@ -87,18 +101,7 @@ export function MessageBubble({
   onRegenerate
 }: MessageBubbleProps): React.JSX.Element {
   if (message.role === 'user') {
-    return (
-      <div className="group anim-msg flex flex-col items-end gap-1">
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-xl border border-border bg-surface-soft px-3.5 py-2.5 text-[15px] leading-relaxed">
-          {message.content}
-        </div>
-        <div className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
-          {message.mode === 'voice' && <Mic className="size-3" />}
-          <span>{timeFormatter.format(message.createdAt)}</span>
-          <MessageActions content={message.content} showRegenerate={false} />
-        </div>
-      </div>
-    )
+    return <UserNode message={message} />
   }
 
   return (
@@ -108,6 +111,97 @@ export function MessageBubble({
       isLastAssistant={isLastAssistant}
       onRegenerate={onRegenerate}
     />
+  )
+}
+
+/**
+ * 用户消息：复制 + 编辑后重发。
+ * 编辑会丢弃这条消息之后的对话（服务端同一套截断语义），所以保存前把后果写在输入框下面。
+ */
+function UserNode({ message }: { message: Message }): React.JSX.Element {
+  const { t } = useTranslation()
+  const streaming = useSessionStore((s) => s.stream.streaming)
+  const editMessage = useSessionStore((s) => s.editMessage)
+  const [editing, setEditing] = React.useState(false)
+  const [draft, setDraft] = React.useState(message.content)
+
+  function startEdit(): void {
+    setDraft(message.content)
+    setEditing(true)
+  }
+
+  function save(): void {
+    const trimmed = draft.trim()
+    if (!trimmed || trimmed === message.content) {
+      setEditing(false)
+      return
+    }
+    editMessage(message.id, trimmed)
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <div className="anim-msg flex flex-col items-end gap-1.5">
+        <div className="w-full max-w-[85%] rounded-xl border border-primary/50 bg-surface px-3 py-2">
+          <textarea
+            data-testid="edit-message-input"
+            value={draft}
+            autoFocus
+            rows={Math.min(10, Math.max(2, draft.split('\n').length))}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault()
+                save()
+              }
+              if (e.key === 'Escape') setEditing(false)
+            }}
+            className="w-full resize-y bg-transparent text-[15px] leading-relaxed outline-none"
+          />
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <span className="text-[11px] leading-relaxed text-muted-foreground">
+              {t('chat.editHint')}
+            </span>
+            <span className="flex shrink-0 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setEditing(false)}
+                className="rounded-md px-2 py-1 text-[12px] text-muted-foreground hover:bg-surface-soft hover:text-foreground"
+              >
+                {t('chat.editCancel')}
+              </button>
+              <button
+                type="button"
+                data-testid="edit-message-save"
+                disabled={!draft.trim() || streaming}
+                onClick={save}
+                className="rounded-md bg-primary px-2 py-1 text-[12px] font-medium text-primary-foreground disabled:opacity-50"
+              >
+                {t('chat.editSave')}
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="group anim-msg flex flex-col items-end gap-1">
+      <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-xl border border-border bg-surface-soft px-3.5 py-2.5 text-[15px] leading-relaxed">
+        {message.content}
+      </div>
+      <div className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
+        {message.mode === 'voice' && <Mic className="size-3" />}
+        <span>{timeFormatter.format(message.createdAt)}</span>
+        <MessageActions
+          content={message.content}
+          showRegenerate={false}
+          {...(!streaming ? { onEdit: startEdit } : {})}
+        />
+      </div>
+    </div>
   )
 }
 

@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from 'react'
 import { PanelLeft, Pencil, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
+import type { SessionUsage } from '@pi-amadeus/shared'
 import { Badge } from '@renderer/components/ui/badge'
+import { fetchSessionUsage } from '@renderer/lib/api'
 import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 
@@ -25,6 +27,7 @@ export function CodexTitlebar({
   const renameSession = useSessionStore((s) => s.renameSession)
   const [editing, setEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
+  const [usage, setUsage] = useState<SessionUsage | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   /** Esc 取消后紧跟的 blur 不该再提交一次（取消是明确意图） */
   const cancelledRef = useRef(false)
@@ -33,6 +36,23 @@ export function CodexTitlebar({
   useEffect(() => {
     setEditing(false)
   }, [session?.id])
+
+  // 会话用量：来自 turn_metrics 的真实累计；回合结束后消息数变化会触发重拉
+  useEffect(() => {
+    if (!session?.id) {
+      setUsage(null)
+      return
+    }
+    let cancelled = false
+    fetchSessionUsage(session.id)
+      .then((value) => {
+        if (!cancelled) setUsage(value)
+      })
+      .catch((error) => console.warn('[usage] 读取失败：', error))
+    return () => {
+      cancelled = true
+    }
+  }, [session?.id, messageCount])
 
   useEffect(() => {
     if (editing) inputRef.current?.select()
@@ -140,6 +160,15 @@ export function CodexTitlebar({
         {t(`channels.${session.channel}`)}
       </Badge>
       <span className="flex-1" />
+      {usage && usage.totalTokens > 0 && (
+        <span
+          data-testid="session-usage"
+          title={`${t('chat.usage')}：in ${usage.inputTokens} / out ${usage.outputTokens}`}
+          className="whitespace-nowrap font-mono text-[11.5px] text-muted-foreground"
+        >
+          {usage.totalTokens.toLocaleString()} {t('chat.tokens')}
+        </span>
+      )}
       <span className="whitespace-nowrap text-[12.5px] text-muted-foreground">
         {t('codex.turns', { count: turns })}
       </span>

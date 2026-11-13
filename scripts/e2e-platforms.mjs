@@ -17,6 +17,10 @@ const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 const WEBHOOK_PORT = Number(process.env.E2E_WEBHOOK_PORT ?? '3998')
 const TELEGRAM_PORT = Number(process.env.E2E_TELEGRAM_PORT ?? '3997')
 const ONEBOT_PORT = Number(process.env.E2E_ONEBOT_PORT ?? '3996')
+const DISCORD_PORT = Number(process.env.E2E_DISCORD_PORT ?? '3995')
+const DISCORD_WS_PORT = Number(process.env.E2E_DISCORD_WS_PORT ?? '3994')
+const SLACK_PORT = Number(process.env.E2E_SLACK_PORT ?? '3993')
+const SLACK_WS_PORT = Number(process.env.E2E_SLACK_WS_PORT ?? '3992')
 
 const results = []
 function report(name, ok, detail = '') {
@@ -141,6 +145,102 @@ oneBotServer.on('connection', (socket) => {
 })
 await sleep(200)
 
+// ---------- Discord mock：REST + Gateway WebSocket ----------
+const discordSent = []
+let discordGatewaySocket = null
+const discordServer = createServer(async (req, res) => {
+  let body = ''
+  for await (const chunk of req) body += chunk
+  const path = new URL(req.url ?? '/', 'http://x').pathname
+  if (path === '/users/@me') {
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({ id: '9000', username: 'amadeus_e2e' }))
+    return
+  }
+  const channelMatch = /^\/channels\/([^/]+)\/messages$/.exec(path)
+  if (channelMatch) {
+    try {
+      discordSent.push({ channelId: channelMatch[1], ...JSON.parse(body) })
+    } catch {
+      /* ignore */
+    }
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({ id: String(discordSent.length) }))
+    return
+  }
+  res.statusCode = 404
+  res.end('{}')
+})
+await new Promise((resolve) => discordServer.listen(DISCORD_PORT, '127.0.0.1', resolve))
+
+const discordGateway = new WebSocketServer({ port: DISCORD_WS_PORT, host: '127.0.0.1' })
+const discordHeartbeats = []
+discordGateway.on('connection', (socket) => {
+  discordGatewaySocket = socket
+  socket.send(JSON.stringify({ op: 10, d: { heartbeat_interval: 45_000 } }))
+  socket.on('message', (data) => {
+    try {
+      const payload = JSON.parse(String(data))
+      if (payload.op === 1) discordHeartbeats.push(payload.d)
+      if (payload.op === 2) {
+        socket.send(
+          JSON.stringify({
+            op: 0,
+            t: 'READY',
+            s: 1,
+            d: { user: { id: '9000', username: 'amadeus_e2e' } }
+          })
+        )
+      }
+    } catch {
+      /* ignore */
+    }
+  })
+})
+
+// ---------- Slack mock：Web API + Socket Mode WebSocket ----------
+const slackSent = []
+const slackAcks = []
+let slackSocket = null
+const slackServer = createServer(async (req, res) => {
+  let body = ''
+  for await (const chunk of req) body += chunk
+  const method = new URL(req.url ?? '/', 'http://x').pathname.split('/').pop()
+  res.setHeader('Content-Type', 'application/json')
+  if (method === 'auth.test') {
+    res.end(JSON.stringify({ ok: true, user_id: 'UBOT', team: 'E2E Team' }))
+    return
+  }
+  if (method === 'apps.connections.open') {
+    res.end(JSON.stringify({ ok: true, url: `ws://127.0.0.1:${SLACK_WS_PORT}/` }))
+    return
+  }
+  if (method === 'chat.postMessage') {
+    try {
+      slackSent.push(JSON.parse(body))
+    } catch {
+      /* ignore */
+    }
+    res.end(JSON.stringify({ ok: true, ts: '1700000000.0001' }))
+    return
+  }
+  res.end(JSON.stringify({ ok: false, error: 'unknown_method' }))
+})
+await new Promise((resolve) => slackServer.listen(SLACK_PORT, '127.0.0.1', resolve))
+
+const slackSocketServer = new WebSocketServer({ port: SLACK_WS_PORT, host: '127.0.0.1' })
+slackSocketServer.on('connection', (socket) => {
+  slackSocket = socket
+  socket.send(JSON.stringify({ type: 'hello' }))
+  socket.on('message', (data) => {
+    try {
+      slackAcks.push(JSON.parse(String(data)))
+    } catch {
+      /* ignore */
+    }
+  })
+})
+
 const createdPlatforms = []
 const createdSessions = []
 
@@ -154,6 +254,10 @@ async function cleanup() {
   webhookServer.close()
   telegramServer.close()
   oneBotServer.close()
+  discordServer.close()
+  discordGateway.close()
+  slackServer.close()
+  slackSocketServer.close()
 }
 let cleanupOnce = null
 function cleanupPromise() {
@@ -342,6 +446,188 @@ try {
       String(oneBotActions.find((action) => action.action === 'send_group_msg')?.params?.group_id) ===
         '12345'
   )
+  // ================= Discord =================
+  res = await api('/api/platforms', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'discord',
+      name: 'E2E Discord',
+      config: {
+        botToken: 'discord-e2e-token',
+        gatewayUrl: `ws://127.0.0.1:${DISCORD_WS_PORT}/?v=10&encoding=json`,
+        apiBaseUrl: `http://127.0.0.1:${DISCORD_PORT}`,
+        testChatId: '777'
+      }
+    })
+  })
+  const discordId = res.body.platform?.id
+  createdPlatforms.push(discordId)
+  report(
+    'Discord：Gateway 连接与 IDENTIFY',
+    res.status === 200 && res.body.platform?.status?.state === 'running',
+    `state=${res.body.platform?.status?.state} detail=${res.body.platform?.status?.detail}`
+  )
+  report(
+    'Discord：密钥不回显',
+    res.body.platform?.config?.botTokenSet === true && res.body.platform?.config?.botToken === undefined
+  )
+  await waitFor(() => discordGatewaySocket, 10_000, 'discord gateway')
+  await waitFor(() => discordHeartbeats.length > 0, 10_000, 'discord heartbeat')
+  report('Discord：心跳已发送', discordHeartbeats.length > 0)
+
+  discordGatewaySocket.send(
+    JSON.stringify({
+      op: 0,
+      t: 'MESSAGE_CREATE',
+      s: 2,
+      d: {
+        id: 'm1',
+        channel_id: '555',
+        guild_id: '1',
+        content: '用一句话跟我打个招呼',
+        author: { id: '1001', username: 'e2e', bot: false }
+      }
+    })
+  )
+  await waitFor(() => discordSent.length > 0, 60_000, 'discord 回复')
+  report(
+    'Discord：消息 → 回合 → REST 发送',
+    String(discordSent[0]?.content ?? '').length > 0 &&
+      !String(discordSent[0]?.content).includes('连不上大脑'),
+    String(discordSent[0]?.content ?? '').slice(0, 60)
+  )
+  report('Discord：回复发给原频道', String(discordSent[0]?.channelId) === '555')
+  report(
+    'Discord：@everyone 不会被 ping',
+    JSON.stringify(discordSent[0]?.allowed_mentions ?? {}) === JSON.stringify({ parse: [] })
+  )
+
+  // 机器人自己的消息不应触发回合（回声防护）
+  const sentBeforeBotMessage = discordSent.length
+  discordGatewaySocket.send(
+    JSON.stringify({
+      op: 0,
+      t: 'MESSAGE_CREATE',
+      s: 3,
+      d: {
+        id: 'm2',
+        channel_id: '555',
+        guild_id: '1',
+        content: '我是另一个 bot',
+        author: { id: '9001', username: 'otherbot', bot: true }
+      }
+    })
+  )
+  await sleep(1200)
+  report('Discord：忽略其它机器人的消息', discordSent.length === sentBeforeBotMessage)
+
+  const discordUser = await autoUserId('discord-1001')
+  const discordSessions = (await api(`/api/sessions?userId=${discordUser}`)).body.sessions ?? []
+  createdSessions.push(...discordSessions.map((session) => session.id))
+  report(
+    'Discord：会话标记为 discord 渠道',
+    discordSessions.length === 1 && discordSessions[0].channel === 'discord'
+  )
+
+  res = await api(`/api/platforms/${discordId}/test`, { method: 'POST' })
+  await waitFor(() => discordSent.length > sentBeforeBotMessage, 10_000, 'discord 测试发送')
+  report(
+    'Discord：测试发送到配置的频道',
+    res.status === 200 &&
+      String(discordSent.at(-1)?.channelId) === '777'
+  )
+
+  // ================= Slack（Socket Mode） =================
+  res = await api('/api/platforms', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      kind: 'slack',
+      name: 'E2E Slack',
+      config: {
+        botToken: 'xoxb-e2e',
+        appToken: 'xapp-e2e',
+        apiBaseUrl: `http://127.0.0.1:${SLACK_PORT}`,
+        testChatId: 'C_TEST'
+      }
+    })
+  })
+  const slackId = res.body.platform?.id
+  createdPlatforms.push(slackId)
+  report(
+    'Slack：Socket Mode 连接',
+    res.status === 200 && res.body.platform?.status?.state === 'running',
+    `state=${res.body.platform?.status?.state} detail=${res.body.platform?.status?.detail}`
+  )
+  report(
+    'Slack：两个 token 都不回显',
+    res.body.platform?.config?.botTokenSet === true &&
+      res.body.platform?.config?.appTokenSet === true &&
+      res.body.platform?.config?.botToken === undefined
+  )
+  await waitFor(() => slackSocket, 10_000, 'slack socket')
+
+  slackSocket.send(
+    JSON.stringify({
+      type: 'events_api',
+      envelope_id: 'env-1',
+      payload: {
+        event: {
+          type: 'message',
+          text: '用一句话跟我打个招呼',
+          user: 'U1',
+          channel: 'C1',
+          channel_type: 'im'
+        }
+      }
+    })
+  )
+  await waitFor(() => slackSent.length > 0, 60_000, 'slack 回复')
+  report(
+    'Slack：事件 → ack → 回合 → chat.postMessage',
+    slackAcks.some((ack) => ack.envelope_id === 'env-1') &&
+      String(slackSent[0]?.text ?? '').length > 0 &&
+      !String(slackSent[0]?.text).includes('连不上大脑'),
+    String(slackSent[0]?.text ?? '').slice(0, 60)
+  )
+  report('Slack：回复发给原会话', String(slackSent[0]?.channel) === 'C1')
+
+  const sentBeforeBot = slackSent.length
+  slackSocket.send(
+    JSON.stringify({
+      type: 'events_api',
+      envelope_id: 'env-2',
+      payload: {
+        event: {
+          type: 'message',
+          text: '我是别的 bot',
+          user: 'U2',
+          channel: 'C2',
+          channel_type: 'channel',
+          bot_id: 'B1'
+        }
+      }
+    })
+  )
+  await sleep(1200)
+  report('Slack：忽略机器人消息', slackSent.length === sentBeforeBot)
+
+  const slackUser = await autoUserId('slack-U1')
+  const slackSessions = (await api(`/api/sessions?userId=${slackUser}`)).body.sessions ?? []
+  createdSessions.push(...slackSessions.map((session) => session.id))
+  report(
+    'Slack：会话标记为 slack 渠道',
+    slackSessions.length === 1 && slackSessions[0].channel === 'slack'
+  )
+
+  res = await api(`/api/platforms/${slackId}/test`, { method: 'POST' })
+  await waitFor(() => slackSent.length > sentBeforeBot, 10_000, 'slack 测试发送')
+  report(
+    'Slack：测试发送到配置的会话',
+    res.status === 200 && String(slackSent.at(-1)?.channel) === 'C_TEST'
+  )
+
   // ================= 桌面端管理界面 =================
   const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
   let cdp = null

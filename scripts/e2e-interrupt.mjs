@@ -7,7 +7,7 @@
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 
-const CDP_HTTP = 'http://127.0.0.1:9222'
+const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
 const BRAIN = 'http://localhost:3002'
 const results = []
 function report(name, ok, detail = '') {
@@ -182,8 +182,25 @@ try {
     90000,
     '回合 2 完成（助手 ttsText 落库）'
   )
-  const finalDialog = await evalJs(`window.__amadeus.uiStore.getState().dialogText`)
-  report('回合 2 中文回复上屏', finalDialog.length > 3 && !finalDialog.includes(turn1Text.slice(0, 12)), finalDialog.slice(0, 40))
+  // 断言「屏幕上的是回合 2 已落库的回复」，而不是「回复文案必须与回合 1 不同」：
+  // 同一人格的两次问候可能都以同一句自我介绍开头，用前缀对比会误报。
+  const finalCheck = await evalJs(`(() => {
+    const s = window.__amadeus.sessionStore.getState();
+    const assistants = (s.messages[s.activeSessionId] ?? []).filter((m) => m.role === 'assistant');
+    return {
+      dialog: window.__amadeus.uiStore.getState().dialogText ?? '',
+      last: assistants.at(-1)?.content ?? '',
+      assistants: assistants.length
+    };
+  })()`)
+  report(
+    '回合 2 中文回复上屏',
+    finalCheck.dialog.length > 3 &&
+      finalCheck.assistants >= 1 &&
+      (finalCheck.last.startsWith(finalCheck.dialog.slice(0, 12)) ||
+        finalCheck.dialog.startsWith(finalCheck.last.slice(0, 12))),
+    finalCheck.dialog.slice(0, 40)
+  )
 
   const failed = results.filter((r) => !r.ok)
   console.log(`\n=== 汇总: ${results.length - failed.length}/${results.length} 通过 ===`)

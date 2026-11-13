@@ -210,6 +210,15 @@ export function ProviderSection(): React.JSX.Element {
                       {t('settings.providers.noKey')}
                     </Badge>
                   )}
+                  {provider.coolingDown && (
+                    <Badge
+                      data-testid="provider-cooling"
+                      variant="outline"
+                      className="border-destructive/40 px-1.5 py-0 text-[10px] text-destructive"
+                    >
+                      {t('settings.providers.coolingDown')}
+                    </Badge>
+                  )}
                 </div>
                 <p className="truncate font-mono text-[11px] text-muted-foreground">
                   {provider.baseUrl} · {provider.model}

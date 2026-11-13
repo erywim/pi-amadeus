@@ -1,6 +1,16 @@
 import * as React from 'react'
 import { useEffect, useState } from 'react'
-import { Copy, LoaderCircle, MessageCircle, Pencil, Send, Trash2, Webhook } from 'lucide-react'
+import {
+  Copy,
+  Gamepad2,
+  Hash,
+  LoaderCircle,
+  MessageCircle,
+  Pencil,
+  Send,
+  Trash2,
+  Webhook
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { PlatformItem, PlatformKind } from '@pi-amadeus/shared'
@@ -32,10 +42,12 @@ import { cn } from '@renderer/lib/utils'
 const KIND_ICONS = {
   telegram: Send,
   onebot: MessageCircle,
-  webhook: Webhook
+  webhook: Webhook,
+  discord: Gamepad2,
+  slack: Hash
 } as const
 
-const KINDS: PlatformKind[] = ['telegram', 'onebot', 'webhook']
+const KINDS: PlatformKind[] = ['telegram', 'onebot', 'discord', 'slack', 'webhook']
 
 interface FormState {
   name: string
@@ -46,6 +58,10 @@ interface FormState {
   accessToken: string
   outboundUrl: string
   secret: string
+  botToken: string
+  appToken: string
+  gatewayUrl: string
+  apiBaseUrl: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -56,7 +72,11 @@ const EMPTY_FORM: FormState = {
   url: '',
   accessToken: '',
   outboundUrl: '',
-  secret: ''
+  secret: '',
+  botToken: '',
+  appToken: '',
+  gatewayUrl: '',
+  apiBaseUrl: ''
 }
 
 /**
@@ -107,7 +127,9 @@ export function PlatformsPanel(): React.JSX.Element {
       baseUrl: text('baseUrl'),
       testChatId: text('testChatId'),
       url: text('url'),
-      outboundUrl: text('outboundUrl')
+      outboundUrl: text('outboundUrl'),
+      gatewayUrl: text('gatewayUrl'),
+      apiBaseUrl: text('apiBaseUrl')
     })
     setDialog({ mode: 'edit', platform })
   }
@@ -124,6 +146,22 @@ export function PlatformsPanel(): React.JSX.Element {
       return {
         url: form.url,
         ...(form.accessToken ? { accessToken: form.accessToken } : {}),
+        testChatId: form.testChatId
+      }
+    }
+    if (kind === 'discord') {
+      return {
+        ...(form.botToken ? { botToken: form.botToken } : {}),
+        gatewayUrl: form.gatewayUrl,
+        apiBaseUrl: form.apiBaseUrl,
+        testChatId: form.testChatId
+      }
+    }
+    if (kind === 'slack') {
+      return {
+        ...(form.botToken ? { botToken: form.botToken } : {}),
+        ...(form.appToken ? { appToken: form.appToken } : {}),
+        apiBaseUrl: form.apiBaseUrl,
         testChatId: form.testChatId
       }
     }
@@ -205,7 +243,12 @@ export function PlatformsPanel(): React.JSX.Element {
       ? Boolean(form.token) || Boolean(editing?.config.tokenSet)
       : kind === 'onebot'
         ? Boolean(form.url)
-        : Boolean(form.outboundUrl))
+        : kind === 'discord'
+          ? Boolean(form.botToken) || Boolean(editing?.config.botTokenSet)
+          : kind === 'slack'
+            ? (Boolean(form.botToken) || Boolean(editing?.config.botTokenSet)) &&
+              (Boolean(form.appToken) || Boolean(editing?.config.appTokenSet))
+            : Boolean(form.outboundUrl))
 
   return (
     <div className="max-w-2xl">
@@ -236,7 +279,11 @@ export function PlatformsPanel(): React.JSX.Element {
               ? `${typeof config.baseUrl === 'string' && config.baseUrl ? config.baseUrl : 'api.telegram.org'}`
               : platform.kind === 'onebot'
                 ? String(config.url ?? '')
-                : String(config.outboundUrl ?? '')
+                : platform.kind === 'discord'
+                  ? String(config.gatewayUrl || 'gateway.discord.gg')
+                  : platform.kind === 'slack'
+                    ? 'Socket Mode'
+                    : String(config.outboundUrl ?? '')
           return (
             <div
               key={platform.id}
@@ -427,6 +474,81 @@ export function PlatformsPanel(): React.JSX.Element {
                   value={form.testChatId}
                   onChange={(value) => setForm({ ...form, testChatId: value })}
                   placeholder={t('settings.platforms.onebotTestChatPlaceholder')}
+                />
+              </>
+            )}
+            {kind === 'discord' && (
+              <>
+                <Field
+                  testId="platform-discord-token"
+                  label={t('settings.platforms.discordToken')}
+                  value={form.botToken}
+                  onChange={(value) => setForm({ ...form, botToken: value })}
+                  placeholder={
+                    editing?.config.botTokenSet
+                      ? t('settings.platforms.secretKeep')
+                      : 'MTIz…（Bot → Token）'
+                  }
+                  secret
+                />
+                <Field
+                  testId="platform-discord-gateway"
+                  label={t('settings.platforms.discordGateway')}
+                  value={form.gatewayUrl}
+                  onChange={(value) => setForm({ ...form, gatewayUrl: value })}
+                  placeholder="wss://gateway.discord.gg/?v=10&encoding=json"
+                />
+                <Field
+                  testId="platform-discord-api"
+                  label={t('settings.platforms.discordApiBase')}
+                  value={form.apiBaseUrl}
+                  onChange={(value) => setForm({ ...form, apiBaseUrl: value })}
+                  placeholder="https://discord.com/api/v10"
+                />
+                <Field
+                  testId="platform-test-chat"
+                  label={t('settings.platforms.testChatId')}
+                  value={form.testChatId}
+                  onChange={(value) => setForm({ ...form, testChatId: value })}
+                  placeholder={t('settings.platforms.channelIdPlaceholder')}
+                />
+              </>
+            )}
+            {kind === 'slack' && (
+              <>
+                <Field
+                  testId="platform-slack-bot-token"
+                  label={t('settings.platforms.slackBotToken')}
+                  value={form.botToken}
+                  onChange={(value) => setForm({ ...form, botToken: value })}
+                  placeholder={
+                    editing?.config.botTokenSet ? t('settings.platforms.secretKeep') : 'xoxb-…'
+                  }
+                  secret
+                />
+                <Field
+                  testId="platform-slack-app-token"
+                  label={t('settings.platforms.slackAppToken')}
+                  value={form.appToken}
+                  onChange={(value) => setForm({ ...form, appToken: value })}
+                  placeholder={
+                    editing?.config.appTokenSet ? t('settings.platforms.secretKeep') : 'xapp-…'
+                  }
+                  secret
+                />
+                <Field
+                  testId="platform-slack-api"
+                  label={t('settings.platforms.slackApiBase')}
+                  value={form.apiBaseUrl}
+                  onChange={(value) => setForm({ ...form, apiBaseUrl: value })}
+                  placeholder="https://slack.com/api"
+                />
+                <Field
+                  testId="platform-test-chat"
+                  label={t('settings.platforms.testChatId')}
+                  value={form.testChatId}
+                  onChange={(value) => setForm({ ...form, testChatId: value })}
+                  placeholder={t('settings.platforms.channelIdPlaceholder')}
                 />
               </>
             )}

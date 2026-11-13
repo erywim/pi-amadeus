@@ -1,6 +1,8 @@
 import * as React from 'react'
 import { useEffect, useState } from 'react'
+import { useArtifactStore } from '@renderer/stores/artifactStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
+import { ArtifactPanel } from './ArtifactPanel'
 import { CodexTitlebar } from './CodexTitlebar'
 import { Composer } from './Composer'
 import { MessageList } from './MessageList'
@@ -15,6 +17,7 @@ export default function ChatPage(): React.JSX.Element {
   const activeSessionId = useSessionStore((s) => s.activeSessionId)
   const createSession = useSessionStore((s) => s.createSession)
   const stopStreaming = useSessionStore((s) => s.stopStreaming)
+  const artifact = useArtifactStore((s) => s.artifact)
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
   // 常见助手的快捷键：⌘/Ctrl+N 新会话、Esc 停止正在生成的回合
@@ -39,20 +42,23 @@ export default function ChatPage(): React.JSX.Element {
   return (
     <div className="flex h-full min-h-0 flex-1 bg-surface">
       {sidebarOpen && <SessionSidebar />}
-      <section className="flex min-w-0 flex-1 flex-col">
-        {activeSessionId === null ? (
-          <WelcomeState />
-        ) : (
-          <>
-            <CodexTitlebar
-              sidebarOpen={sidebarOpen}
-              onToggleSidebar={() => setSidebarOpen((v) => !v)}
-            />
-            <MessageList />
-            <Composer />
-          </>
-        )}
-      </section>
+      <div className="flex min-w-0 flex-1">
+        <section className="flex min-w-0 flex-1 flex-col">
+          {activeSessionId === null ? (
+            <WelcomeState />
+          ) : (
+            <>
+              <CodexTitlebar
+                sidebarOpen={sidebarOpen}
+                onToggleSidebar={() => setSidebarOpen((v) => !v)}
+              />
+              <MessageList />
+              <Composer />
+            </>
+          )}
+        </section>
+        {artifact && <ArtifactPanel />}
+      </div>
     </div>
   )
 }

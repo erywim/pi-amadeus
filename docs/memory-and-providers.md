@@ -61,11 +61,24 @@
 
 `resolveTarget`（`conversation.ts`）按以下顺序取模型：
 
-1. `providers` 表里 **active + enabled** 的服务
-2. 用户配置里的单条内置配置（设置 → AI 配置）
-3. `.env` 默认（`LLM_BASE_URL` / `LLM_API_KEY` / `AI_MODEL`）
+1. `providers` 表里 **active + enabled** 且不在冷却中的服务
+2. 激活服务冷却中时：按 `priority` 取下一个 **enabled + 有密钥 + 健康** 的服务（自动故障转移）
+3. 所有服务都在冷却：仍回到激活服务（宁可再试一次，也不让用户突然没有模型）
+4. 没有任何激活服务：用户配置里的单条内置配置（设置 → AI 配置）
+5. `.env` 默认（`LLM_BASE_URL` / `LLM_API_KEY` / `AI_MODEL`）
 
 激活服务优先，所以设置页的内置配置标注为「仅在没有任何激活的模型服务时生效」。
+
+### 故障转移（magpie 思路）
+
+- 真实回合失败（连接错误、鉴权失败、返回为空）→ 该服务进入 **10 分钟冷却**；
+  用户点「停止」不算故障。
+- 冷却期内新的回合自动按 `priority` 换下一个健康服务；成功一次立即解除冷却。
+- 连通性测试与真实回合共用同一份冷却状态：测试失败同样进入冷却，测试成功即解除。
+- 冷却只存在内存：大脑重启后所有服务重新视为健康（持久化一个可能已恢复的故障状态更糟）。
+- 服务列表回传 `coolingDown`，设置页显示「故障冷却」徽标。
+
+仍未实现（与 magpie 的差距）：路由组 / 权重分流 / 配额查询。
 
 ### 管理
 
@@ -77,8 +90,6 @@
 - 输入框模型选择器在有激活服务时改的是该服务的模型，否则写回内置配置
 - 每回合指标会记录服务名，看板的「模型服务用量」按服务聚合
 
-未实现（与 magpie 的差距，明确记录）：自动故障转移 / 路由组 / 配额查询。
-当前是手动切换 + 单服务优先级。
 
 ## 4. 数据真实性
 
@@ -97,7 +108,8 @@
 | `services/brain/src/memory/extract.ts` | 回合后记忆提取（真实模型调用） |
 | `services/brain/src/memory/recall.ts` | 关键词召回 + system prompt 注入 |
 | `services/brain/src/memory/affinity.ts` | 好感度事件与汇总 |
-| `services/brain/src/providers/registry.ts` | 服务 CRUD、激活、真实连通性测试 |
+| `services/brain/src/providers/registry.ts` | 服务 CRUD、激活、真实连通性测试、冷却状态回传 |
+| `services/brain/src/providers/failover.ts` | 内存冷却表与故障标记（10 分钟） |
 | `services/brain/src/routes/memories.ts` | `/api/memories*`、`/api/affinity` |
 | `services/brain/src/routes/providers.ts` | `/api/providers*` |
 | `services/brain/src/metrics.ts` | 回合指标落库（含 provider 名） |
@@ -125,6 +137,9 @@ npx --prefix apps/desktop electron-vite dev --remoteDebuggingPort 9333
 # 终端 3：记忆/好感度 + 模型服务 E2E
 CDP_HTTP=http://127.0.0.1:9333 node scripts/e2e-memory-providers.mjs
 
+# 故障转移（真实 LLM + 失效端点，brain 级）
+node scripts/e2e-knowledge-automation.mjs
+
 # 回归
 CDP_HTTP=http://127.0.0.1:9333 node scripts/e2e-plugins.mjs
 CDP_HTTP=http://127.0.0.1:9333 node scripts/e2e-chat-assistant.mjs
@@ -137,3 +152,7 @@ npm run verify
 看板记忆与好感度与 `/api/stats` 一致。连通性测试默认指向本地 mock，可用
 `E2E_PROVIDER_BASE_URL` / `E2E_PROVIDER_MODEL` / `E2E_PROVIDER_API_KEY` 指向真实服务；
 端点不可用时该步输出 `not run`，不伪装通过。
+
+`scripts/e2e-knowledge-automation.mjs` 的故障转移段：创建一个不可达服务（priority 1）与一个真实服务
+（priority 2），激活前者 → 回合报错且服务进入冷却 → 下一回合自动改用真实服务并成功 →
+指标记录实际使用的服务 → 连通性测试结果与冷却状态一致。没有真实 `.env` 时该段输出 `not run`。

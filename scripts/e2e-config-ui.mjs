@@ -7,7 +7,7 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const BRAIN = 'http://localhost:3002'
-const CDP_HTTP = 'http://127.0.0.1:9222'
+const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
 const results = []
 function report(name, ok, detail = '') {
   results.push({ name, ok })
@@ -109,6 +109,10 @@ try {
   console.log(`userId: ${userId}`)
 
   console.log('\n=== 1. 设置页表单加载 ===')
+  // 期望值来自服务端（默认值可能随 .env 变化）；不再硬编码 deepseek 默认值
+  const serverConfig = await (await fetch(`${BRAIN}/api/config/${userId}`)).json()
+  const expectedBaseUrl = serverConfig.config.provider.baseUrl
+  const expectedModel = serverConfig.config.provider.model
   await evalJs(`window.history.pushState({}, '', '/settings'); window.dispatchEvent(new PopStateEvent('popstate')); true`)
   await waitFor(`document.querySelector('#ai-base-url') !== null`, 10000, '表单渲染')
   await waitFor(`document.querySelector('#ai-base-url').value !== ''`, 10000, '表单回填')
@@ -117,8 +121,8 @@ try {
   // 记住原 model 值，结束在 finally 里还原（读取失败则跳过一次还原动作，不用常量兜底）
   origModel = typeof model === 'string' && model ? model : null
   const keyPlaceholder = await evalJs(`document.querySelector('#ai-api-key').placeholder`)
-  report('baseUrl 从服务端回填', baseUrl === 'https://api.deepseek.com/v1', baseUrl)
-  report('model 从服务端回填', model === 'deepseek-v4-pro', model)
+  report('baseUrl 从服务端回填', baseUrl === expectedBaseUrl, baseUrl)
+  report('model 从服务端回填', model === expectedModel, model)
   report('密钥占位提示"服务端默认密钥已生效"', keyPlaceholder.includes('默认密钥'), keyPlaceholder)
   const keyValue = await evalJs(`document.querySelector('#ai-api-key').value`)
   report('密钥输入框不回填（空）', keyValue === '')
@@ -133,10 +137,10 @@ try {
     return true;
   })()`)
   await sleep(300)
-  // 点击保存按钮（含"保存"文案的按钮）
+  // 点击保存按钮（文案是「保存更改」，用包含匹配，避免措辞微调就失效）
   const clicked = await evalJs(`(() => {
     const buttons = [...document.querySelectorAll('button')];
-    const btn = buttons.find((b) => b.textContent.trim() === '保存');
+    const btn = buttons.find((b) => b.textContent.trim().includes('保存'));
     if (!btn) return false;
     btn.click();
     return true;

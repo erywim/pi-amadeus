@@ -13,7 +13,76 @@ export interface SessionRow {
   title: string
   createdAt: number
   updatedAt: number
+  /** 置顶会话排在列表最前（不改变 updated_at） */
+  pinned: boolean
   messageCount: number
+}
+
+export interface KnowledgeBaseRow {
+  id: string
+  userId: string
+  name: string
+  description: string
+  createdAt: number
+  updatedAt: number
+  docCount: number
+  chunkCount: number
+}
+
+export interface KnowledgeDocRow {
+  id: string
+  kbId: string
+  name: string
+  source: string
+  chars: number
+  chunks: number
+  createdAt: number
+}
+
+export interface KnowledgeChunkRow {
+  id: string
+  kbId: string
+  docId: string
+  docName: string
+  ordinal: number
+  content: string
+}
+
+export interface AutomationRow {
+  id: string
+  userId: string
+  name: string
+  prompt: string
+  schedule: 'interval' | 'daily' | 'once'
+  intervalMinutes: number
+  timeOfDay: string
+  runAt: number | null
+  enabled: boolean
+  nextRunAt: number | null
+  lastRunAt: number | null
+  lastStatus: '' | 'running' | 'success' | 'error'
+  lastError: string
+  lastResult: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface SessionUsageRow {
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  model: string
+}
+
+export interface MessageSearchRow {
+  sessionId: string
+  sessionTitle: string
+  channel: Channel
+  messageId: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: number
 }
 
 export interface MessageRow {
@@ -124,11 +193,21 @@ export interface Db {
   renameSession(id: string, title: string): Promise<void>
   /** 会话换归属（平台账号绑定到桌面用户后，把该平台的会话交给绑定用户） */
   reassignSession(id: string, userId: string): Promise<void>
+  /** 置顶 / 取消置顶；不刷新 updated_at（置顶不是一次活动） */
+  setSessionPinned(id: string, pinned: boolean): Promise<void>
+  /** 跨会话消息全文搜索（LIKE，最近的在前） */
+  searchMessages(userId: string, query: string, limit?: number): Promise<MessageSearchRow[]>
+  /** 会话级用量：turn_metrics 真实累计 */
+  sessionUsage(sessionId: string): Promise<SessionUsageRow>
   // messages
   listMessages(sessionId: string, limit?: number): Promise<MessageRow[]>
   /** 会话最后一条消息（重新生成时定位用户消息与待替换的助手回复） */
   getLastMessage(sessionId: string): Promise<MessageRow | null>
   deleteMessage(id: string): Promise<void>
+  /** 编辑用户消息：只改正文（编辑后重发由调用方截断后续消息再跑回合） */
+  updateMessageContent(id: string, content: string): Promise<void>
+  /** 截断：删除该消息之后的所有消息（含该消息？不，保留该消息本身） */
+  deleteMessagesAfter(sessionId: string, messageId: string): Promise<number>
   appendMessage(input: {
     id: string
     sessionId: string
@@ -218,6 +297,67 @@ export interface Db {
   ): Promise<PlatformRow | null>
   deletePlatform(id: string): Promise<void>
   findPlatformAccount(platformId: string, externalUserId: string): Promise<{ userId: string } | null>
+  // knowledge（知识库）
+  listKnowledgeBases(userId: string): Promise<KnowledgeBaseRow[]>
+  getKnowledgeBase(id: string): Promise<KnowledgeBaseRow | null>
+  createKnowledgeBase(input: { userId: string; name: string; description: string }): Promise<KnowledgeBaseRow>
+  updateKnowledgeBase(id: string, patch: { name?: string; description?: string }): Promise<KnowledgeBaseRow | null>
+  deleteKnowledgeBase(id: string): Promise<void>
+  listKnowledgeDocs(kbId: string): Promise<KnowledgeDocRow[]>
+  /** 导入文档：文档行 + 分块在一个事务里写入 */
+  addKnowledgeDoc(input: {
+    id: string
+    kbId: string
+    name: string
+    source: string
+    chunks: { id: string; content: string }[]
+  }): Promise<KnowledgeDocRow>
+  deleteKnowledgeDoc(id: string): Promise<void>
+  /** 检索用：只取指定知识库的分块（带上文档名） */
+  listKnowledgeChunks(kbIds: string[], limit?: number): Promise<KnowledgeChunkRow[]>
+  // automations（自动化任务）
+  listAutomations(userId: string): Promise<AutomationRow[]>
+  getAutomation(id: string): Promise<AutomationRow | null>
+  createAutomation(input: {
+    userId: string
+    name: string
+    prompt: string
+    schedule: 'interval' | 'daily' | 'once'
+    intervalMinutes: number
+    timeOfDay: string
+    runAt: number | null
+    enabled: boolean
+    nextRunAt: number | null
+  }): Promise<AutomationRow>
+  updateAutomation(
+    id: string,
+    patch: {
+      name?: string
+      prompt?: string
+      schedule?: 'interval' | 'daily' | 'once'
+      intervalMinutes?: number
+      timeOfDay?: string
+      runAt?: number | null
+      enabled?: boolean
+      nextRunAt?: number | null
+    }
+  ): Promise<AutomationRow | null>
+  deleteAutomation(id: string): Promise<void>
+  /** 调度器：到期且未在运行的任务 */
+  listDueAutomations(now: number): Promise<AutomationRow[]>
+  /** 大脑重启时清理上次被中断的 running 状态（否则任务永远不再触发） */
+  resetRunningAutomations(): Promise<number>
+  /** 任务开始：先置 running，防止同一定时器重入 */
+  markAutomationRunning(id: string): Promise<boolean>
+  /** 任务结束：写状态、结果与下次触发时间；nextRunAt=null 表示不再触发 */
+  finishAutomationRun(input: {
+    id: string
+    status: 'success' | 'error'
+    error: string
+    result: string
+    nextRunAt: number | null
+    enabled?: boolean
+  }): Promise<void>
   upsertPlatformAccount(platformId: string, externalUserId: string, userId: string): Promise<void>
 }
 
@@ -395,6 +535,55 @@ export function createDb(cfg: BrainConfig['db']): Db {
             created_at INTEGER NOT NULL,
             PRIMARY KEY (platform_id, external_user_id)
           );
+
+          CREATE TABLE IF NOT EXISTS knowledge_bases (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_knowledge_bases_user ON knowledge_bases(user_id, created_at ASC);
+          CREATE TABLE IF NOT EXISTS knowledge_docs (
+            id TEXT PRIMARY KEY,
+            kb_id TEXT NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT '',
+            chars INTEGER NOT NULL DEFAULT 0,
+            chunks INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_knowledge_docs_kb ON knowledge_docs(kb_id, created_at ASC);
+          CREATE TABLE IF NOT EXISTS knowledge_chunks (
+            id TEXT PRIMARY KEY,
+            kb_id TEXT NOT NULL,
+            doc_id TEXT NOT NULL,
+            ordinal INTEGER NOT NULL,
+            content TEXT NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_kb ON knowledge_chunks(kb_id, doc_id, ordinal);
+
+          CREATE TABLE IF NOT EXISTS automations (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            prompt TEXT NOT NULL,
+            schedule TEXT NOT NULL,
+            interval_minutes INTEGER NOT NULL DEFAULT 60,
+            time_of_day TEXT NOT NULL DEFAULT '',
+            run_at INTEGER,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            next_run_at INTEGER,
+            last_run_at INTEGER,
+            last_status TEXT NOT NULL DEFAULT '',
+            last_error TEXT NOT NULL DEFAULT '',
+            last_result TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+          );
+          CREATE INDEX IF NOT EXISTS idx_automations_due ON automations(enabled, next_run_at);
+          CREATE INDEX IF NOT EXISTS idx_automations_user ON automations(user_id, created_at DESC);
         `)
 
         // 老库升级：turn_metrics 增加 provider 列（SQLite 没有 IF NOT EXISTS 的 ADD COLUMN）
@@ -403,6 +592,14 @@ export function createDb(cfg: BrainConfig['db']): Db {
           .all() as unknown as { name: string }[]
         if (!metricColumns.some((column) => column.name === 'provider')) {
           sqlite.exec("ALTER TABLE turn_metrics ADD COLUMN provider TEXT NOT NULL DEFAULT ''")
+        }
+
+        // 老库升级：sessions 增加 pinned 列（置顶会话）
+        const sessionColumns = sqlite
+          .prepare('PRAGMA table_info(sessions)')
+          .all() as unknown as { name: string }[]
+        if (!sessionColumns.some((column) => column.name === 'pinned')) {
+          sqlite.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
         }
         conn = sqlite
       } catch (error) {
@@ -526,16 +723,17 @@ export function createDb(cfg: BrainConfig['db']): Db {
         user_id: string
         channel: Channel
         title: string
+        pinned: number
         created_ms: number
         updated_ms: number
         message_count: number
       }>(
         getConn(),
-        `SELECT s.id, s.user_id, s.channel, s.title,
+        `SELECT s.id, s.user_id, s.channel, s.title, s.pinned,
                 s.created_at AS created_ms, s.updated_at AS updated_ms,
                 (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
          FROM sessions s WHERE s.user_id = ?
-         ORDER BY s.updated_at DESC, s.rowid DESC`,
+         ORDER BY s.pinned DESC, s.updated_at DESC, s.rowid DESC`,
         [userId]
       )
       return rows.map(
@@ -544,6 +742,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
           userId: row.user_id,
           channel: row.channel,
           title: row.title,
+          pinned: row.pinned === 1,
           createdAt: Number(row.created_ms),
           updatedAt: Number(row.updated_ms),
           messageCount: Number(row.message_count)
@@ -557,12 +756,13 @@ export function createDb(cfg: BrainConfig['db']): Db {
         user_id: string
         channel: Channel
         title: string
+        pinned: number
         created_ms: number
         updated_ms: number
         message_count: number
       }>(
         getConn(),
-        `SELECT s.id, s.user_id, s.channel, s.title,
+        `SELECT s.id, s.user_id, s.channel, s.title, s.pinned,
                 s.created_at AS created_ms, s.updated_at AS updated_ms,
                 (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) AS message_count
          FROM sessions s WHERE s.id = ?`,
@@ -574,6 +774,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         userId: row.user_id,
         channel: row.channel,
         title: row.title,
+        pinned: row.pinned === 1,
         createdAt: Number(row.created_ms),
         updatedAt: Number(row.updated_ms),
         messageCount: Number(row.message_count)
@@ -604,6 +805,69 @@ export function createDb(cfg: BrainConfig['db']): Db {
 
     async reassignSession(id, userId) {
       run(getConn(), 'UPDATE sessions SET user_id = ? WHERE id = ?', [userId, id])
+    },
+
+    async setSessionPinned(id, pinned) {
+      // 只改 pinned：置顶不是一次活动，不动 updated_at
+      run(getConn(), 'UPDATE sessions SET pinned = ? WHERE id = ?', [pinned ? 1 : 0, id])
+    },
+
+    async searchMessages(userId, query, limit = 30) {
+      const keyword = query.trim()
+      if (!keyword) return []
+      const rows = all<{
+        session_id: string
+        session_title: string
+        channel: Channel
+        message_id: string
+        role: 'user' | 'assistant'
+        content: string
+        created_ms: number
+      }>(
+        getConn(),
+        `SELECT s.id AS session_id, s.title AS session_title, s.channel,
+                m.id AS message_id, m.role, m.content, m.created_at AS created_ms
+         FROM messages m JOIN sessions s ON s.id = m.session_id
+         WHERE s.user_id = ? AND m.content LIKE ? ESCAPE '\\'
+         ORDER BY m.created_at DESC, m.rowid DESC
+         LIMIT ?`,
+        [userId, `%${escapeLike(keyword)}%`, Math.min(100, Math.max(1, limit))]
+      )
+      return rows.map((row) => ({
+        sessionId: row.session_id,
+        sessionTitle: row.session_title,
+        channel: row.channel,
+        messageId: row.message_id,
+        role: row.role,
+        content: row.content,
+        createdAt: Number(row.created_ms)
+      }))
+    },
+
+    async sessionUsage(sessionId) {
+      const row = first<{
+        turns: number
+        input_tokens: number
+        output_tokens: number
+        total_tokens: number
+        model: string
+      }>(
+        getConn(),
+        `SELECT COUNT(*) AS turns,
+                COALESCE(SUM(input_tokens), 0) AS input_tokens,
+                COALESCE(SUM(output_tokens), 0) AS output_tokens,
+                COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                COALESCE((SELECT model FROM turn_metrics WHERE session_id = ? ORDER BY started_at DESC LIMIT 1), '') AS model
+         FROM turn_metrics WHERE session_id = ?`,
+        [sessionId, sessionId]
+      )
+      return {
+        turns: Number(row?.turns ?? 0),
+        inputTokens: Number(row?.input_tokens ?? 0),
+        outputTokens: Number(row?.output_tokens ?? 0),
+        totalTokens: Number(row?.total_tokens ?? 0),
+        model: row?.model ?? ''
+      }
     },
 
     async listMessages(sessionId, limit = 200) {
@@ -673,6 +937,21 @@ export function createDb(cfg: BrainConfig['db']): Db {
 
     async deleteMessage(id) {
       run(getConn(), 'DELETE FROM messages WHERE id = ?', [id])
+    },
+
+    async updateMessageContent(id, content) {
+      run(getConn(), 'UPDATE messages SET content = ? WHERE id = ?', [content, id])
+    },
+
+    async deleteMessagesAfter(sessionId, messageId) {
+      const result = getConn()
+        .prepare(
+          `DELETE FROM messages
+            WHERE session_id = ?
+              AND rowid > (SELECT rowid FROM messages WHERE id = ? AND session_id = ?)`
+        )
+        .run(sessionId, messageId, sessionId) as unknown as { changes?: number }
+      return Number(result.changes ?? 0)
     },
 
     async appendMessage(input) {
@@ -1111,6 +1390,332 @@ export function createDb(cfg: BrainConfig['db']): Db {
          ON CONFLICT(platform_id, external_user_id) DO UPDATE SET user_id = excluded.user_id`,
         [platformId, externalUserId, userId, Date.now()]
       )
+    },
+
+    // ---------- knowledge ----------
+
+    async listKnowledgeBases(userId) {
+      const rows = all<KnowledgeBaseDbRow>(
+        getConn(),
+        `SELECT kb.id, kb.user_id, kb.name, kb.description,
+                kb.created_at, kb.updated_at,
+                (SELECT COUNT(*) FROM knowledge_docs d WHERE d.kb_id = kb.id) AS doc_count,
+                (SELECT COUNT(*) FROM knowledge_chunks c WHERE c.kb_id = kb.id) AS chunk_count
+         FROM knowledge_bases kb WHERE kb.user_id = ?
+         ORDER BY kb.created_at ASC`,
+        [userId]
+      )
+      return rows.map(toKnowledgeBaseRow)
+    },
+
+    async getKnowledgeBase(id) {
+      const row = first<KnowledgeBaseDbRow>(
+        getConn(),
+        `SELECT kb.id, kb.user_id, kb.name, kb.description,
+                kb.created_at, kb.updated_at,
+                (SELECT COUNT(*) FROM knowledge_docs d WHERE d.kb_id = kb.id) AS doc_count,
+                (SELECT COUNT(*) FROM knowledge_chunks c WHERE c.kb_id = kb.id) AS chunk_count
+         FROM knowledge_bases kb WHERE kb.id = ?`,
+        [id]
+      )
+      return row ? toKnowledgeBaseRow(row) : null
+    },
+
+    async createKnowledgeBase(input) {
+      const { randomUUID } = await import('node:crypto')
+      const id = randomUUID()
+      const now = Date.now()
+      run(
+        getConn(),
+        `INSERT INTO knowledge_bases (id, user_id, name, description, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, input.userId, input.name, input.description, now, now]
+      )
+      return (await db.getKnowledgeBase(id))!
+    },
+
+    async updateKnowledgeBase(id, patch) {
+      const sets: string[] = []
+      const params: SQLInputValue[] = []
+      if (patch.name !== undefined) {
+        sets.push('name = ?')
+        params.push(patch.name)
+      }
+      if (patch.description !== undefined) {
+        sets.push('description = ?')
+        params.push(patch.description)
+      }
+      if (sets.length > 0) {
+        sets.push('updated_at = ?')
+        params.push(Date.now())
+        params.push(id)
+        run(getConn(), `UPDATE knowledge_bases SET ${sets.join(', ')} WHERE id = ?`, params)
+      }
+      return db.getKnowledgeBase(id)
+    },
+
+    async deleteKnowledgeBase(id) {
+      const sqlite = getConn()
+      sqlite.exec('BEGIN')
+      try {
+        run(sqlite, 'DELETE FROM knowledge_chunks WHERE kb_id = ?', [id])
+        run(sqlite, 'DELETE FROM knowledge_docs WHERE kb_id = ?', [id])
+        run(sqlite, 'DELETE FROM knowledge_bases WHERE id = ?', [id])
+        sqlite.exec('COMMIT')
+      } catch (error) {
+        sqlite.exec('ROLLBACK')
+        throw error
+      }
+    },
+
+    async listKnowledgeDocs(kbId) {
+      const rows = all<{
+        id: string
+        kb_id: string
+        name: string
+        source: string
+        chars: number
+        chunks: number
+        created_at: number
+      }>(
+        getConn(),
+        `SELECT id, kb_id, name, source, chars, chunks, created_at
+         FROM knowledge_docs WHERE kb_id = ? ORDER BY created_at ASC`,
+        [kbId]
+      )
+      return rows.map((row) => ({
+        id: row.id,
+        kbId: row.kb_id,
+        name: row.name,
+        source: row.source,
+        chars: Number(row.chars),
+        chunks: Number(row.chunks),
+        createdAt: Number(row.created_at)
+      }))
+    },
+
+    async addKnowledgeDoc(input) {
+      const sqlite = getConn()
+      const now = Date.now()
+      const chars = input.chunks.reduce((sum, chunk) => sum + chunk.content.length, 0)
+      sqlite.exec('BEGIN')
+      try {
+        run(
+          sqlite,
+          `INSERT INTO knowledge_docs (id, kb_id, name, source, chars, chunks, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [input.id, input.kbId, input.name, input.source, chars, input.chunks.length, now]
+        )
+        for (let index = 0; index < input.chunks.length; index += 1) {
+          const chunk = input.chunks[index]!
+          run(
+            sqlite,
+            `INSERT INTO knowledge_chunks (id, kb_id, doc_id, ordinal, content)
+             VALUES (?, ?, ?, ?, ?)`,
+            [chunk.id, input.kbId, input.id, index, chunk.content]
+          )
+        }
+        run(sqlite, 'UPDATE knowledge_bases SET updated_at = ? WHERE id = ?', [now, input.kbId])
+        sqlite.exec('COMMIT')
+      } catch (error) {
+        sqlite.exec('ROLLBACK')
+        throw error
+      }
+      return {
+        id: input.id,
+        kbId: input.kbId,
+        name: input.name,
+        source: input.source,
+        chars,
+        chunks: input.chunks.length,
+        createdAt: now
+      }
+    },
+
+    async deleteKnowledgeDoc(id) {
+      const sqlite = getConn()
+      const row = first<{ kb_id: string }>(
+        sqlite,
+        'SELECT kb_id FROM knowledge_docs WHERE id = ?',
+        [id]
+      )
+      if (!row) return
+      sqlite.exec('BEGIN')
+      try {
+        run(sqlite, 'DELETE FROM knowledge_chunks WHERE doc_id = ?', [id])
+        run(sqlite, 'DELETE FROM knowledge_docs WHERE id = ?', [id])
+        run(sqlite, 'UPDATE knowledge_bases SET updated_at = ? WHERE id = ?', [Date.now(), row.kb_id])
+        sqlite.exec('COMMIT')
+      } catch (error) {
+        sqlite.exec('ROLLBACK')
+        throw error
+      }
+    },
+
+    async listKnowledgeChunks(kbIds, limit = 5000) {
+      if (kbIds.length === 0) return []
+      const placeholders = kbIds.map(() => '?').join(', ')
+      const rows = all<{
+        id: string
+        kb_id: string
+        doc_id: string
+        doc_name: string
+        ordinal: number
+        content: string
+      }>(
+        getConn(),
+        `SELECT c.id, c.kb_id, c.doc_id, d.name AS doc_name, c.ordinal, c.content
+         FROM knowledge_chunks c JOIN knowledge_docs d ON d.id = c.doc_id
+         WHERE c.kb_id IN (${placeholders})
+         ORDER BY c.kb_id, c.doc_id, c.ordinal
+         LIMIT ?`,
+        [...kbIds, limit]
+      )
+      return rows.map((row) => ({
+        id: row.id,
+        kbId: row.kb_id,
+        docId: row.doc_id,
+        docName: row.doc_name,
+        ordinal: Number(row.ordinal),
+        content: row.content
+      }))
+    },
+
+    // ---------- automations ----------
+
+    async listAutomations(userId) {
+      const rows = all<AutomationDbRow>(
+        getConn(),
+        `SELECT ${AUTOMATION_COLUMNS} FROM automations WHERE user_id = ?
+         ORDER BY created_at DESC`,
+        [userId]
+      )
+      return rows.map(toAutomationRow)
+    },
+
+    async getAutomation(id) {
+      const row = first<AutomationDbRow>(
+        getConn(),
+        `SELECT ${AUTOMATION_COLUMNS} FROM automations WHERE id = ?`,
+        [id]
+      )
+      return row ? toAutomationRow(row) : null
+    },
+
+    async createAutomation(input) {
+      const { randomUUID } = await import('node:crypto')
+      const id = randomUUID()
+      const now = Date.now()
+      run(
+        getConn(),
+        `INSERT INTO automations
+           (id, user_id, name, prompt, schedule, interval_minutes, time_of_day, run_at,
+            enabled, next_run_at, last_run_at, last_status, last_error, last_result, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', '', ?, ?)`,
+        [
+          id,
+          input.userId,
+          input.name,
+          input.prompt,
+          input.schedule,
+          input.intervalMinutes,
+          input.timeOfDay,
+          input.runAt,
+          input.enabled ? 1 : 0,
+          input.nextRunAt,
+          now,
+          now
+        ]
+      )
+      return (await db.getAutomation(id))!
+    },
+
+    async updateAutomation(id, patch) {
+      const sets: string[] = []
+      const params: SQLInputValue[] = []
+      const push = (column: string, value: SQLInputValue): void => {
+        sets.push(`${column} = ?`)
+        params.push(value)
+      }
+      if (patch.name !== undefined) push('name', patch.name)
+      if (patch.prompt !== undefined) push('prompt', patch.prompt)
+      if (patch.schedule !== undefined) push('schedule', patch.schedule)
+      if (patch.intervalMinutes !== undefined) push('interval_minutes', patch.intervalMinutes)
+      if (patch.timeOfDay !== undefined) push('time_of_day', patch.timeOfDay)
+      if (patch.runAt !== undefined) push('run_at', patch.runAt)
+      if (patch.enabled !== undefined) push('enabled', patch.enabled ? 1 : 0)
+      if (patch.nextRunAt !== undefined) push('next_run_at', patch.nextRunAt)
+      if (sets.length > 0) {
+        push('updated_at', Date.now())
+        params.push(id)
+        run(getConn(), `UPDATE automations SET ${sets.join(', ')} WHERE id = ?`, params)
+      }
+      return db.getAutomation(id)
+    },
+
+    async deleteAutomation(id) {
+      run(getConn(), 'DELETE FROM automations WHERE id = ?', [id])
+    },
+
+    async listDueAutomations(now) {
+      const rows = all<AutomationDbRow>(
+        getConn(),
+        `SELECT ${AUTOMATION_COLUMNS} FROM automations
+         WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
+           AND last_status <> 'running'
+         ORDER BY next_run_at ASC`,
+        [now]
+      )
+      return rows.map(toAutomationRow)
+    },
+
+    async resetRunningAutomations() {
+      const result = getConn()
+        .prepare(
+          `UPDATE automations
+              SET last_status = 'error',
+                  last_error = '上次运行被中断（大脑在该任务执行期间退出）',
+                  next_run_at = CASE WHEN last_status = 'running' THEN ? ELSE next_run_at END
+            WHERE last_status = 'running'`
+        )
+        .run(Date.now()) as unknown as { changes?: number }
+      return Number(result.changes ?? 0)
+    },
+
+    async markAutomationRunning(id) {
+      const result = getConn()
+        .prepare(
+          `UPDATE automations SET last_status = 'running', last_error = ''
+            WHERE id = ? AND last_status <> 'running'`
+        )
+        .run(id) as unknown as { changes?: number }
+      return Number(result.changes ?? 0) > 0
+    },
+
+    async finishAutomationRun(input) {
+      const now = Date.now()
+      const sets = [
+        'last_status = ?',
+        'last_error = ?',
+        'last_result = ?',
+        'last_run_at = ?',
+        'next_run_at = ?',
+        'updated_at = ?'
+      ]
+      const params: SQLInputValue[] = [
+        input.status,
+        input.error,
+        input.result,
+        now,
+        input.nextRunAt,
+        now
+      ]
+      if (input.enabled !== undefined) {
+        sets.push('enabled = ?')
+        params.push(input.enabled ? 1 : 0)
+      }
+      params.push(input.id)
+      run(getConn(), `UPDATE automations SET ${sets.join(', ')} WHERE id = ?`, params)
     }
   }
 
@@ -1119,6 +1724,73 @@ export function createDb(cfg: BrainConfig['db']): Db {
 
 const MEMORY_COLUMNS =
   'id, user_id, content, kind, pinned, source_session_id, source_message_id, created_at, last_used_at'
+const AUTOMATION_COLUMNS =
+  'id, user_id, name, prompt, schedule, interval_minutes, time_of_day, run_at, enabled, ' +
+  'next_run_at, last_run_at, last_status, last_error, last_result, created_at, updated_at'
+
+interface KnowledgeBaseDbRow {
+  id: string
+  user_id: string
+  name: string
+  description: string
+  created_at: number
+  updated_at: number
+  doc_count: number
+  chunk_count: number
+}
+
+interface AutomationDbRow {
+  id: string
+  user_id: string
+  name: string
+  prompt: string
+  schedule: 'interval' | 'daily' | 'once'
+  interval_minutes: number
+  time_of_day: string
+  run_at: number | null
+  enabled: number
+  next_run_at: number | null
+  last_run_at: number | null
+  last_status: '' | 'running' | 'success' | 'error'
+  last_error: string
+  last_result: string
+  created_at: number
+  updated_at: number
+}
+
+function toKnowledgeBaseRow(row: KnowledgeBaseDbRow): KnowledgeBaseRow {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    description: row.description,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+    docCount: Number(row.doc_count),
+    chunkCount: Number(row.chunk_count)
+  }
+}
+
+function toAutomationRow(row: AutomationDbRow): AutomationRow {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    name: row.name,
+    prompt: row.prompt,
+    schedule: row.schedule,
+    intervalMinutes: Number(row.interval_minutes),
+    timeOfDay: row.time_of_day,
+    runAt: row.run_at === null ? null : Number(row.run_at),
+    enabled: row.enabled === 1,
+    nextRunAt: row.next_run_at === null ? null : Number(row.next_run_at),
+    lastRunAt: row.last_run_at === null ? null : Number(row.last_run_at),
+    lastStatus: row.last_status,
+    lastError: row.last_error,
+    lastResult: row.last_result,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at)
+  }
+}
 const PROVIDER_COLUMNS =
   'id, name, base_url, api_key, model, proxy, enabled, active, priority, created_at, updated_at'
 const PLATFORM_COLUMNS = 'id, kind, name, enabled, config, created_at, updated_at'

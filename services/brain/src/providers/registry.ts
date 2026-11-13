@@ -1,6 +1,7 @@
 import type { ProviderInput, ProviderItem, ProviderTestResult } from '@pi-amadeus/shared'
 import type { Db, ProviderRow } from '../db.ts'
 import { completeText, supportsVision, type LlmTarget } from '../llm.ts'
+import { isProviderCoolingDown, markProviderFailure, markProviderSuccess } from './failover.ts'
 
 /**
  * 模型服务注册表：密钥只进不出（列表接口只回传 apiKeySet），
@@ -18,6 +19,7 @@ export function toProviderItem(row: ProviderRow): ProviderItem {
     active: row.active,
     priority: row.priority,
     apiKeySet: row.apiKey.trim().length > 0,
+    coolingDown: isProviderCoolingDown(row.id),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   }
@@ -114,12 +116,19 @@ export async function testProvider(db: Db, id: string): Promise<ProviderTestResu
       },
       { signal: controller.signal, maxTokens: 16, temperature: 0 }
     )
+    const trimmed = reply.trim()
+    // 空回复按失败处理：不可达端点在部分客户端里会「成功」返回空流，
+    // 把它当成连通会把真正的坏服务留在池子里
+    if (!trimmed) throw new Error('服务返回了空内容')
+    markProviderSuccess(row.id)
     return {
       ok: true,
       latencyMs: Date.now() - startedAt,
-      reply: reply.trim().slice(0, 40)
+      reply: trimmed.slice(0, 40)
     }
   } catch (error) {
+    // 连通性测试也是真实请求：失败同样让该服务进入冷却，成功后立即解除
+    markProviderFailure(row.id)
     return {
       ok: false,
       latencyMs: Date.now() - startedAt,

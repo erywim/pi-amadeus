@@ -3,6 +3,8 @@ import type { Channel, SseEvent, TurnMode, UserConfig } from '@pi-amadeus/shared
 import type { BrainConfig } from './config.ts'
 import type { Db } from './db.ts'
 import { streamText, supportsVision, toContextMessages, type LlmTarget } from './llm.ts'
+import { knowledgeSystemPrompt } from './knowledge/index.ts'
+import { isProviderCoolingDown } from './providers/failover.ts'
 import { memorySystemPrompt, onTurnFinished, recallMemories, summarizeAffinity } from './memory/index.ts'
 import { buildSystemPrompt } from './persona.ts'
 import { generateTitle } from './title.ts'
@@ -30,15 +32,18 @@ export function framesOf(userId: string): string[] {
 export async function resolveTarget(cfg: BrainConfig, db: Db, userId: string): Promise<LlmTarget> {
   const active = await db.getActiveProvider()
   if (active && active.apiKey.trim()) {
-    return {
-      baseUrl: active.baseUrl,
-      apiKey: active.apiKey,
-      model: active.model,
-      vision: supportsVision(active.model),
-      proxy: active.proxy,
-      providerId: active.id,
-      providerName: active.name
-    }
+    // 激活服务健康 → 用它；冷却中（最近真实失败过）→ 按 priority 自动换下一个健康服务。
+    // 所有服务都在冷却时仍回到激活服务：宁可再试一次，也不让用户突然没有模型可用。
+    if (!isProviderCoolingDown(active.id)) return targetOfProvider(active)
+    const fallback = (await db.listProviders()).find(
+      (provider) =>
+        provider.enabled &&
+        provider.apiKey.trim().length > 0 &&
+        provider.id !== active.id &&
+        !isProviderCoolingDown(provider.id)
+    )
+    if (fallback) return targetOfProvider(fallback)
+    return targetOfProvider(active)
   }
   const stored = await db.getUserConfig(userId)
   const provider = stored?.provider
@@ -50,6 +55,25 @@ export async function resolveTarget(cfg: BrainConfig, db: Db, userId: string): P
     vision: supportsVision(model),
     proxy: provider?.proxy || '',
     providerName: ''
+  }
+}
+
+function targetOfProvider(provider: {
+  id: string
+  name: string
+  baseUrl: string
+  apiKey: string
+  model: string
+  proxy: string
+}): LlmTarget {
+  return {
+    baseUrl: provider.baseUrl,
+    apiKey: provider.apiKey,
+    model: provider.model,
+    vision: supportsVision(provider.model),
+    proxy: provider.proxy,
+    providerId: provider.id,
+    providerName: provider.name
   }
 }
 
@@ -89,6 +113,8 @@ export interface PreparedTurn {
   messages: ReturnType<typeof toContextMessages>
   /** prepareTurn 已读取的用户配置（工具开关等，避免调用方二次 DB 读） */
   userConfig: UserConfig | null
+  /** 本次落库的用户消息 id（重新生成/编辑重发等不写用户消息时为 undefined） */
+  userMessageId?: string
 }
 
 /** 会话上下文准备：懒建会话行、保存用户消息、组装 LLM 上下文 */
@@ -100,12 +126,14 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   // 先读历史再落库本次用户消息：避免当前消息在 LLM 上下文里出现两次
   // （一次纯文本历史、一次带视觉帧）
   // 记忆召回与好感度摘要都来自真实数据；没有记录时返回空，不会凭空生成
-  const [storedConfig, allHistoryRows, recalledMemories, affinity] = await Promise.all([
-    db.getUserConfig(userId),
-    db.listMessages(sessionId, 40),
-    recallMemories(db, userId, content),
-    summarizeAffinity(db, userId)
-  ])
+  const [storedConfig, allHistoryRows, recalledMemories, affinity, knowledgePrompt] =
+    await Promise.all([
+      db.getUserConfig(userId),
+      db.listMessages(sessionId, 40),
+      recallMemories(db, userId, content),
+      summarizeAffinity(db, userId),
+      knowledgeSystemPrompt(db, userId)
+    ])
 
   // 重新生成：旧助手回答既不进上下文、也不删——等新回答成功落库时再替换，
   // 生成失败时旧回答仍在，用户不会因为一次失败丢掉上一版回复。
@@ -113,9 +141,11 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     ? allHistoryRows.filter((row) => row.id !== ctx.omitMessageId)
     : allHistoryRows
 
+  let userMessageId: string | undefined
   if (appendUserMessage) {
+    userMessageId = randomUUID()
     await db.appendMessage({
-      id: randomUUID(),
+      id: userMessageId,
       sessionId,
       role: 'user',
       content,
@@ -125,7 +155,9 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
 
   const target = await resolveTarget(cfg, db, userId)
   const systemPrompt =
-    buildSystemPrompt(storedConfig?.systemPrompt, mode) + memorySystemPrompt(recalledMemories, affinity)
+    buildSystemPrompt(storedConfig?.systemPrompt, mode) +
+    memorySystemPrompt(recalledMemories, affinity) +
+    knowledgePrompt
   const messages = toContextMessages(
     historyRows.map((m) => ({ role: m.role, content: m.content, createdAt: m.createdAt }))
   )
@@ -156,7 +188,7 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     throw new Error('重新生成失败：会话末尾没有用户消息')
   }
 
-  return { target, systemPrompt, messages, userConfig: storedConfig }
+  return { target, systemPrompt, messages, userConfig: storedConfig, userMessageId }
 }
 
 /** 保存助手消息 + 首轮触发异步标题生成 */

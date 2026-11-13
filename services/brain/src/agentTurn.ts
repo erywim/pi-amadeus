@@ -7,8 +7,10 @@ import type { BrainConfig } from './config.ts'
 import { prepareTurn } from './conversation.ts'
 import type { Db } from './db.ts'
 import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
+import { createKnowledgeTool } from './knowledge/index.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { disabledSkillNames } from './plugins/registry.ts'
+import { markProviderFailure, markProviderSuccess } from './providers/failover.ts'
 import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/index.ts'
 import { deniedMessage, rejectAllForTurn, requestBashConfirm } from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
@@ -53,6 +55,8 @@ export interface AgentTurnResult {
   /** 本回合实际执行的工具次数与工具名（看板统计用） */
   toolCalls: number
   toolNames: string[]
+  /** 本次落库的用户消息 id（重新生成/编辑重发不写用户消息时为空） */
+  userMessageId?: string
 }
 
 /** 工具结果文本的 UI 上限（超出截断） */
@@ -92,7 +96,14 @@ export async function* runAgentTurn(
     omitMessageId: opts.omitMessageId
   })
   if (opts.signal?.aborted) {
-    return { full: '', target: prepared.target, usage: { input: 0, output: 0, total: 0 }, toolCalls: 0, toolNames: [] }
+    return {
+      full: '',
+      target: prepared.target,
+      usage: { input: 0, output: 0, total: 0 },
+      toolCalls: 0,
+      toolNames: [],
+      userMessageId: prepared.userMessageId
+    }
   }
 
   const toolsEnabled = prepared.userConfig?.tools?.enabled !== false
@@ -138,6 +149,11 @@ export async function* runAgentTurn(
   const skillBundle = toolsEnabled ? await loadSkillBundle(opts.cfg, disabledSkills) : { skills: [] }
   if (skillBundle.skills.length > 0) {
     tools.push(createUseSkillTool(skillBundle.skills))
+  }
+  // 知识库工具：用户建过知识库才注册（没有知识库时模型不该看到这个工具）
+  if (toolsEnabled) {
+    const knowledgeTool = await createKnowledgeTool(opts.db, opts.userId)
+    if (knowledgeTool) tools.push(knowledgeTool)
   }
   // MCP 插件工具：只取当前已连接的服务，连接失败不阻塞本回合
   if (toolsEnabled) tools.push(...mcpManager.listAgentTools())
@@ -252,11 +268,34 @@ export async function* runAgentTurn(
   }
 
   if (opts.signal?.aborted) {
-    return { full: '', target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
+    return {
+      full: '',
+      target: prepared.target,
+      usage,
+      toolCalls: toolNames.length,
+      toolNames,
+      userMessageId: prepared.userMessageId
+    }
   }
-  if (agent.state.errorMessage) throw new Error(agent.state.errorMessage)
-  if (!full) throw new Error('LLM 返回为空')
+  // 真实回合失败 → 该服务进入冷却，下一回合自动按 priority 换健康服务；
+  // 成功一次立即解除冷却。中止（用户点停止）不算服务故障。
+  if (agent.state.errorMessage) {
+    markProviderFailure(prepared.target.providerId)
+    throw new Error(agent.state.errorMessage)
+  }
+  if (!full) {
+    markProviderFailure(prepared.target.providerId)
+    throw new Error('LLM 返回为空')
+  }
+  markProviderSuccess(prepared.target.providerId)
   // totalTokens 缺失时用输入+输出兜底（部分兼容端点不返回 total）
   if (usage.total === 0) usage.total = usage.input + usage.output
-  return { full, target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
+  return {
+    full,
+    target: prepared.target,
+    usage,
+    toolCalls: toolNames.length,
+    toolNames,
+    userMessageId: prepared.userMessageId
+  }
 }

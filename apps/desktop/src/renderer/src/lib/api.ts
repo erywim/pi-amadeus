@@ -1,10 +1,17 @@
 import type {
   AffinitySummary,
+  AutomationInput,
+  AutomationItem,
   InstalledPlugin,
+  KnowledgeBase,
+  KnowledgeDoc,
+  KnowledgeListResponse,
+  KnowledgeSearchHit,
   MemoryItem,
   MemoryKind,
   MemoryListResponse,
   Message,
+  MessageSearchHit,
   PlatformInput,
   PlatformItem,
   PluginListResponse,
@@ -12,6 +19,7 @@ import type {
   ProviderItem,
   ProviderTestResult,
   Session,
+  SessionUsage,
   SseEvent,
   StatsResponse,
   UserConfig
@@ -99,6 +107,36 @@ export async function renameSessionApi(sessionId: string, title: string, userId:
   if (!res.ok) throw new Error(`会话重命名失败: HTTP ${res.status}`)
 }
 
+/** 置顶 / 取消置顶（置顶不刷新 updated_at） */
+export async function setSessionPinnedApi(
+  sessionId: string,
+  pinned: boolean,
+  userId: string
+): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pinned, userId })
+  })
+  if (!res.ok) throw new Error(`置顶失败: HTTP ${res.status}`)
+}
+
+/** 跨会话消息搜索（正文命中） */
+export async function searchMessagesApi(userId: string, q: string): Promise<MessageSearchHit[]> {
+  const params = new URLSearchParams({ userId, q })
+  const res = await fetch(`${BRAIN_URL}/api/sessions/search?${params}`)
+  if (!res.ok) throw new Error(`消息搜索失败: HTTP ${res.status}`)
+  const json = (await res.json()) as { hits: MessageSearchHit[] }
+  return json.hits
+}
+
+/** 会话级 token 用量（真实回合指标累计） */
+export async function fetchSessionUsage(sessionId: string): Promise<SessionUsage> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}/usage`)
+  if (!res.ok) throw new Error(`用量读取失败: HTTP ${res.status}`)
+  return (await res.json()) as SessionUsage
+}
+
 // ---------- 用户配置（服务端 SQLite 单一来源） ----------
 
 export type ApiKeyStatus = 'default' | 'custom' | 'none'
@@ -144,7 +182,7 @@ interface TurnBody {
  * 按 error 事件通知（否则 streaming/pendingUser 等状态卡死）。
  */
 function runTurn(
-  endpoint: '/api/chat' | '/api/chat/regenerate' | '/api/voice',
+  endpoint: '/api/chat' | '/api/chat/regenerate' | '/api/chat/edit' | '/api/voice',
   body: TurnBody,
   onEvent: (event: SseEvent) => void
 ): AbortController {
@@ -220,6 +258,14 @@ export function startRegenerate(
   onEvent: (event: SseEvent) => void
 ): AbortController {
   return runTurn('/api/chat/regenerate', body, onEvent)
+}
+
+/** 编辑用户消息并重发：服务端截断该消息之后的内容，再以新正文跑一个回合 */
+export function startEditTurn(
+  body: { userId: string; sessionId: string; messageId: string; content: string },
+  onEvent: (event: SseEvent) => void
+): AbortController {
+  return runTurn('/api/chat/edit', body, onEvent)
 }
 
 /** 语音回合（双语言 + TTS 音频） */
@@ -520,4 +566,179 @@ export async function fetchStats(userId: string, days = 14): Promise<StatsRespon
   )
   if (!res.ok) throw new Error(await readError(res, '统计数据加载失败'))
   return (await res.json()) as StatsResponse
+}
+
+// ---------- 知识库 ----------
+
+export async function fetchKnowledgeBases(userId: string): Promise<KnowledgeListResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/knowledge?userId=${encodeURIComponent(userId)}`)
+  if (!res.ok) throw new Error(await readError(res, '知识库加载失败'))
+  return (await res.json()) as KnowledgeListResponse
+}
+
+export async function createKnowledgeBaseApi(input: {
+  userId: string
+  name: string
+  description?: string
+}): Promise<KnowledgeBase> {
+  const res = await fetch(`${BRAIN_URL}/api/knowledge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(await readError(res, '创建知识库失败'))
+  const json = (await res.json()) as { base: KnowledgeBase }
+  return json.base
+}
+
+export async function deleteKnowledgeBaseApi(id: string, userId: string): Promise<void> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/knowledge/${encodeURIComponent(id)}?userId=${encodeURIComponent(userId)}`,
+    { method: 'DELETE' }
+  )
+  if (!res.ok) throw new Error(await readError(res, '删除知识库失败'))
+}
+
+export async function fetchKnowledgeDocs(id: string, userId: string): Promise<KnowledgeDoc[]> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/knowledge/${encodeURIComponent(id)}/docs?userId=${encodeURIComponent(userId)}`
+  )
+  if (!res.ok) throw new Error(await readError(res, '文档列表加载失败'))
+  const json = (await res.json()) as { docs: KnowledgeDoc[] }
+  return json.docs
+}
+
+/** 粘贴文本导入 */
+export async function importKnowledgeTextApi(
+  id: string,
+  userId: string,
+  input: { name: string; content: string }
+): Promise<KnowledgeDoc> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/knowledge/${encodeURIComponent(id)}/docs?userId=${encodeURIComponent(userId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input)
+    }
+  )
+  if (!res.ok) throw new Error(await readError(res, '导入文档失败'))
+  const json = (await res.json()) as { doc: KnowledgeDoc }
+  return json.doc
+}
+
+/** 上传纯文本文件 */
+export async function importKnowledgeFileApi(
+  id: string,
+  userId: string,
+  file: File
+): Promise<KnowledgeDoc> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('name', file.name)
+  const res = await fetch(
+    `${BRAIN_URL}/api/knowledge/${encodeURIComponent(id)}/docs?userId=${encodeURIComponent(userId)}`,
+    { method: 'POST', body: form }
+  )
+  if (!res.ok) throw new Error(await readError(res, '文件导入失败'))
+  const json = (await res.json()) as { doc: KnowledgeDoc }
+  return json.doc
+}
+
+/** URL 导入（服务端抓取并去标签） */
+export async function importKnowledgeUrlApi(
+  id: string,
+  userId: string,
+  url: string
+): Promise<KnowledgeDoc> {
+  const res = await fetch(
+    `${BRAIN_URL}/api/knowledge/${encodeURIComponent(id)}/import-url?userId=${encodeURIComponent(userId)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    }
+  )
+  if (!res.ok) throw new Error(await readError(res, 'URL 导入失败'))
+  const json = (await res.json()) as { doc: KnowledgeDoc }
+  return json.doc
+}
+
+export async function deleteKnowledgeDocApi(docId: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/knowledge/docs/${encodeURIComponent(docId)}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error(await readError(res, '删除文档失败'))
+}
+
+export async function searchKnowledgeApi(
+  id: string,
+  userId: string,
+  query: string
+): Promise<KnowledgeSearchHit[]> {
+  const params = new URLSearchParams({ userId, q: query })
+  const res = await fetch(
+    `${BRAIN_URL}/api/knowledge/${encodeURIComponent(id)}/search?${params.toString()}`
+  )
+  if (!res.ok) throw new Error(await readError(res, '检索失败'))
+  const json = (await res.json()) as { hits: KnowledgeSearchHit[] }
+  return json.hits
+}
+
+// ---------- 自动化任务 ----------
+
+export async function fetchAutomations(userId: string): Promise<AutomationItem[]> {
+  const res = await fetch(`${BRAIN_URL}/api/automations?userId=${encodeURIComponent(userId)}`)
+  if (!res.ok) throw new Error(await readError(res, '自动化任务加载失败'))
+  const json = (await res.json()) as { automations: AutomationItem[] }
+  return json.automations
+}
+
+export async function createAutomationApi(
+  userId: string,
+  input: Omit<AutomationInput, 'enabled'> & { enabled?: boolean }
+): Promise<AutomationItem> {
+  const res = await fetch(`${BRAIN_URL}/api/automations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, ...input })
+  })
+  if (!res.ok) throw new Error(await readError(res, '创建自动化任务失败'))
+  const json = (await res.json()) as { automation: AutomationItem }
+  return json.automation
+}
+
+export async function updateAutomationApi(
+  id: string,
+  patch: Partial<AutomationInput>
+): Promise<AutomationItem> {
+  const res = await fetch(`${BRAIN_URL}/api/automations/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch)
+  })
+  if (!res.ok) throw new Error(await readError(res, '更新自动化任务失败'))
+  const json = (await res.json()) as { automation: AutomationItem }
+  return json.automation
+}
+
+export async function deleteAutomationApi(id: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/automations/${encodeURIComponent(id)}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error(await readError(res, '删除自动化任务失败'))
+}
+
+export async function runAutomationApi(id: string): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/automations/${encodeURIComponent(id)}/run`, {
+    method: 'POST'
+  })
+  if (!res.ok) throw new Error(await readError(res, '启动任务失败'))
+}
+
+export async function fetchAutomationMessages(id: string): Promise<Message[]> {
+  const res = await fetch(`${BRAIN_URL}/api/automations/${encodeURIComponent(id)}/messages`)
+  if (!res.ok) throw new Error(await readError(res, '运行记录加载失败'))
+  const json = (await res.json()) as { messages: Message[] }
+  return json.messages
 }

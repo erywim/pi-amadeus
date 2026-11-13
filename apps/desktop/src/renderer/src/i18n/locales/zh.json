@@ -11,7 +11,9 @@
     "dashboard": "数据",
     "settings": "设置",
     "modeSwitch": "对话模式",
-    "memory": "记忆"
+    "memory": "记忆",
+    "knowledge": "知识库",
+    "automations": "自动化"
   },
   "topbar": {
     "modelChip": "当前 LLM 模型（文本模式输入区可切换）",
@@ -28,7 +30,10 @@
     "feishu": "飞书",
     "telegram": "Telegram",
     "onebot": "QQ",
-    "webhook": "Webhook"
+    "webhook": "Webhook",
+    "discord": "Discord",
+    "slack": "Slack",
+    "automation": "自动化"
   },
   "plugins": {
     "title": "插件中心",
@@ -168,7 +173,26 @@
     "toolApprove": "允许执行",
     "toolReject": "拒绝",
     "toolConfirmExpires": "{{seconds}} 秒后自动拒绝",
-    "toolConfirmExpired": "已超时，命令未执行"
+    "toolConfirmExpired": "已超时，命令未执行",
+    "pin": "置顶会话",
+    "unpin": "取消置顶",
+    "pinned": "置顶",
+    "edit": "编辑后重发",
+    "editSave": "保存并重发",
+    "editCancel": "取消编辑",
+    "editHint": "保存后会丢弃这条消息之后的对话，并以新内容重新回答。",
+    "searchMessages": "搜索消息内容…",
+    "messageResults": "消息命中",
+    "noMessageResults": "正文里没有匹配",
+    "usage": "本会话用量",
+    "tokens": "tokens",
+    "preview": "预览",
+    "artifact": "工件预览",
+    "artifactClose": "关闭预览",
+    "artifactCopy": "复制代码",
+    "artifactDownload": "下载",
+    "artifactError": "渲染失败",
+    "artifactHint": "模型输出的 HTML / SVG / Mermaid 在这里以沙箱方式预览。"
   },
   "companion": {
     "charName": "牧濑红莉栖",
@@ -314,7 +338,7 @@
     },
     "providers": {
       "title": "模型服务",
-      "desc": "添加多个 OpenAI 兼容服务并随时切换；激活的服务优先于下面的内置配置。密钥只保存在本机大脑服务里。",
+      "desc": "一份服务 = 一个 OpenAI 兼容端点 + 密钥 + 默认模型。激活服务优先于内置配置；真实回合失败后该服务冷却 10 分钟，期间自动按优先级改用下一个健康服务。",
       "add": "添加服务",
       "empty": "还没有模型服务。未添加时使用下面的内置配置。",
       "active": "使用中",
@@ -337,11 +361,12 @@
       "model": "模型",
       "proxy": "代理（可选）",
       "enabled": "启用",
-      "confirmDelete": "确认删除"
+      "confirmDelete": "确认删除",
+      "coolingDown": "故障冷却"
     },
     "platforms": {
       "title": "通讯平台",
-      "desc": "把 Amadeus 接到 Telegram、QQ（OneBot v11）或任意 Webhook 服务；各平台共用同一套会话、记忆与好感度，桌面端也能看到并继续。",
+      "desc": "把 Amadeus 接到 Telegram、QQ（OneBot v11）、Discord、Slack 或任意 Webhook 服务；各平台共用同一套会话、记忆与好感度，桌面端也能看到并继续。",
       "add": "添加平台",
       "empty": "还没有接入通讯平台。添加后，外部消息会进入同一个 Amadeus。",
       "saved": "已保存",
@@ -353,7 +378,9 @@
       "kind": {
         "telegram": "Telegram",
         "onebot": "QQ（OneBot）",
-        "webhook": "Webhook"
+        "webhook": "Webhook",
+        "discord": "Discord",
+        "slack": "Slack"
       },
       "state": {
         "running": "运行中",
@@ -375,7 +402,14 @@
       "outboundUrl": "出站地址",
       "secret": "签名密钥（可选）",
       "secretKeep": "已保存，留空保持不变",
-      "optional": "可选"
+      "optional": "可选",
+      "discordToken": "Bot Token",
+      "discordGateway": "Gateway 地址（可选，默认官方）",
+      "discordApiBase": "API 地址（可选，默认官方）",
+      "slackBotToken": "Bot Token（xoxb）",
+      "slackAppToken": "App Token（xapp，Socket Mode）",
+      "slackApiBase": "API 地址（可选，默认官方）",
+      "channelIdPlaceholder": "频道 / 会话 ID"
     }
   },
   "live2d": {
@@ -506,5 +540,90 @@
       "empty": "还没有互动记录",
       "footnote": "好感度只来自真实发生的回合与记忆：每轮 +1 起，认真倾诉、深入交流、一起完成任务会更多。"
     }
+  },
+  "knowledge": {
+    "title": "知识库",
+    "subtitle": "导入文档，聊天时自动检索原文；回答只引用真实导入的内容。",
+    "create": "新建知识库",
+    "namePlaceholder": "知识库名称，例如「产品文档」",
+    "descPlaceholder": "一句话说明（可选）",
+    "empty": "还没有知识库",
+    "emptyHint": "新建一个知识库，然后把 txt / md 文件、网页链接或直接粘贴的文本导进去。",
+    "bases": "知识库",
+    "docs": "文档",
+    "chunks": "片段",
+    "docCount": "{{count}} 篇",
+    "chunkCount": "{{count}} 段",
+    "deleteBase": "删除知识库",
+    "confirmDeleteBase": "再点一次删除（连同文档一起）",
+    "import": "导入资料",
+    "importText": "粘贴文本",
+    "importFile": "上传文件",
+    "importUrl": "从链接导入",
+    "docName": "文档名称",
+    "docNamePlaceholder": "给这份资料起个名字",
+    "docContent": "正文",
+    "docContentPlaceholder": "把要导入的文本粘贴在这里…",
+    "urlPlaceholder": "https://example.com/article",
+    "importing": "正在导入…",
+    "imported": "已导入",
+    "deleted": "已删除",
+    "searchPlaceholder": "在这个知识库里搜一下…",
+    "searchHint": "检索走与聊天相同的 TF-IDF 关键词匹配，返回真实原文片段。",
+    "searchEmpty": "没有检索到相关内容",
+    "searchResults": "检索结果",
+    "noDocs": "这个知识库还没有文档",
+    "docChars": "{{count}} 字",
+    "docChunks": "{{count}} 段",
+    "source": "来源",
+    "uploadHint": "支持 txt / md / json / csv / log 等纯文本文件，PDF / DOCX 请先转成文本。",
+    "close": "收起",
+    "loginRequired": "登录后可以使用知识库"
+  },
+  "automations": {
+    "title": "自动化任务",
+    "subtitle": "到点让 Amadeus 自己跑一个真实回合：定时整理、巡检、提醒都可以。",
+    "create": "新建任务",
+    "edit": "编辑任务",
+    "name": "任务名称",
+    "namePlaceholder": "例如「每早整理科技新闻」",
+    "prompt": "指令",
+    "promptPlaceholder": "到点后要 Amadeus 做的事，例如：搜索今天 AI 领域的三条重要新闻并总结。",
+    "schedule": "调度方式",
+    "interval": "按间隔",
+    "daily": "每天定时",
+    "once": "一次性",
+    "intervalMinutes": "间隔（分钟）",
+    "timeOfDay": "时间（HH:MM）",
+    "runAt": "执行时间",
+    "enabled": "启用",
+    "runNow": "立即运行",
+    "running": "运行中",
+    "nextRun": "下次运行",
+    "lastRun": "上次运行",
+    "never": "从未运行",
+    "lastResult": "上次结果",
+    "viewResult": "查看结果",
+    "hideResult": "收起结果",
+    "openSession": "在会话中打开",
+    "empty": "还没有自动化任务",
+    "emptyHint": "新建一个任务，给它一句指令和一个时间。到点后它会真的运行，并把结果留在独立会话里。",
+    "confirmDelete": "再点一次删除",
+    "created": "任务已创建",
+    "saved": "任务已更新",
+    "deleted": "任务已删除",
+    "started": "任务已开始运行",
+    "status": {
+      "success": "成功",
+      "error": "失败",
+      "running": "运行中",
+      "idle": "待运行"
+    },
+    "scheduleLabel": {
+      "interval": "每 {{minutes}} 分钟",
+      "daily": "每天 {{time}}",
+      "once": "一次性"
+    },
+    "loginRequired": "登录后可以使用自动化任务"
   }
 }

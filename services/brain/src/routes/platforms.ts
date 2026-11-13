@@ -3,18 +3,23 @@ import type { PlatformItem, PlatformKind } from '@pi-amadeus/shared'
 import type { Db, PlatformRow } from '../db.ts'
 import { platformManager } from '../platforms/manager.ts'
 
-const KINDS = new Set<PlatformKind>(['telegram', 'onebot', 'webhook'])
+const KINDS = new Set<PlatformKind>(['telegram', 'onebot', 'webhook', 'discord', 'slack'])
 
 const FIELDS: Record<PlatformKind, string[]> = {
   telegram: ['token', 'baseUrl', 'testChatId'],
   onebot: ['url', 'accessToken', 'testChatId'],
-  webhook: ['outboundUrl', 'secret']
+  webhook: ['outboundUrl', 'secret'],
+  discord: ['botToken', 'gatewayUrl', 'apiBaseUrl', 'testChatId'],
+  slack: ['botToken', 'appToken', 'apiBaseUrl', 'testChatId']
 }
 
-const SECRET_FIELDS: Record<PlatformKind, string> = {
-  telegram: 'token',
-  onebot: 'accessToken',
-  webhook: 'secret'
+/** 每个平台的密钥字段；编辑时留空表示保持原值 */
+const SECRET_FIELDS: Record<PlatformKind, string[]> = {
+  telegram: ['token'],
+  onebot: ['accessToken'],
+  webhook: ['secret'],
+  discord: ['botToken'],
+  slack: ['botToken', 'appToken']
 }
 
 /**
@@ -137,6 +142,20 @@ function maskConfig(kind: PlatformKind, config: Record<string, unknown>): Record
         outboundUrl: text('outboundUrl'),
         secretSet: text('secret').length > 0
       }
+    case 'discord':
+      return {
+        gatewayUrl: text('gatewayUrl'),
+        apiBaseUrl: text('apiBaseUrl'),
+        testChatId: text('testChatId'),
+        botTokenSet: text('botToken').length > 0
+      }
+    case 'slack':
+      return {
+        apiBaseUrl: text('apiBaseUrl'),
+        testChatId: text('testChatId'),
+        botTokenSet: text('botToken').length > 0,
+        appTokenSet: text('appToken').length > 0
+      }
   }
 }
 
@@ -164,7 +183,7 @@ function mergeConfig(
   for (const field of FIELDS[kind]) {
     const value = input[field]
     if (value === undefined) continue
-    if (field === SECRET_FIELDS[kind] && value.trim() === '') continue
+    if (SECRET_FIELDS[kind].includes(field) && value.trim() === '') continue
     merged[field] = value.trim()
   }
   return merged
@@ -180,6 +199,21 @@ function validate(kind: PlatformKind, config: Record<string, string>): string | 
   if (kind === 'onebot') {
     if (!config.url) return '缺少 OneBot WebSocket 地址'
     if (!/^wss?:\/\//.test(config.url)) return '地址必须以 ws:// 或 wss:// 开头'
+    return null
+  }
+  if (kind === 'discord') {
+    if (!config.botToken) return '缺少 Bot Token'
+    if (config.gatewayUrl && !/^wss?:\/\//.test(config.gatewayUrl)) {
+      return 'Gateway 地址必须以 ws:// 或 wss:// 开头'
+    }
+    if (config.apiBaseUrl && !isHttpUrl(config.apiBaseUrl)) return 'API 地址必须是 http(s) 地址'
+    if (config.testChatId && !/^\d+$/.test(config.testChatId)) return '测试频道 ID 必须是数字'
+    return null
+  }
+  if (kind === 'slack') {
+    if (!config.botToken) return '缺少 Bot Token（xoxb）'
+    if (!config.appToken) return '缺少 App Token（xapp，需开启 Socket Mode）'
+    if (config.apiBaseUrl && !isHttpUrl(config.apiBaseUrl)) return 'API 地址必须是 http(s) 地址'
     return null
   }
   if (!config.outboundUrl) return '缺少出站地址（outboundUrl）'

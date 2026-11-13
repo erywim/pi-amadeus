@@ -80,7 +80,12 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           toolCalls: result.toolCalls,
           toolNames: result.toolNames
         })
-        yield { type: 'done', sessionId, messageId }
+        yield {
+          type: 'done',
+          sessionId,
+          messageId,
+          ...(result.userMessageId ? { userMessageId: result.userMessageId } : {})
+        }
       },
       c.req.raw.signal
     )
@@ -179,6 +184,101 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           toolNames: result.toolNames
         })
         yield { type: 'done', sessionId, messageId }
+      },
+      c.req.raw.signal
+    )
+  })
+
+  /**
+   * 编辑用户消息并重发：改正文 → 截断该消息之后的所有消息 → 以编辑后的内容重跑。
+   * 这是 LibreChat 式「编辑后重发」：之后的分支内容会被丢弃，界面对应截断。
+   */
+  app.post('/chat/edit', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as
+      | { userId?: unknown; sessionId?: unknown; messageId?: unknown; content?: unknown }
+      | null
+    const userId = typeof body?.userId === 'string' ? body.userId : ''
+    const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
+    const messageId = typeof body?.messageId === 'string' ? body.messageId : ''
+    const content = typeof body?.content === 'string' ? body.content.trim() : ''
+    if (!userId || !sessionId || !messageId || !content) {
+      return c.json({ error: 'userId/sessionId/messageId/content 必填' }, 400)
+    }
+    if (content.length > 20_000) return c.json({ error: '消息过长（上限 20000 字）' }, 400)
+
+    const session = await db.getSession(sessionId)
+    if (!session || session.userId !== userId) return c.json({ error: '会话不存在' }, 404)
+    const rows = await db.listMessages(sessionId, 400)
+    const target = rows.find((row) => row.id === messageId)
+    if (!target) return c.json({ error: '消息不存在' }, 404)
+    if (target.role !== 'user') return c.json({ error: '只能编辑用户消息' }, 400)
+
+    // 截断与改写都发生在流开始之前：即使模型随后失败，会话也停在「等待回答」的状态，
+    // 用户可以重试，不会留下半截旧分支
+    await db.updateMessageContent(messageId, content)
+    await db.deleteMessagesAfter(sessionId, messageId)
+
+    return sseResponse(
+      async function* (signal) {
+        const startedAt = Date.now()
+        let full = ''
+        let target2: AgentTurnResult['target'] | null = null
+        let result: AgentTurnResult | null = null
+        try {
+          const run = runAgentTurn({
+            cfg,
+            db,
+            userId,
+            sessionId,
+            channel: 'desktop',
+            mode: 'text',
+            content,
+            signal,
+            // 编辑后的用户消息已经在历史里，不能再写一条
+            appendUserMessage: false
+          })
+          let next = await run.next()
+          while (!next.done) {
+            yield next.value
+            next = await run.next()
+          }
+          result = next.value
+          full = result.full
+          target2 = result.target
+        } catch (error) {
+          if (signal.aborted) return
+          const message = error instanceof Error ? error.message : String(error)
+          console.error('[chat] 编辑重发失败：', message)
+          yield { type: 'error', message }
+          return
+        }
+        if (signal.aborted || !full || !target2 || !result) {
+          if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空' }
+          return
+        }
+        const messageId2 = await finishTurn(db, {
+          sessionId,
+          userId,
+          channel: 'desktop',
+          mode: 'text',
+          content: full,
+          ttsText: null,
+          target: target2,
+          userText: content,
+          toolCalls: result.toolCalls
+        })
+        await recordTurnMetric(db, {
+          sessionId,
+          userId,
+          channel: 'desktop',
+          startedAt,
+          model: result.target.model,
+          providerName: result.target.providerName,
+          usage: result.usage,
+          toolCalls: result.toolCalls,
+          toolNames: result.toolNames
+        })
+        yield { type: 'done', sessionId, messageId: messageId2 }
       },
       c.req.raw.signal
     )

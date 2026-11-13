@@ -187,7 +187,13 @@ try {
   )
   report('记忆：搜索过滤', true)
   await evalJs(setInput('[data-testid="memory-search"]', ''))
-  await waitFor(`document.querySelectorAll('[data-testid="memory-item"]').length > 1`, 5000, '清空搜索')
+  // 只断言「刚新增的这条回来了」，不假设该用户还有别的历史记忆：
+  // 换一个全新身份跑时，>1 会误报成失败
+  await waitFor(
+    `window.__amadeus.memoryStore.getState().memories.some(m=>m.id===${JSON.stringify(added.id)})`,
+    5000,
+    '清空搜索'
+  )
 
   await evalJs(clickIn(itemSelector, 'memory-delete'))
   await sleep(200)

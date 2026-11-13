@@ -7,7 +7,9 @@ import {
   fetchMessages,
   fetchSessions,
   renameSessionApi,
+  setSessionPinnedApi,
   startChatTurn,
+  startEditTurn,
   startRegenerate
 } from '@renderer/lib/api'
 import { useLive2dStore } from './live2dStore'
@@ -70,6 +72,10 @@ interface SessionState {
   sendMessage: (text: string) => void
   /** 重新生成最后一条回复（会话末尾是用户消息时等于重试失败的回合） */
   regenerate: () => void
+  /** 编辑用户消息并重发：服务端截断后续消息，本地同步截断后追加新回复 */
+  editMessage: (messageId: string, content: string) => void
+  /** 置顶 / 取消置顶（乐观更新；失败回滚） */
+  togglePin: (id: string) => Promise<void>
   stopStreaming: () => void
   /** bash 确认卡应答（允许/拒绝） */
   respondToolConfirm: (approved: boolean) => void
@@ -100,6 +106,30 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     abortTurn?.abort()
     abortTurn = null
     set({ stream: { streaming: false, tools: [] } })
+    // 停止/失败都不会收到 done 事件，本地用户消息仍是 local-… 临时 id；
+    // 从服务端回读一次、只把 id 对齐到落库值（不覆盖本地消息列，避免把用户
+    // 刚发出的下一条消息冲掉），否则紧接着「编辑后重发」会 404。
+    if (ownerSessionId) {
+      const sessionId = ownerSessionId
+      void fetchMessages(sessionId)
+        .then((serverMessages) => {
+          set((s) => {
+            // 新一轮已经开始：这次回读的旧快照不能碰当前消息列
+            if (s.stream.streaming && s.stream.sessionId === sessionId) return {}
+            const local = s.messages[sessionId] ?? []
+            const next = local.map((message, index) => {
+              const counterpart = serverMessages[index]
+              return counterpart &&
+                counterpart.role === message.role &&
+                counterpart.content === message.content
+                ? { ...message, id: counterpart.id }
+                : message
+            })
+            return { messages: { ...s.messages, [sessionId]: next } }
+          })
+        })
+        .catch((error) => console.warn('[session] 消息 id 对齐失败：', error))
+    }
   }
 
   /**
@@ -204,10 +234,19 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           // 重新生成：服务端已替换旧回复，本地同步摘掉末尾那条旧助手消息，
           // 否则界面会留下「旧回答 + 新回答」两条
           const base = replaceLast && prev.at(-1)?.role === 'assistant' ? prev.slice(0, -1) : prev
+          // 发送时插入的用户消息是本地临时 id（local-…）；服务端把落库后的 id 带回来，
+          // 这里替换掉，之后「编辑后重发」才能按真实 id 定位
+          const withServerIds = event.userMessageId
+            ? base.map((message, index) =>
+                index === base.length - 1 && message.role === 'user'
+                  ? { ...message, id: event.userMessageId! }
+                  : message
+              )
+            : base
           return {
             messages: {
               ...s.messages,
-              [sessionId]: [...base, assistantMessage]
+              [sessionId]: [...withServerIds, assistantMessage]
             },
             stream: { streaming: false, tools: [] },
             // 回合正常结束：工具活动快照归档到该条 assistant 消息（工作卡可展开回看）
@@ -431,6 +470,65 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       abortTurn = startRegenerate({ userId, sessionId }, (event) => {
         handleTurnEvent(sessionId, event, true)
       })
+    },
+
+    editMessage: (messageId, content) => {
+      const { activeSessionId, stream, userId, messages } = get()
+      if (stream.streaming || !activeSessionId || !userId) return
+      const trimmed = content.trim()
+      if (!trimmed) return
+      const sessionId = activeSessionId
+      const list = messages[sessionId] ?? []
+      const index = list.findIndex((message) => message.id === messageId && message.role === 'user')
+      if (index < 0) return
+      const kept = list.slice(0, index + 1)
+      const edited: Message = { ...kept[index]!, content: trimmed }
+      const nextMessages = [...kept.slice(0, index), edited]
+      const keptIds = new Set(nextMessages.map((message) => message.id))
+      const draftId = `local-${Date.now()}-a`
+      turnStartedAt = Date.now()
+
+      // 本地与服务端同步截断：编辑点之后的旧分支立即从界面消失，
+      // 新回复以普通回合追加（服务端同样先截断再跑）
+      set((s) => ({
+        messages: { ...s.messages, [sessionId]: nextMessages },
+        stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
+        turnErrors: Object.fromEntries(
+          Object.entries(s.turnErrors).filter(([key]) => key !== sessionId)
+        ),
+        stoppedLogs: Object.fromEntries(
+          Object.entries(s.stoppedLogs).filter(([key]) => key !== sessionId)
+        ),
+        workLogs: Object.fromEntries(
+          Object.entries(s.workLogs).filter(([key]) => keptIds.has(key))
+        )
+      }))
+
+      abortTurn = startEditTurn({ userId, sessionId, messageId, content: trimmed }, (event) => {
+        handleTurnEvent(sessionId, event, false)
+      })
+    },
+
+    togglePin: async (id) => {
+      const { userId, sessions } = get()
+      if (!userId) return
+      const prev = sessions.find((session) => session.id === id)?.pinned ?? false
+      const next = !prev
+      set((s) => ({
+        sessions: s.sessions.map((session) =>
+          session.id === id ? { ...session, pinned: next } : session
+        )
+      }))
+      try {
+        await setSessionPinnedApi(id, next, userId)
+      } catch (error) {
+        set((s) => ({
+          sessions: s.sessions.map((session) =>
+            session.id === id ? { ...session, pinned: prev } : session
+          )
+        }))
+        throw error
+      }
     },
 
     stopStreaming: () => {

@@ -1,12 +1,15 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
+import { automationScheduler } from './automation/scheduler.ts'
 import { loadConfig } from './config.ts'
 import { createDb } from './db.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { platformManager } from './platforms/manager.ts'
 import { syncMcpPlugins } from './plugins/registry.ts'
+import { automationRoutes } from './routes/automations.ts'
 import { chatRoutes } from './routes/chat.ts'
+import { knowledgeRoutes } from './routes/knowledge.ts'
 import { configRoutes } from './routes/config.ts'
 import { feishuRoutes } from './routes/feishu.ts'
 import { frameRoutes } from './routes/frames.ts'
@@ -32,6 +35,10 @@ void syncMcpPlugins(db)
 void platformManager.init(cfg, db).catch((error) => {
   console.warn('[platform] 初始化失败：', error instanceof Error ? error.message : error)
 })
+// 自动化调度器：每 15 秒检查一次到期任务（没有到期任务时只查一次库）
+void automationScheduler.init(cfg, db).catch((error) => {
+  console.warn('[automation] 调度器启动失败：', error instanceof Error ? error.message : error)
+})
 
 const app = new Hono()
 
@@ -54,6 +61,8 @@ app.route('/api', pluginRoutes(cfg, db))
 app.route('/api', providerRoutes(db))
 app.route('/api', platformRoutes(db))
 app.route('/api', memoryRoutes(db))
+app.route('/api', knowledgeRoutes(db))
+app.route('/api', automationRoutes(db))
 app.route('/api', statsRoutes(db))
 app.route('/api', toolConfirmRoutes())
 if (cfg.feishu.enabled) {
@@ -73,6 +82,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     // 先断开 MCP 子进程与平台连接，再关数据库：退出后不留孤儿连接
     mcpManager.closeAll()
     platformManager.stopAll()
+    automationScheduler.stop()
     void db.close().finally(() => process.exit(0))
   })
 }

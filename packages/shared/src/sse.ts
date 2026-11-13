@@ -36,6 +36,12 @@ export interface SseDoneEvent extends SseEventBase {
   type: 'done'
   sessionId: string
   messageId: string
+  /**
+   * 本回合落库后的用户消息 id。
+   * 客户端发送时先插入一条本地临时消息（id 以 local- 开头），
+   * 拿到服务端 id 后替换，编辑/重发等按 id 定位的操作才不会打到不存在的消息上。
+   */
+  userMessageId?: string
   /** 会话自动标题（首轮后异步生成，可能后到） */
   title?: string
 }
