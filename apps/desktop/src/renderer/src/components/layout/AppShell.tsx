@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useEffect, useRef } from 'react'
-import { BarChart3, Blocks, Brain, Settings, Terminal, UserRound } from 'lucide-react'
+import { ArrowLeftRight, BarChart3, Blocks, Brain, Settings, Terminal, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { cn } from '@renderer/lib/utils'
@@ -12,7 +12,7 @@ import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
-const TAB_ROUTES = ['/companion', '/text', '/memory', '/plugins', '/dashboard'] as const
+const TAB_ROUTES = ['/companion', '/text', '/memory', '/plugins', '/dashboard', '/conversion'] as const
 
 /**
  * 应用外壳（OpenDesign 原型结构）：56px 顶栏 = 品牌区 + 模式页签
@@ -90,7 +90,8 @@ export default function AppShell(): React.JSX.Element {
     { path: '/text', icon: Terminal, label: t('nav.text') },
     { path: '/memory', icon: Brain, label: t('nav.memory') },
     { path: '/plugins', icon: Blocks, label: t('nav.plugins') },
-    { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') }
+    { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') },
+    { path: '/conversion', icon: ArrowLeftRight, label: t('nav.conversion') }
   ]
 
   return (
