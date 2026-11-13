@@ -301,7 +301,7 @@ export class WindowManager {
       if (this.pet === pet && !this.petShown) this.setMode('window')
     }, PET_READY_TIMEOUT_MS)
     loadRenderer(pet, { window: 'pet' })
-    this.computer?.registerWindow(pet)
+    // 桌宠窗口没有聊天回合，不登记为 computer 执行 sender，避免跨窗口误操作。
     return pet
   }
 

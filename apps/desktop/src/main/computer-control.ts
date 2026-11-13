@@ -51,7 +51,7 @@ export class ComputerControl {
     win.webContents.once('destroyed', () => this.windows.delete(win.webContents))
   }
 
-  async execute(sender: WebContents, action: ComputerAction): Promise<ComputerExecutionResult> {
+  async execute(sender: WebContents, action: unknown): Promise<ComputerExecutionResult> {
     if (!this.windows.has(sender)) return failure('permission_denied', '未知窗口不能执行 computer 动作')
     const win = BrowserWindow.fromWebContents(sender)
     if (!win || win.isDestroyed()) return failure('execution_failed', '目标窗口已关闭')
@@ -68,22 +68,25 @@ export class ComputerControl {
   }
 }
 
-function validateAction(action: ComputerAction): void {
-  if (!action || typeof action.action !== 'string' || !ACTIONS.has(action.action)) throw new Error('动作缺少或不支持 action')
-  for (const value of [action.x, action.y]) {
+function validateAction(action: unknown): asserts action is ComputerAction {
+  if (typeof action !== 'object' || action === null || Array.isArray(action)) throw new Error('动作必须是对象')
+  const candidate = action as Record<string, unknown>
+  if (typeof candidate.action !== 'string' || !ACTIONS.has(candidate.action as ComputerAction['action'])) throw new Error('动作缺少或不支持 action')
+  const typed = candidate as unknown as ComputerAction
+  for (const value of [typed.x, typed.y]) {
     if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > MAX_COORDINATE)) throw new Error('坐标超出范围')
   }
-  if (action.text !== undefined && (typeof action.text !== 'string' || action.text.length > MAX_TEXT)) throw new Error('输入文本过长')
-  if (action.keys && (!Array.isArray(action.keys) || action.keys.length > 4 || action.keys.some((key) => typeof key !== 'string' || (!ALLOWED_KEYS.has(key.toUpperCase()) && !/^[a-z0-9]$/i.test(key))))) {
+  if (typed.text !== undefined && (typeof typed.text !== 'string' || typed.text.length > MAX_TEXT)) throw new Error('输入文本过长')
+  if (typed.keys && (!Array.isArray(typed.keys) || typed.keys.length > 4 || typed.keys.some((key) => typeof key !== 'string' || (!ALLOWED_KEYS.has(key.toUpperCase()) && !/^[a-z0-9]$/i.test(key))))) {
     throw new Error('按键不在允许列表')
   }
-  if (action.path && (action.path.length < 2 || action.path.length > 64 || action.path.some((p) => !Number.isInteger(p.x) || !Number.isInteger(p.y)))) {
+  if (typed.path && (typed.path.length < 2 || typed.path.length > 64 || typed.path.some((p) => !Number.isInteger(p.x) || !Number.isInteger(p.y)))) {
     throw new Error('拖拽路径无效')
   }
-  if (action.action === 'type' && action.text === undefined) throw new Error('type 缺少 text')
-  if (action.action === 'keypress' && (!action.keys || action.keys.length === 0)) throw new Error('keypress 缺少 keys')
-  if (action.action === 'drag' && !action.path) throw new Error('drag 缺少 path')
-  if (['click', 'double_click', 'move', 'scroll'].includes(action.action) && (action.x === undefined || action.y === undefined)) throw new Error(`${action.action} 缺少 x/y`)
+  if (typed.action === 'type' && typed.text === undefined) throw new Error('type 缺少 text')
+  if (typed.action === 'keypress' && (!typed.keys || typed.keys.length === 0)) throw new Error('keypress 缺少 keys')
+  if (typed.action === 'drag' && !typed.path) throw new Error('drag 缺少 path')
+  if (['click', 'double_click', 'move', 'scroll'].includes(typed.action) && (typed.x === undefined || typed.y === undefined)) throw new Error(`${typed.action} 缺少 x/y`)
 }
 
 async function captureWindow(win: BrowserWindow): Promise<ComputerExecutionResult> {

@@ -113,6 +113,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
   async function executeComputerRequest(request: ComputerRequest, approved = true): Promise<void> {
     if (request.expiresAt <= Date.now()) {
       const expired: ComputerResult = { turnId: request.turnId, toolCallId: request.toolCallId, requestId: request.requestId, approved: false, error: { code: 'timeout', message: 'computer 动作确认已超时' } }
+      set((s) => ({ stream: { ...s.stream, pendingComputer: undefined } }))
       await confirmComputer(expired).catch(() => {})
       return
     }
