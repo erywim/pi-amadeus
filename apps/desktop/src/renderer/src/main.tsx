@@ -6,7 +6,9 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { PetRoot } from './features/pet/PetRoot'
 import { bindMainWindowToAppMode } from './lib/appMode'
 import { router } from './router'
+import { useAutomationStore } from './stores/automationStore'
 import { useCompanionStore } from './stores/companionStore'
+import { useKnowledgeStore } from './stores/knowledgeStore'
 import { useLive2dStore } from './stores/live2dStore'
 import { useMemoryStore } from './stores/memoryStore'
 import { useLive2dSpeechStore } from './stores/live2dSpeechStore'
@@ -45,7 +47,9 @@ if (import.meta.env.DEV) {
     settingsStore: useSettingsStore,
     pluginStore: usePluginStore,
     providerStore: useProviderStore,
-    memoryStore: useMemoryStore
+    memoryStore: useMemoryStore,
+    knowledgeStore: useKnowledgeStore,
+    automationStore: useAutomationStore
   }
 }
 

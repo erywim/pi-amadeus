@@ -32,6 +32,8 @@ interface SettingsState {
   defaultMode: DefaultMode
   /** 陪伴模式进入时默认静音语音播报 */
   defaultMute: boolean
+  /** 窗口不在前台时，回合完成发一条系统通知 */
+  notifyOnComplete: boolean
   aiConfig: UserConfig
   /** 生效密钥状态（default=回落 .env 默认密钥 / custom=用户自定义 / none=未配置） */
   keyStatus: ApiKeyStatus
@@ -40,6 +42,7 @@ interface SettingsState {
   setTheme: (theme: UiTheme) => void
   setDefaultMode: (mode: DefaultMode) => void
   setDefaultMute: (muted: boolean) => void
+  setNotifyOnComplete: (enabled: boolean) => void
   /** 从大脑服务加载用户配置到表单 */
   loadAiConfig: (userId: string) => Promise<void>
   /** 保存表单到大脑服务（apiKey 留空 = 保持服务端已有密钥） */
@@ -58,6 +61,7 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'paper',
       defaultMode: 'companion',
       defaultMute: false,
+      notifyOnComplete: false,
       aiConfig: FORM_PLACEHOLDER,
       keyStatus: 'none',
       configLoaded: false,
@@ -68,6 +72,14 @@ export const useSettingsStore = create<SettingsState>()(
       setTheme: (theme) => set({ theme }),
       setDefaultMode: (defaultMode) => set({ defaultMode }),
       setDefaultMute: (defaultMute) => set({ defaultMute }),
+      setNotifyOnComplete: (notifyOnComplete) => {
+        // 用户主动开启时请求一次权限；拒绝也保留开关（界面会解释没收到通知的原因），
+        // 下一次再开不会反复弹系统授权框
+        if (notifyOnComplete && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+          void Notification.requestPermission()
+        }
+        set({ notifyOnComplete })
+      },
       loadAiConfig: async (userId) => {
         const { config, keyStatus } = await fetchUserConfig(userId)
         // 密钥不回填表单：留空提交即保持服务端密钥不变
@@ -92,7 +104,8 @@ export const useSettingsStore = create<SettingsState>()(
         language: s.language,
         theme: s.theme,
         defaultMode: s.defaultMode,
-        defaultMute: s.defaultMute
+        defaultMute: s.defaultMute,
+        notifyOnComplete: s.notifyOnComplete
       })
     }
   )

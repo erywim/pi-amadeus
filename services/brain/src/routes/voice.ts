@@ -94,6 +94,7 @@ export function voiceRoutes(cfg: BrainConfig, db: Db): Hono {
           startedAt,
           model: target.model,
           providerName: target.providerName,
+        providerId: target.providerId,
           usage,
           toolCalls: 0,
           toolNames: []

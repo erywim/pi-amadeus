@@ -1,5 +1,11 @@
 import type { PlatformStatus } from '@pi-amadeus/shared'
-import { configString, splitMessage, type AdapterContext, type PlatformAdapter } from './types.ts'
+import {
+  configString,
+  splitMessage,
+  type AdapterContext,
+  type PlatformAdapter,
+  type SendOptions
+} from './types.ts'
 
 /**
  * 通用 Webhook 平台：入站走 POST /api/platforms/:id/webhook，出站 POST 到配置的地址。
@@ -30,7 +36,12 @@ export class WebhookAdapter implements PlatformAdapter {
     return this.state
   }
 
-  async send(chatId: string, chatType: 'private' | 'group', text: string): Promise<void> {
+  async send(
+    chatId: string,
+    chatType: 'private' | 'group',
+    text: string,
+    options?: SendOptions
+  ): Promise<void> {
     if (!this.outboundUrl) throw new Error('缺少出站地址')
     for (const part of splitMessage(text)) {
       const res = await fetch(this.outboundUrl, {
@@ -45,7 +56,8 @@ export class WebhookAdapter implements PlatformAdapter {
           platformName: this.ctx.name,
           chatId,
           chatType,
-          text: part
+          text: part,
+          ...(options?.replyTo ? { replyTo: options.replyTo } : {})
         })
       })
       if (!res.ok) throw new Error(`Webhook 出站失败：HTTP ${res.status}`)

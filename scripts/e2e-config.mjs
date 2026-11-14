@@ -8,7 +8,7 @@
  */
 import { strict as assert } from 'node:assert'
 
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 const TEST_KEY = 'sk-test-config-key-abc123'
 const results = []
 function report(name, ok, detail = '') {

@@ -1,8 +1,20 @@
 import * as React from 'react'
 import { useEffect, useRef } from 'react'
-import { BarChart3, Blocks, Brain, Settings, Terminal, UserRound } from 'lucide-react'
+import {
+  BarChart3,
+  Blocks,
+  BookOpen,
+  Brain,
+  CalendarClock,
+  Settings,
+  Terminal,
+  UserRound
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router'
+import { BranchTreeDialog } from '@renderer/features/chat/BranchTreeDialog'
+import { CommandPalette } from '@renderer/features/command-palette/CommandPalette'
+import { ShortcutsDialog } from '@renderer/features/shortcuts/ShortcutsDialog'
 import { cn } from '@renderer/lib/utils'
 import { setTtsMuted } from '@renderer/lib/ttsPlayer'
 import { useMemoryStore } from '@renderer/stores/memoryStore'
@@ -12,10 +24,18 @@ import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useUiStore } from '@renderer/stores/uiStore'
 
-const TAB_ROUTES = ['/companion', '/text', '/memory', '/plugins', '/dashboard'] as const
+const TAB_ROUTES = [
+  '/companion',
+  '/text',
+  '/memory',
+  '/knowledge',
+  '/automations',
+  '/plugins',
+  '/dashboard'
+] as const
 
 /**
- * 应用外壳（OpenDesign 原型结构）：56px 顶栏 = 品牌区 + 模式页签
+ * 应用外壳（早期界面原型结构）：56px 顶栏 = 品牌区 + 模式页签
  * （陪伴 / 文本，role=tablist）+ 设置齿轮 + 当前模型胶囊；下方为各视图。
  * 陪伴视图挂载时 body.theme-amadeus 整套令牌翻转为暗色实验台。
  */
@@ -55,6 +75,25 @@ export default function AppShell(): React.JSX.Element {
     setTtsMuted(ttsMuted)
   }, [ttsMuted])
 
+  // 全局快捷键：⌘/Ctrl+K 命令面板；⌘/Ctrl+/ 快捷键速查
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (!(event.metaKey || event.ctrlKey)) return
+      const ui = useUiStore.getState()
+      if (event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        ui.setCommandPaletteOpen(!ui.commandPaletteOpen)
+        return
+      }
+      if (event.key === '/') {
+        event.preventDefault()
+        ui.setShortcutsOpen(!ui.shortcutsOpen)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   // 顶栏模型胶囊需要配置：登录身份就绪且未加载时拉一次
   useEffect(() => {
     if (userId && !configLoaded) {
@@ -89,6 +128,8 @@ export default function AppShell(): React.JSX.Element {
     { path: '/companion', icon: UserRound, label: t('nav.companion') },
     { path: '/text', icon: Terminal, label: t('nav.text') },
     { path: '/memory', icon: Brain, label: t('nav.memory') },
+    { path: '/knowledge', icon: BookOpen, label: t('nav.knowledge') },
+    { path: '/automations', icon: CalendarClock, label: t('nav.automations') },
     { path: '/plugins', icon: Blocks, label: t('nav.plugins') },
     { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') }
   ]
@@ -160,6 +201,10 @@ export default function AppShell(): React.JSX.Element {
           <Outlet />
         </div>
       </main>
+
+      <CommandPalette />
+      <BranchTreeDialog />
+      <ShortcutsDialog />
     </div>
   )
 }

@@ -1,10 +1,14 @@
 import type { PlatformInbound, PlatformStatus } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
 import type { Db, PlatformRow } from '../db.ts'
+import { DiscordAdapter } from './discord.ts'
 import { OneBotAdapter } from './onebot.ts'
 import { handlePlatformMessage } from './pipeline.ts'
+import { SlackAdapter } from './slack.ts'
 import { TelegramAdapter } from './telegram.ts'
 import type { PlatformAdapter } from './types.ts'
+import { QqBotAdapter } from './qqbot.ts'
+import { parseWechatXml, verifyWechatSignature, WechatAdapter } from './wechat.ts'
 import { WebhookAdapter } from './webhook.ts'
 
 interface Entry {
@@ -75,6 +79,13 @@ class PlatformManager {
       await entry.adapter.send('test', 'private', 'Amadeus 测试消息：连通正常。')
       return { ok: true }
     }
+    if (entry.row.kind === 'wechat' || entry.row.kind === 'qqbot') {
+      const openId =
+        typeof config.testOpenId === 'string' ? config.testOpenId.trim() : ''
+      if (!openId) return { ok: false, error: '请先在配置里填写测试 OpenID' }
+      await entry.adapter.send(openId, 'private', 'Amadeus 测试消息：连通正常。')
+      return { ok: true }
+    }
     if (!rawTarget) return { ok: false, error: '请先在配置里填写测试会话 ID' }
     let chatId = rawTarget
     let chatType: 'private' | 'group' = 'private'
@@ -115,7 +126,7 @@ class PlatformManager {
     const inbound: PlatformInbound = { externalUserId, chatId, chatType, text }
     const replyUrl = typeof payload.replyUrl === 'string' ? payload.replyUrl.trim() : ''
     const reply = replyUrl
-      ? async (replyText: string): Promise<void> => {
+      ? async (replyText: string, options?: { replyTo?: string }): Promise<void> => {
           await fetch(replyUrl, {
             method: 'POST',
             headers: {
@@ -127,15 +138,16 @@ class PlatformManager {
               platformId: id,
               chatId,
               chatType,
-              text: replyText
+              text: replyText,
+              ...(options?.replyTo ? { replyTo: options.replyTo } : {})
             })
           })
         }
       : (() => {
           const entry = this.entries.get(id)
           return entry
-            ? (replyText: string): Promise<void> =>
-                entry.adapter.send(chatId, chatType, replyText)
+            ? (replyText: string, options?: { replyTo?: string }): Promise<void> =>
+                entry.adapter.send(chatId, chatType, replyText, options)
             : null
         })()
     if (!reply) return { ok: false, status: 409, error: '平台未运行' }
@@ -150,6 +162,49 @@ class PlatformManager {
       console.warn('[platform:webhook] 回合失败：', error instanceof Error ? error.message : error)
     })
     return { ok: true, status: 202 }
+  }
+
+  /**
+   * 微信公众号回调：
+   * GET 是服务器地址校验（回 echostr），POST 是消息/事件（先回 success 再异步跑回合）。
+   * 签名在入口校验；解析失败或平台未运行都返回明确错误。
+   */
+  async handleWechatInbound(
+    id: string,
+    method: 'GET' | 'POST',
+    query: Record<string, string>,
+    body: string
+  ): Promise<{ status: number; body: string; contentType: string }> {
+    if (!this.db) return { status: 503, body: 'service unavailable', contentType: 'text/plain' }
+    const row = await this.db.getPlatform(id)
+    if (!row || row.kind !== 'wechat') {
+      return { status: 404, body: 'platform not found', contentType: 'text/plain' }
+    }
+    if (!row.enabled) return { status: 403, body: 'platform disabled', contentType: 'text/plain' }
+    const token = typeof row.config.token === 'string' ? row.config.token : ''
+    const valid = verifyWechatSignature(
+      token,
+      query.timestamp ?? '',
+      query.nonce ?? '',
+      query.signature ?? ''
+    )
+    if (!valid) return { status: 403, body: 'invalid signature', contentType: 'text/plain' }
+    if (method === 'GET') {
+      return { status: 200, body: query.echostr ?? 'ok', contentType: 'text/plain' }
+    }
+    const parsed = parseWechatXml(body)
+    if (!parsed.FromUserName) {
+      return { status: 400, body: 'invalid xml', contentType: 'text/plain' }
+    }
+    const entry = this.entries.get(id)
+    if (!entry || !(entry.adapter instanceof WechatAdapter)) {
+      return { status: 409, body: 'platform not running', contentType: 'text/plain' }
+    }
+    // 微信要求 5 秒内响应；回合在后台跑，客服消息异步回复
+    void entry.adapter.handleXml(parsed).catch((error) => {
+      console.warn('[platform:wechat] 入站处理失败：', error instanceof Error ? error.message : error)
+    })
+    return { status: 200, body: 'success', contentType: 'text/plain' }
   }
 
   stopAll(): void {
@@ -183,6 +238,14 @@ class PlatformManager {
         return new OneBotAdapter(ctx)
       case 'webhook':
         return new WebhookAdapter(ctx)
+      case 'discord':
+        return new DiscordAdapter(ctx)
+      case 'slack':
+        return new SlackAdapter(ctx)
+      case 'wechat':
+        return new WechatAdapter(ctx)
+      case 'qqbot':
+        return new QqBotAdapter(ctx)
     }
   }
 
@@ -195,7 +258,7 @@ class PlatformManager {
         db: this.db,
         platform: entry.row,
         inbound,
-        reply: (text) => entry.adapter.send(inbound.chatId, inbound.chatType, text)
+        reply: (text, options) => entry.adapter.send(inbound.chatId, inbound.chatType, text, options)
       })
     } catch (error) {
       console.warn('[platform] 消息处理失败：', error instanceof Error ? error.message : error)

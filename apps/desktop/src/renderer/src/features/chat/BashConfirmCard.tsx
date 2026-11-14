@@ -37,10 +37,21 @@ export function BashConfirmCard({
           {command}
         </pre>
         <div className="mt-2 flex items-center gap-2">
-          <Button size="sm" disabled={expired} onClick={() => onRespond(true)}>
+          <Button
+            data-testid="bash-confirm-approve"
+            size="sm"
+            disabled={expired}
+            onClick={() => onRespond(true)}
+          >
             {t('chat.toolApprove')}
           </Button>
-          <Button size="sm" variant="outline" disabled={expired} onClick={() => onRespond(false)}>
+          <Button
+            data-testid="bash-confirm-reject"
+            size="sm"
+            variant="outline"
+            disabled={expired}
+            onClick={() => onRespond(false)}
+          >
             {t('chat.toolReject')}
           </Button>
           <span className="ml-auto font-mono text-[11px] text-muted-foreground">

@@ -4,6 +4,8 @@ import { ArrowDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { BashConfirmCard } from './BashConfirmCard'
 import { MessageBubble } from './MessageBubble'
+import { RunningBorder } from './RunningBorder'
+import { ThinkingBlock } from './ThinkingBlock'
 import { TurnErrorCard } from './TurnErrorCard'
 import { WorkProcessCard } from './WorkProcessCard'
 import { useSessionStore } from '@renderer/stores/sessionStore'
@@ -46,10 +48,14 @@ export function MessageList(): React.JSX.Element {
   const draftLength = stream.draft?.content.length ?? 0
   // 流式区块只展示给产生它的会话：流全局唯一，切会话后不串台渲染
   const streamInView = stream.sessionId != null && stream.sessionId === activeSessionId
+  // 思考阶段也是「模型在干活」：只在思考、正文还没开始时不能显示成空白
+  const hasThinking = Boolean(stream.draft?.thinking)
   const showTyping =
-    stream.streaming && stream.tools.length === 0 && draftLength < TYPING_THRESHOLD
+    stream.streaming && stream.tools.length === 0 && !hasThinking && draftLength < TYPING_THRESHOLD
   const showDraftBubble =
-    stream.streaming && stream.draft && (stream.tools.length > 0 || draftLength >= TYPING_THRESHOLD)
+    stream.streaming &&
+    stream.draft &&
+    (stream.tools.length > 0 || hasThinking || draftLength >= TYPING_THRESHOLD)
   // 最后一条助手消息挂「重新生成」入口（末尾是用户消息时由错误卡/重试承担）
   const lastAssistantId = [...list].reverse().find((m) => m.role === 'assistant')?.id
 
@@ -116,7 +122,7 @@ export function MessageList(): React.JSX.Element {
         <div className="mx-auto flex max-w-[780px] flex-col gap-5">
           {list.length === 0 && !stream.streaming && (
             <p className="py-12 text-center text-[13.5px] text-muted-foreground">
-              {t('codex.emptyHint')}
+              {t('chatShell.emptyHint')}
             </p>
           )}
           {list.map((m) => (
@@ -133,29 +139,39 @@ export function MessageList(): React.JSX.Element {
 
           {/* 当前回合的流式智能体区块：工作过程卡先行露出，随后流出正文 */}
           {stream.streaming && streamInView && (showTyping || showDraftBubble) && (
-            <div className="anim-msg grid grid-cols-[30px_minmax(0,1fr)] gap-3">
-              <div className="grid size-[30px] place-items-center rounded-full border border-line-strong bg-surface">
-                <span className="font-mono text-[13px] font-bold">K</span>
-              </div>
-              <div className="flex min-w-0 flex-col gap-2 text-[15px] leading-relaxed">
-                {stream.tools.length > 0 && <WorkProcessCard live={{ tools: stream.tools }} />}
-                {showTyping && (
-                  <span className="inline-flex h-[1em] items-center gap-1">
-                    {[0, 1, 2].map((i) => (
-                      <i
-                        key={i}
-                        className="anim-blink inline-block size-[5px] rounded-full bg-muted-foreground"
-                        style={{ animationDelay: `${i * 0.18}s` }}
-                      />
-                    ))}
-                  </span>
-                )}
-                {showDraftBubble && stream.draft && (
-                  <div className="break-words">
-                    <span className="whitespace-pre-wrap">{stream.draft.content}</span>
-                    <span className="ml-0.5 inline-block h-3.5 w-[7px] animate-pulse bg-primary align-middle" />
-                  </div>
-                )}
+            <div
+              data-testid="streaming-bubble"
+              className="anim-msg relative rounded-xl px-2 py-1.5"
+            >
+              {/* 工作台式流动边框：只在流式期间存在，完成即移除 */}
+              <RunningBorder />
+              <div className="grid grid-cols-[30px_minmax(0,1fr)] gap-3">
+                <div className="grid size-[30px] place-items-center rounded-full border border-line-strong bg-surface">
+                  <span className="font-mono text-[13px] font-bold">K</span>
+                </div>
+                <div className="flex min-w-0 flex-col gap-2 text-[15px] leading-relaxed">
+                  {stream.tools.length > 0 && <WorkProcessCard live={{ tools: stream.tools }} />}
+                  {stream.draft?.thinking && (
+                    <ThinkingBlock content={stream.draft.thinking} streaming />
+                  )}
+                  {showTyping && (
+                    <span className="inline-flex h-[1em] items-center gap-1">
+                      {[0, 1, 2].map((i) => (
+                        <i
+                          key={i}
+                          className="anim-blink inline-block size-[5px] rounded-full bg-muted-foreground"
+                          style={{ animationDelay: `${i * 0.18}s` }}
+                        />
+                      ))}
+                    </span>
+                  )}
+                  {showDraftBubble && stream.draft && (
+                    <div className="break-words">
+                      <span className="whitespace-pre-wrap">{stream.draft.content}</span>
+                      <span className="ml-0.5 inline-block h-3.5 w-[7px] animate-pulse bg-primary align-middle" />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

@@ -6,7 +6,7 @@
  *  4. 对话触发 use_skill（启用状态下，俳句请求）→ tool_start/tool_end 成功 + done
  * 前置：brain 服务运行中（skills 目录含示例 skill）
  */
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 const results = []
 function report(name, ok, detail = '') {
   results.push({ name, ok })

@@ -11,12 +11,17 @@
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 
-const BRAIN = 'http://localhost:3002'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 const TURN_TIMEOUT = 180_000
 const results = []
 function report(name, ok, detail = '') {
   results.push({ name, ok })
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`)
+}
+/** 可选前置不满足：跳过并计入通过（原因照实打印，不会被误读成绿） */
+function skip(name, why) {
+  results.push({ name, ok: true, skipped: true })
+  console.log(`SKIP  ${name} — ${why}`)
 }
 
 async function jsonFetch(path, init) {
@@ -236,6 +241,13 @@ try {
 
   // ---------- F 飞书 ----------
   console.log('\n=== F 飞书工具回合 ===')
+  // 飞书路由只在 FEISHU_ENABLED=true 时挂载；没启用就跳过这一段，
+  // 而不是把 404 报成「webhook 不返回 200」这种像 bug 的失败
+  const health = (await jsonFetch('/api/health')).json
+  if (!health?.feishuEnabled) {
+    skip('F1 飞书 webhook 快速 200', '大脑未启用飞书（FEISHU_ENABLED=false）')
+    skip('F2 飞书会话落库助手消息含 96', '大脑未启用飞书（FEISHU_ENABLED=false）')
+  } else {
   const openId = `ou_tool_${suffix}`
   const chatId = `oc_tool_${suffix}`
   const w0 = Date.now()
@@ -268,11 +280,16 @@ try {
     await sleep(3000)
   }
   report('F2 飞书会话落库助手消息含 96', !!fMsg?.content.includes('96'), (fMsg?.content ?? '').slice(0, 100))
+  }
 } catch (error) {
   console.error('执行失败：', error.message)
   report('异常中断', false, error.message)
 }
 
 const failed = results.filter((r) => !r.ok)
-console.log(`\n=== 汇总: ${results.length - failed.length}/${results.length} 通过 ===`)
+const skipped = results.filter((r) => r.skipped).length
+console.log(
+  `\n=== 汇总: ${results.length - failed.length}/${results.length} 通过` +
+    `${skipped ? `（含 ${skipped} 项跳过）` : ''} ===`
+)
 if (failed.length > 0) process.exitCode = 1

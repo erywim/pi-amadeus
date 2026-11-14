@@ -12,14 +12,14 @@ export function WelcomeState(): React.JSX.Element {
     <div className="flex flex-1 flex-col items-center justify-center gap-8 px-8">
       <GlitchHeading text={t('app.tagline')} />
       <p className="max-w-md text-center text-sm leading-relaxed text-muted-foreground">
-        {t('codex.welcomeHint')}
+        {t('chatShell.welcomeHint')}
       </p>
       <button
         type="button"
         onClick={() => createSession()}
         className="rounded-[10px] border border-line-strong bg-surface px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-surface-soft"
       >
-        {t('codex.newTask')}
+        {t('chatShell.newTask')}
       </button>
     </div>
   )
