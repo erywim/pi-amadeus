@@ -5,6 +5,7 @@ import {
   screenPermission,
   type ProactiveWatcher
 } from './proactive'
+import { ComputerControl } from './computer-control'
 import type { WindowManager } from './window-manager'
 
 /**
@@ -14,9 +15,11 @@ import type { WindowManager } from './window-manager'
 export function registerIpcHandlers(
   windows: WindowManager,
   proactive: ProactiveWatcher,
-  onUiLanguage: (lang: string) => void
+  onUiLanguage: (lang: string) => void,
+  computer: ComputerControl
 ): void {
   ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('computer:execute', (event, action: unknown) => computer.execute(event.sender, action))
   ipcMain.handle('app:platform', () => process.platform)
   // 返回空串=成功；非空=错误消息（shell.openPath 契约）
   ipcMain.handle('shell:openPath', (_event, path: unknown) =>

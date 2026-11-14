@@ -1,4 +1,4 @@
-import type { MessageAttachment } from './attachment.ts'
+import type { ComputerRequest } from './computer.ts'
 import type { Emotion } from './emotion.ts'
 import type { ToolStatus } from './sse.ts'
 
@@ -27,11 +27,9 @@ export type Role = 'user' | 'assistant'
  */
 export type TurnMode = 'text' | 'voice'
 
-/** 本回合期间工作区里状态发生变化的文件（真实 git status 快照差集） */
+/** 本回合工作区里状态发生变化的文件（真实 git 状态快照差集）。 */
 export interface TurnChangedFile {
-  /** 相对工作区根目录的 POSIX 路径 */
   path: string
-  /** 回合结束时的 porcelain 状态码（M / A / D / R / ?? …） */
   status: string
 }
 
@@ -49,13 +47,10 @@ export interface Message {
   branchIndex?: number
   branchCount?: number
   /** 图片 / 语音 / 文件附件（文件本体在服务端数据目录） */
-  attachments?: MessageAttachment[]
+  attachments?: import('./attachment.ts').MessageAttachment[]
   /** 本回合工作区改动（仅桌面端真实 git 快照有差异时才有） */
   changedFiles?: TurnChangedFile[]
-  /**
-   * 思考过程（模型真实返回的 reasoning 内容；未开启思考或供应商不返回时为空）。
-   * 只展示，不回灌 LLM 上下文——重放思考块会显著增加成本且易被供应商拒收。
-   */
+  /** 模型真实返回的思考过程 */
   thinking?: string
   createdAt: number
   /** 父消息 id（会话是一棵树；根消息为 null） */
@@ -112,9 +107,7 @@ export interface Session {
   title: string
   createdAt: number
   updatedAt: number
-  /** 置顶会话排在列表最前（置顶不改变 updated_at） */
   pinned?: boolean
-  /** 已归档：默认列表隐藏，可在侧栏「已归档」里恢复 */
   archived?: boolean
   /** 服务端会话列表附带的消息数（历史页统计用；未加载消息时也可见） */
   messageCount?: number
@@ -122,26 +115,22 @@ export interface Session {
   localOnly?: boolean
 }
 
-/** 跨会话消息搜索命中（侧栏全文搜索） */
+export interface SessionUsage {
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  model: string
+}
+
 export interface MessageSearchHit {
   sessionId: string
   sessionTitle: string
   channel: Channel
   messageId: string
   role: Role
-  /** 命中位置前后各 40 字的原文片段 */
   snippet: string
   createdAt: number
-}
-
-/** 会话级 token 用量（来自 turn_metrics 的真实累计） */
-export interface SessionUsage {
-  turns: number
-  inputTokens: number
-  outputTokens: number
-  totalTokens: number
-  /** 最近一次回合使用的模型 */
-  model: string
 }
 
 /** 会话列表按天分组的组名（今天 / 昨天 / 本周 / 更早） */
@@ -173,10 +162,15 @@ export interface ToolActivityItem {
   details?: Record<string, unknown>
 }
 
-/** 待用户确认的 bash 命令（同时最多一个） */
+/** 待用户确认的本机工具调用（同时最多一个）。 */
+export type ToolConfirmKind = 'bash' | 'computer'
+
 export interface PendingToolConfirm {
   toolCallId: string
   toolName: string
+  /** 面向用户的服务/动作标签；旧 bash 确认没有该字段时用 toolName 兜底。 */
+  label?: string
+  kind: ToolConfirmKind
   args: Record<string, unknown>
   expiresAt: number
 }
@@ -189,7 +183,6 @@ export interface StreamState {
     messageId: string
     content: string
     emotion?: Emotion
-    /** 流式中的思考内容（供应商真实返回的 reasoning 增量） */
     thinking?: string
   }
   /** 本回合 turnId（首个 tool 事件到来时设置） */
@@ -198,4 +191,6 @@ export interface StreamState {
   tools: ToolActivityItem[]
   /** 待确认的 bash 命令 */
   pendingConfirm?: PendingToolConfirm
+  /** 待执行的 computer 请求；截图/输入结果不落库 */
+  pendingComputer?: ComputerRequest
 }

@@ -1,16 +1,25 @@
 /**
- * bash 命令确认握手（进程内注册表，无持久化）：
+ * 本机工具确认握手（进程内注册表，无持久化）：
  * execute 内 await 一个 promise，由渲染端 POST /api/tool-confirm 放行/拒绝；
  * 超时与回合中止自动拒绝。settled 幂等——迟到的回执返回 notFound。
  * 进程重启会丢失未决确认（SSE 断开，客户端自然结束回合），可接受。
  */
 
 export type DeniedReason = 'blocked' | 'user_denied' | 'timeout' | 'aborted'
+export type ToolConfirmKind = 'bash' | 'computer'
 
-interface PendingConfirm {
+export interface ToolConfirmRequest {
   turnId: string
   toolCallId: string
-  command: string
+  toolName: string
+  label: string
+  kind: ToolConfirmKind
+  args: Record<string, unknown>
+  timeoutMs: number
+  signal?: AbortSignal
+}
+
+interface PendingConfirm extends ToolConfirmRequest {
   expiresAt: number
   settled: boolean
   approve: () => void
@@ -33,19 +42,25 @@ export class ToolDeniedError extends Error {
   }
 }
 
-/**
- * 登记一个待确认命令。返回的 promise 批准为 true；拒绝/超时/中止以 ToolDeniedError reject。
- * 调用方负责在 promise 落定前把 tool_confirm 事件推给渲染端。
- */
-export function requestBashConfirm(input: {
-  turnId: string
-  toolCallId: string
-  command: string
-  timeoutMs: number
-  signal?: AbortSignal
-}): { promise: Promise<boolean>; expiresAt: number } {
+/** 登记一次本机工具调用；调用方负责在 promise 落定前把确认事件推给渲染端。 */
+export function requestToolConfirm(
+  input: ToolConfirmRequest
+): { promise: Promise<boolean>; expiresAt: number } {
   const expiresAt = Date.now() + input.timeoutMs
   const k = key(input.turnId, input.toolCallId)
+
+  if (pending.has(k)) {
+    return {
+      expiresAt,
+      promise: Promise.reject(new Error('该回合已有同一工具调用的确认请求'))
+    }
+  }
+  if (input.signal?.aborted) {
+    return {
+      expiresAt,
+      promise: Promise.reject(new ToolDeniedError('aborted', deniedMessage('aborted')))
+    }
+  }
 
   // 释放型 settle：清 timer 与 abort 监听，幂等
   const settle = (fn: () => void): void => {
@@ -64,7 +79,6 @@ export function requestBashConfirm(input: {
 
   let approve!: () => void
   let deny!: (reason: DeniedReason) => void
-
   const promise = new Promise<boolean>((resolve, reject) => {
     approve = () => settle(() => resolve(true))
     deny = (reason) => settle(() => reject(new ToolDeniedError(reason, deniedMessage(reason))))
@@ -72,24 +86,33 @@ export function requestBashConfirm(input: {
 
   const timer = setTimeout(() => deny('timeout'), input.timeoutMs)
   input.signal?.addEventListener('abort', onAbort, { once: true })
-
-  pending.set(k, {
-    turnId: input.turnId,
-    toolCallId: input.toolCallId,
-    command: input.command,
-    expiresAt,
-    settled: false,
-    approve,
-    deny,
-    timer,
-    onAbort
-  })
+  pending.set(k, { ...input, expiresAt, settled: false, approve, deny, timer, onAbort })
 
   return { promise, expiresAt }
 }
 
-/** POST /api/tool-confirm 的回执入口 */
-export function resolveBashConfirm(
+/** bash 确认握手的兼容包装。 */
+export function requestBashConfirm(input: {
+  turnId: string
+  toolCallId: string
+  command: string
+  timeoutMs: number
+  signal?: AbortSignal
+}): { promise: Promise<boolean>; expiresAt: number } {
+  return requestToolConfirm({
+    turnId: input.turnId,
+    toolCallId: input.toolCallId,
+    toolName: 'bash',
+    label: '执行命令',
+    kind: 'bash',
+    args: { command: input.command },
+    timeoutMs: input.timeoutMs,
+    signal: input.signal
+  })
+}
+
+/** POST /api/tool-confirm 的通用回执入口。 */
+export function resolveToolConfirm(
   turnId: string,
   toolCallId: string,
   approved: boolean
@@ -101,16 +124,23 @@ export function resolveBashConfirm(
   return { ok: true, status: approved ? 'approved' : 'denied' }
 }
 
-/** 回合结束/中止时清理该 turnId 的全部未决确认（静默拒绝） */
+/** bash 回执入口的兼容包装。 */
+export function resolveBashConfirm(
+  turnId: string,
+  toolCallId: string,
+  approved: boolean
+): { ok: true; status: 'approved' | 'denied' } | { ok: false; status: 'notFound' } {
+  return resolveToolConfirm(turnId, toolCallId, approved)
+}
+
+/** 回合结束/中止时清理该 turnId 的全部未决确认（静默拒绝）。 */
 export function rejectAllForTurn(turnId: string): void {
   for (const entry of pending.values()) {
-    if (entry.turnId === turnId && !entry.settled) {
-      entry.deny('aborted')
-    }
+    if (entry.turnId === turnId && !entry.settled) entry.deny('aborted')
   }
 }
 
-/** 拒绝原因 → LLM 可见消息（agentTurn 据此回推 details.deniedReason） */
+/** 拒绝原因 → LLM 可见消息（agentTurn 据此回推 details.deniedReason）。 */
 export function deniedMessage(reason: DeniedReason): string {
   switch (reason) {
     case 'blocked':

@@ -3,6 +3,8 @@ import type { Channel } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
 import type { LlmTarget } from '../llm.ts'
 import { createBashTool } from './bash.ts'
+import { createComputerTool } from './computer.ts'
+import type { DesktopBridge } from './desktop-bridge.ts'
 import { createCalculateTool } from './calculate.ts'
 import { createFetchUrlTool } from './fetchUrl.ts'
 import { createSearchTool } from './search.ts'
@@ -25,6 +27,8 @@ export interface ToolRegistryOptions {
   confirmRequest: (toolCallId: string, command: string) => Promise<boolean>
   /** 回合取消信号：联网工具随之结束，不让用户点停止后请求还挂着 */
   signal?: AbortSignal
+  /** 桌面端 computer 请求桥；仅 desktop + vision 模型使用 */
+  desktopBridge?: DesktopBridge
 }
 
 export function buildToolRegistry(opts: ToolRegistryOptions): AgentTool[] {
@@ -43,6 +47,7 @@ export function buildToolRegistry(opts: ToolRegistryOptions): AgentTool[] {
         confirmRequest: opts.confirmRequest
       })
     )
+    if (opts.desktopBridge && opts.target.vision) tools.push(createComputerTool(opts.desktopBridge, true))
   }
   return tools
 }

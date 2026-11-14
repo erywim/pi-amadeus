@@ -15,6 +15,7 @@ import { knowledgeRoutes } from './routes/knowledge.ts'
 import { mediaRoutes } from './routes/media.ts'
 import { configRoutes } from './routes/config.ts'
 import { conversionRoutes } from './routes/conversion.ts'
+import { desktopResultRoutes } from './routes/desktop-result.ts'
 import { feishuRoutes } from './routes/feishu.ts'
 import { frameRoutes } from './routes/frames.ts'
 import { memoryRoutes } from './routes/memories.ts'
@@ -75,6 +76,7 @@ app.route('/api', sessionRoutes(db))
 app.route('/api', userRoutes(db))
 app.route('/api', configRoutes(cfg, db))
 app.route('/api', conversionRoutes())
+app.route('/api', desktopResultRoutes())
 app.route('/api', sttRoutes(cfg))
 app.route('/api', frameRoutes())
 app.route('/api', skillRoutes(cfg))

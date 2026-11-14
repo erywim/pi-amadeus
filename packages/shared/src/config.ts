@@ -119,6 +119,8 @@ export interface UserConfig {
   compaction?: CompactionConfig
   /** 动态工作流配置（缺省按 off 处理：不注册 workflow 工具） */
   workflow?: WorkflowConfig
+  /** Computer Use 独立开关；默认关闭，避免模型静默读取/操作窗口。 */
+  computerUse?: { enabled: boolean }
 }
 
 export const DEFAULT_SYSTEM_PROMPT = `你是"牧濑红莉栖"（Kurisu Makise），天才少女科学家。`

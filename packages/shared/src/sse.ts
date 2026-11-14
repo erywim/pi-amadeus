@@ -1,4 +1,6 @@
+import type { ComputerRequest } from './computer.ts'
 import type { Emotion, Gesture } from './emotion.ts'
+import type { ToolConfirmKind } from './session.ts'
 
 /**
  * SSE 事件词汇（沿用原版跨端契约）：delta / done / error。
@@ -19,6 +21,7 @@ export type SseEventType =
   | 'tool_end'
   | 'tool_confirm'
   | 'compact'
+  | 'computer_request'
 
 /** 工具执行状态（渲染端展示用） */
 export type ToolStatus = 'running' | 'success' | 'error' | 'denied' | 'timeout' | 'blocked'
@@ -129,6 +132,7 @@ export interface SseToolConfirmEvent extends SseEventBase {
   toolCallId: string
   toolName: string
   label: string
+  kind: ToolConfirmKind
   args: Record<string, unknown>
   /** 确认截止时间（epoch ms），渲染端倒计时；到时服务端自动拒绝 */
   expiresAt: number
@@ -149,6 +153,9 @@ export interface SseCompactEvent extends SseEventBase {
   tokensAfter: number
 }
 
+/** Computer Use 请求：renderer 负责确认并通过 IPC 执行动作，再 POST 结果回 brain。 */
+export type SseComputerRequestEvent = ComputerRequest
+
 export type SseEvent =
   | SseDeltaEvent
   | SseThinkingEvent
@@ -163,3 +170,4 @@ export type SseEvent =
   | SseToolEndEvent
   | SseToolConfirmEvent
   | SseCompactEvent
+  | SseComputerRequestEvent

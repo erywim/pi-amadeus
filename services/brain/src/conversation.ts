@@ -149,7 +149,8 @@ export function defaultUserConfig(cfg: BrainConfig): UserConfig {
     // 缺省 balanced：只在接近上下文上限时才摘要，普通会话无额外开销
     compaction: { level: 'balanced' },
     // 缺省 off：动态工作流会并发调用多个子代理，必须由用户显式开启档位
-    workflow: { level: 'off' }
+    workflow: { level: 'off' },
+    computerUse: { enabled: false }
   }
 }
 

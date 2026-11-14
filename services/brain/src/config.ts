@@ -30,6 +30,7 @@ export interface BrainConfig {
     searchProxy?: string
     confirmTimeoutMs: number
     bashCwd: string
+    computerTimeoutMs: number
     /** 搜索端点覆盖（未设置的引擎走官方地址）；E2E 用它指向本地 mock */
     searchEndpoints: Partial<Record<'tavily' | 'bing' | 'so' | 'sogou' | 'duckduckgo', string>>
   }
@@ -96,6 +97,7 @@ export function loadConfig(): BrainConfig {
       ...(process.env.SEARCH_PROXY !== undefined ? { searchProxy: env('SEARCH_PROXY').trim() } : {}),
       confirmTimeoutMs: Number(env('TOOL_CONFIRM_TIMEOUT_MS', '60000')) || 60000,
       bashCwd,
+      computerTimeoutMs: Math.min(120_000, Math.max(5_000, Number(env('COMPUTER_TIMEOUT_MS', '30000')) || 30_000)),
       // 引擎端点可用环境变量覆盖（镜像站 / 自建代理 / E2E 本地 mock）；
       // 留空时 search.ts 用官方地址，不把默认值复制到这里
       searchEndpoints: Object.fromEntries(

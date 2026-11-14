@@ -1,3 +1,4 @@
+import type { ComputerResult } from '@pi-amadeus/shared'
 import type {
   AffinitySummary,
   AttachmentPayload,
@@ -443,6 +444,15 @@ export function startVoiceTurn(
 // ---------- 工具确认回执 ----------
 
 /** bash 工具确认卡的应答（tool_confirm 事件的回执） */
+export async function confirmComputer(input: ComputerResult): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/desktop-result`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(`computer 回执失败: HTTP ${res.status}`)
+}
+
 export async function confirmTool(input: {
   turnId: string
   toolCallId: string
