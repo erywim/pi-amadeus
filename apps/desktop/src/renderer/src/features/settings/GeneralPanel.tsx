@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Bell, MonitorCog, Moon, Sun, VolumeX, Waypoints } from 'lucide-react'
+import { Bell, MonitorCog, Moon, Sparkles, Sun, VolumeX, Waypoints } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Label } from '@renderer/components/ui/label'
 import { Switch } from '@renderer/components/ui/switch'
@@ -12,9 +12,28 @@ export function GeneralPanel(): React.JSX.Element {
   const theme = useSettingsStore((s) => s.theme)
   const defaultMode = useSettingsStore((s) => s.defaultMode)
   const defaultMute = useSettingsStore((s) => s.defaultMute)
+  const proactiveEnabled = useSettingsStore((s) => s.proactiveEnabled ?? true)
   const setTheme = useSettingsStore((s) => s.setTheme)
   const setDefaultMode = useSettingsStore((s) => s.setDefaultMode)
   const setDefaultMute = useSettingsStore((s) => s.setDefaultMute)
+  const setProactiveEnabled = useSettingsStore((s) => s.setProactiveEnabled)
+
+  // macOS 截屏需要屏幕录制权限：没授权时说明"开了也不会看屏幕"，别让开关看起来坏了
+  const [screenPermission, setScreenPermission] = React.useState('granted')
+  React.useEffect(() => {
+    if (!proactiveEnabled || !window.api?.proactive) return
+    let cancelled = false
+    window.api.proactive
+      .permission()
+      .then((status) => {
+        if (!cancelled) setScreenPermission(status)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [proactiveEnabled])
+
   const notifyOnComplete = useSettingsStore((s) => s.notifyOnComplete)
   const setNotifyOnComplete = useSettingsStore((s) => s.setNotifyOnComplete)
   const notifyDenied =
@@ -77,6 +96,32 @@ export function GeneralPanel(): React.JSX.Element {
             <p className="text-xs text-muted-foreground">{t('settings.general.defaultMuteDesc')}</p>
           </div>
           <Switch checked={defaultMute} onCheckedChange={setDefaultMute} />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label>
+              <Sparkles className="mr-1 inline size-3.5 align-[-2px]" />
+              {t('settings.general.proactive')}
+            </Label>
+            <p className="text-xs text-muted-foreground">{t('settings.general.proactiveDesc')}</p>
+            {proactiveEnabled && screenPermission !== 'granted' && (
+              <p className="text-xs text-destructive">{t('settings.general.proactivePermission')}</p>
+            )}
+          </div>
+          <Switch
+            checked={proactiveEnabled}
+            onCheckedChange={(enabled) => {
+              setProactiveEnabled(enabled)
+              // 打开开关是用户主动操作：此时才去触发系统截屏授权（否则系统不会把应用列进屏幕录制列表）
+              if (enabled) {
+                window.api?.proactive
+                  .requestPermission()
+                  .then(setScreenPermission)
+                  .catch(() => {})
+              }
+            }}
+          />
         </div>
 
         <div className="flex items-center justify-between gap-4">

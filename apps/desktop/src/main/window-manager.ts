@@ -81,6 +81,22 @@ export class WindowManager {
     return this.mode
   }
 
+  /**
+   * 主窗口是否处于后台：不可见 / 最小化 / 失焦。
+   * 主动问候的触发条件之一（另一个是桌宠模式）。主窗口已销毁时也算后台——
+   * macOS 关掉窗口但应用还在运行，角色仍可能以桌宠窗口存在。
+   */
+  isMainWindowBackgrounded(): boolean {
+    const main = this.main
+    if (!main || main.isDestroyed()) return true
+    return !main.isVisible() || main.isMinimized() || !main.isFocused()
+  }
+
+  /** 现存渲染窗口（主窗口 + 桌宠窗口）：主动问候广播用 */
+  listWindows(): BrowserWindow[] {
+    return [this.main, this.pet].filter((win): win is BrowserWindow => !!win && !win.isDestroyed())
+  }
+
   /** 模式或强制穿透变化时回调（托盘据此刷新） */
   onStateChange(listener: () => void): void {
     this.listeners.add(listener)

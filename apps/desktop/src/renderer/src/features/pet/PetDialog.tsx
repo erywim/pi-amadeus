@@ -40,6 +40,7 @@ export function PetDialog({ engine, reopenSignal }: PetDialogProps): React.JSX.E
   const textStreaming = useSessionStore((s) => s.stream.streaming)
   const dialogText = useUiStore((s) => s.dialogText)
   const pendingUserText = useCompanionStore((s) => s.pendingUserText)
+  const proactiveSeq = useCompanionStore((s) => s.proactiveSeq)
   const ttsMuted = useUiStore((s) => s.ttsMuted)
   const setTtsMuted = useUiStore((s) => s.setTtsMuted)
   const userId = useSessionStore((s) => s.userId)
@@ -72,6 +73,15 @@ export function PetDialog({ engine, reopenSignal }: PetDialogProps): React.JSX.E
     lastReopen.current = reopenSignal
     setClosedTurn(null)
   }, [reopenSignal])
+
+  // 主动问候 = 新的一轮：手动收起过的对话框也要重新出现（见 lib/proactive.ts）
+  const lastProactive = useRef(proactiveSeq)
+  useEffect(() => {
+    if (proactiveSeq === lastProactive.current) return
+    lastProactive.current = proactiveSeq
+    setTurnSeq((n) => n + 1)
+    setClosedTurn(null)
+  }, [proactiveSeq])
 
   const [visible, setVisible] = useState(false)
   const lastActivity = useRef(0)

@@ -1,10 +1,17 @@
 import { Hono } from 'hono'
 import type { ProactiveInput, ProactiveResponse } from '@pi-amadeus/shared'
+import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
+import { checkFrame } from '../frames.ts'
 import { generateProactiveGreeting, proactiveScheduler } from '../proactive/index.ts'
+import { runProactiveGreeting } from '../proactive.ts'
 
-/** 主动问候：设置 / 最新一条 / 立即生成 */
-export function proactiveRoutes(db: Db): Hono {
+/**
+ * 主动问候统一路由：
+ * - GET/PUT/POST /proactive：dev 的空闲/时间窗设置与立即生成能力；
+ * - POST /proactive { frame }：桌面主进程的截图视觉问候。
+ */
+export function proactiveRoutes(cfg: BrainConfig, db: Db): Hono {
   const app = new Hono()
 
   app.get('/proactive', async (c) => {
@@ -60,7 +67,7 @@ export function proactiveRoutes(db: Db): Hono {
     return c.json({ ok: true, settings })
   })
 
-  /** 立即生成一条（不等空闲窗口；用于预览与 E2E） */
+  /** 立即生成传统空闲问候（设置页预览与 E2E）；不等空闲窗口。 */
   app.post('/proactive/run', async (c) => {
     const body = (await c.req.json().catch(() => null)) as { userId?: unknown } | null
     const userId = typeof body?.userId === 'string' ? body.userId : ''
@@ -72,6 +79,32 @@ export function proactiveRoutes(db: Db): Hono {
     return c.json({ ok: true, greeting })
   })
 
+  /** 桌面后台/桌宠截图视觉问候。 */
+  app.post('/proactive', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as
+      | { userId?: unknown; sessionId?: unknown; frame?: unknown }
+      | null
+    const userId = typeof body?.userId === 'string' ? body.userId : ''
+    const frame = typeof body?.frame === 'string' ? body.frame : ''
+    const sessionId = typeof body?.sessionId === 'string' ? body.sessionId : ''
+    if (!userId || !frame) return c.json({ error: 'userId/frame 必填' }, 400)
+    if (!(await db.getUser(userId))) {
+      return c.json({ error: '用户不存在', code: 'user_not_found' }, 404)
+    }
+    const checked = checkFrame(frame)
+    if (!checked.ok) return c.json({ error: checked.error }, 400)
+    const result = await runProactiveGreeting({
+      cfg,
+      db,
+      userId,
+      sessionId: sessionId || undefined,
+      frame,
+      signal: c.req.raw.signal
+    })
+    if (!result.ok) return c.json({ error: result.error, code: result.code }, result.status)
+    return c.json({ ok: true, ...result.greeting, model: result.model })
+  })
+
   return app
 }
 
@@ -81,5 +114,4 @@ async function countToday(db: Db, userId: string): Promise<number> {
   return db.countProactiveToday(userId, since)
 }
 
-// 供 index.ts 直接启动调度器时复用
 export { generateProactiveGreeting }

@@ -577,7 +577,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         updatedAt: now,
         pinned: false,
         archived: false,
-        messageCount: 0
+        messageCount: 0,
+        localOnly: true
       }
       set((s) => ({
         sessions: [session, ...s.sessions],

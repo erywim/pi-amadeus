@@ -5,6 +5,7 @@ import { RouterProvider } from 'react-router/dom'
 import { TooltipProvider } from './components/ui/tooltip'
 import { PetRoot } from './features/pet/PetRoot'
 import { bindMainWindowToAppMode } from './lib/appMode'
+import { bindProactive } from './lib/proactive'
 import { router } from './router'
 import { useAutomationStore } from './stores/automationStore'
 import { useCompanionStore } from './stores/companionStore'
@@ -35,6 +36,9 @@ if (localStorage.getItem('amadeus_settings') !== null) {
 void useSessionStore.getState().init()
 
 if (!isPetWindow) bindMainWindowToAppMode()
+
+// 主动问候：两个窗口都要上报身份/会话并接收问候（桌宠对话框与主窗口 toast）
+bindProactive()
 
 // 开发期 E2E 测试钩子：暴露 store 供 CDP 驱动断言
 if (import.meta.env.DEV) {
