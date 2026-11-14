@@ -448,6 +448,9 @@ body.theme-amadeus .stage-edge[data-status='speaking']::after {
   stroke: color-mix(in srgb, var(--primary) 30%, transparent);
   stroke-width: 1;
 }
+.agent-task-link-end {
+  fill: color-mix(in srgb, var(--primary) 50%, transparent);
+}
 .agent-arrival-trail-path {
   fill: none;
   stroke: color-mix(in srgb, var(--primary) 72%, white);
@@ -497,7 +500,7 @@ body.theme-amadeus .stage-edge[data-status='speaking']::after {
   }
 
   .agent-arrival-trail-path {
-    animation: none;
+    display: none;
   }
 }
 

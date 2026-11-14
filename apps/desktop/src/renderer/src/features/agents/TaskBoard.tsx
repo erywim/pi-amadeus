@@ -103,8 +103,8 @@ const TaskCard = memo(function TaskCard({ task, selected, canvas, text, arriving
       selectTask(task.id)
     }}
     onPointerDown={canvas ? (event) => {
-      beginInteraction()
       if (event.button !== 0 || !event.isPrimary || busy || saving.current) return
+      beginInteraction()
       suppressClick.current = false
       // 指针捕获保证拖出卡片仍收到释放；移动期间只改 DOM，不触发网络或 React 渲染。
       drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, task, moved: false }
@@ -181,6 +181,7 @@ function TaskLinks({ tasks, width, height, arrivingIds }: {
         const path = `M ${x1} ${y1} H ${middle} V ${y2} H ${x2}`
         return <React.Fragment key={`${id}-${target.id}`}>
           <path className="agent-task-link" d={path} />
+          <circle className="agent-task-link-end" cx={x2} cy={y2} r="3" />
           {arrivingIds.has(target.id) && <path className="agent-arrival-trail-path" d={path} />}
         </React.Fragment>
       })
@@ -208,15 +209,15 @@ export function TaskBoard({ tasks, selectedId, view }: { tasks: AgentTask[]; sel
     })
     const freshIds = freshTasks.map((task) => task.id)
     setArrivingIds((ids) => new Set([...ids, ...freshIds]))
+  }, [tasks])
+
+  useEffect(() => {
+    if (arrivingIds.size === 0) return
     const timer = window.setTimeout(() => {
-      setArrivingIds((ids) => {
-        const next = new Set(ids)
-        freshIds.forEach((id) => next.delete(id))
-        return next
-      })
+      setArrivingIds(new Set())
     }, 420)
     return () => window.clearTimeout(timer)
-  }, [tasks])
+  }, [arrivingIds])
 
   if (view === 'list') return <div data-testid="agent-task-list" className="grid content-start gap-2 overflow-y-auto p-4 sm:grid-cols-2 xl:grid-cols-1">{tasks.map((task) => <TaskCard key={task.id} task={task} selected={task.id === selectedId} canvas={false} text={text} />)}</div>
   const width = Math.max(680, ...tasks.map((task) => task.position.x + CARD_WIDTH + 48))
