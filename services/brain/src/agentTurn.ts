@@ -44,6 +44,10 @@ export interface AgentTurnOptions {
   appendUserMessage?: boolean
   /** 重新生成时要排除的历史消息 id（旧助手回答） */
   omitMessageId?: string
+  /** 本次用户消息的附件（文件已落盘） */
+  attachments?: import('./media.ts').SavedAttachment[]
+  /** 从指定父消息之后分叉 */
+  branchParentId?: string | null
 }
 
 export interface AgentTurnUsage {
@@ -60,6 +64,9 @@ export interface AgentTurnResult {
   /** 本回合实际执行的工具次数与工具名（看板统计用） */
   toolCalls: number
   toolNames: string[]
+  userMessageId?: string
+  changedFiles?: Array<{ path: string; status: string }>
+  thinking?: string
 }
 
 /** 工具结果文本的 UI 上限（超出截断） */

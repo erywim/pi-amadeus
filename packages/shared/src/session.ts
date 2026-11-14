@@ -6,7 +6,17 @@ import type { ToolStatus } from './sse.ts'
  * 渠道：桌面客户端 / 飞书 / 各通讯平台适配器，会话按渠道存同一数据库。
  * 平台渠道值就是 PlatformKind（telegram / onebot / webhook），看板按它分组。
  */
-export type Channel = 'desktop' | 'feishu' | 'telegram' | 'onebot' | 'webhook'
+export type Channel =
+  | 'desktop'
+  | 'feishu'
+  | 'telegram'
+  | 'onebot'
+  | 'webhook'
+  | 'discord'
+  | 'slack'
+  | 'wechat'
+  | 'qqbot'
+  | 'automation'
 
 export type Role = 'user' | 'assistant'
 
@@ -16,6 +26,12 @@ export type Role = 'user' | 'assistant'
  * 每个回合按发起时的模式决定输出格式（语音=双语言，文本=仅中文）。
  */
 export type TurnMode = 'text' | 'voice'
+
+/** 本回合工作区里状态发生变化的文件（真实 git 状态快照差集）。 */
+export interface TurnChangedFile {
+  path: string
+  status: string
+}
 
 export interface Message {
   id: string
@@ -27,6 +43,17 @@ export interface Message {
   ttsText?: string | null
   /** 回合发起时的模式 */
   mode: TurnMode
+  /** 分支树父节点；根消息为 null */
+  parentId?: string | null
+  /** 同一父节点下的第几条 / 总数（分支切换器） */
+  branchIndex?: number
+  branchCount?: number
+  /** 图片 / 语音 / 文件附件（文件本体在服务端数据目录） */
+  attachments?: import('./attachment.ts').MessageAttachment[]
+  /** 本回合工作区改动（仅桌面端真实 git 快照有差异时才有） */
+  changedFiles?: TurnChangedFile[]
+  /** 模型真实返回的思考过程 */
+  thinking?: string
   createdAt: number
 }
 
@@ -36,8 +63,28 @@ export interface Session {
   title: string
   createdAt: number
   updatedAt: number
+  pinned?: boolean
+  archived?: boolean
   /** 服务端会话列表附带的消息数（历史页统计用；未加载消息时也可见） */
   messageCount?: number
+}
+
+export interface SessionUsage {
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  model: string
+}
+
+export interface MessageSearchHit {
+  sessionId: string
+  sessionTitle: string
+  channel: Channel
+  messageId: string
+  role: Role
+  snippet: string
+  createdAt: number
 }
 
 /** 会话列表按天分组的组名（今天 / 昨天 / 本周 / 更早） */
@@ -90,6 +137,7 @@ export interface StreamState {
     messageId: string
     content: string
     emotion?: Emotion
+    thinking?: string
   }
   /** 本回合 turnId（首个 tool 事件到来时设置） */
   turnId?: string

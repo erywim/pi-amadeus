@@ -123,8 +123,10 @@ interface SessionState {
   /** 消息分支切换：-1 上一个分支 / 1 下一个分支 */
   switchBranch: (messageId: string, direction: -1 | 1) => Promise<void>
   stopStreaming: () => void
-  /** bash 确认卡应答（允许/拒绝） */
+  /** bash/Computer Use 确认卡应答（允许/拒绝） */
   respondToolConfirm: (approved: boolean) => void
+  /** 旧 Electron fallback Computer Use 确认卡应答 */
+  respondComputer: (approved: boolean) => void
   /** 手动重命名（乐观更新；失败回滚并抛出，由调用方提示） */
   renameSession: (id: string, title: string) => Promise<void>
   dismissTurnError: (sessionId: string) => void
@@ -367,6 +369,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
             pendingConfirm: {
               toolCallId: event.toolCallId,
               toolName: event.toolName,
+              label: event.label,
+              kind: event.kind,
               args: event.args,
               expiresAt: event.expiresAt
             }
@@ -746,6 +750,10 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           set((s) => ({ stream: { ...s.stream, pendingConfirm: confirm } }))
         }
       })
+    },
+
+    respondComputer: () => {
+      // 旧 Electron fallback 请求仍由独立 ComputerConfirmCard 处理。
     },
 
     renameSession: async (id, title) => {
