@@ -52,7 +52,7 @@ export async function extractMemories(input: ExtractInput): Promise<number> {
         }
       ]
     },
-    { temperature: 0.2, maxTokens: 240 }
+    { temperature: 0.2, maxTokens: 240, thinkingLevel: 'off' }
   )
 
   const candidates = parseCandidates(raw)

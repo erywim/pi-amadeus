@@ -8,10 +8,20 @@ export interface AdapterContext {
   onMessage: (inbound: PlatformInbound) => void
 }
 
+export interface SendOptions {
+  /** 被动回复 / 引用某条平台消息 */
+  replyTo?: string
+}
+
 export interface PlatformAdapter {
   start(): Promise<void>
   stop(): void
-  send(chatId: string, chatType: 'private' | 'group', text: string): Promise<void>
+  send(
+    chatId: string,
+    chatType: 'private' | 'group',
+    text: string,
+    options?: SendOptions
+  ): Promise<void>
   status(): PlatformStatus
 }
 

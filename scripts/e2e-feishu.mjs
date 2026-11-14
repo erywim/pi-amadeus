@@ -9,6 +9,18 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 
 const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
+// 飞书路由只在 FEISHU_ENABLED=true 时挂载：没启用时明确跳过（退出码 2），
+// 别把它报成「challenge 不回显」这种看起来像 bug 的失败
+{
+  const health = await fetch(`${BRAIN}/api/health`).then((r) => r.json()).catch(() => null)
+  if (!health?.feishuEnabled) {
+    console.error(
+      '前置不满足：大脑未启用飞书（services/brain/.env 里 FEISHU_ENABLED=false 或没有飞书凭据）。\n' +
+        '  设置 FEISHU_ENABLED=true 并填好 FEISHU_APP_ID / FEISHU_APP_SECRET 后重跑。'
+    )
+    process.exit(2)
+  }
+}
 const run = `feishu-e2e-${Date.now()}`
 const OPEN_ID_A = `ou_fake_${run}`
 const CHAT_ID_A = `oc_fake_${run}`

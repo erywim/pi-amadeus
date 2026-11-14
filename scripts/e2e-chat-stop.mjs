@@ -10,6 +10,7 @@
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 
+// 9222 被本机 Chrome 占用时，用 --remoteDebuggingPort 换端口并设置 CDP_HTTP
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
 const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 const results = []
@@ -205,6 +206,47 @@ try {
   )
 
   await evalJs(`try { window.__stopUnsub?.() } catch {} true`)
+
+  // ---------- 停止后的序列：本地消息 id 必须对齐服务端，编辑重发不能 404 ----------
+  const serverMessageId = await waitFor(
+    `(() => {
+      const s = window.__amadeus.sessionStore.getState();
+      const message = (s.messages[s.activeSessionId] ?? [])[0];
+      return message && !String(message.id).startsWith('local-') ? message.id : '';
+    })()`,
+    10000,
+    '停止后用户消息 id 对齐'
+  ).catch(() => '')
+  report('停止后用户消息 id 对齐服务端', Boolean(serverMessageId), String(serverMessageId).slice(0, 12))
+
+  await evalJs(`document.querySelector('[data-testid="edit-message"]')?.click(); true`)
+  await waitFor(`!!document.querySelector('[data-testid="edit-message-input"]')`, 5000, '编辑框')
+  await evalJs(`(() => {
+    const el = document.querySelector('[data-testid="edit-message-input"]');
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(el, '只回复：停止后编辑');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`)
+  await evalJs(`document.querySelector('[data-testid="edit-message-save"]')?.click(); true`)
+  const afterEdit = await waitFor(
+    `(() => {
+      const s = window.__amadeus.sessionStore.getState();
+      const messages = s.messages[s.activeSessionId] ?? [];
+      if (s.stream.streaming) return null;
+      const error = s.turnErrors[s.activeSessionId] ?? '';
+      return messages.length === 2 && messages[0].content === '只回复：停止后编辑' && !error
+        ? { roles: messages.map((m) => m.role), content: messages[1].content.slice(0, 20) }
+        : null;
+    })()`,
+    120000,
+    '停止后编辑重发'
+  ).catch(() => null)
+  report(
+    '停止后仍可编辑重发（消息 id 已对齐，不再 404）',
+    Boolean(afterEdit),
+    afterEdit ? JSON.stringify(afterEdit) : 'timeout / error'
+  )
 
   const failed = results.filter((r) => !r.ok)
   console.log(`\n=== 汇总: ${results.length - failed.length}/${results.length} 通过 ===`)

@@ -1,6 +1,18 @@
 import * as React from 'react'
 import { useEffect, useState } from 'react'
-import { Copy, LoaderCircle, MessageCircle, Pencil, Send, Trash2, Webhook } from 'lucide-react'
+import {
+  Bot,
+  Copy,
+  Gamepad2,
+  Hash,
+  LoaderCircle,
+  MessageCircle,
+  MessagesSquare,
+  Pencil,
+  Send,
+  Trash2,
+  Webhook
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { PlatformItem, PlatformKind } from '@pi-amadeus/shared'
@@ -32,10 +44,22 @@ import { cn } from '@renderer/lib/utils'
 const KIND_ICONS = {
   telegram: Send,
   onebot: MessageCircle,
-  webhook: Webhook
+  webhook: Webhook,
+  discord: Gamepad2,
+  slack: Hash,
+  wechat: MessagesSquare,
+  qqbot: Bot
 } as const
 
-const KINDS: PlatformKind[] = ['telegram', 'onebot', 'webhook']
+const KINDS: PlatformKind[] = [
+  'telegram',
+  'onebot',
+  'discord',
+  'slack',
+  'wechat',
+  'qqbot',
+  'webhook'
+]
 
 interface FormState {
   name: string
@@ -46,6 +70,14 @@ interface FormState {
   accessToken: string
   outboundUrl: string
   secret: string
+  botToken: string
+  appToken: string
+  gatewayUrl: string
+  apiBaseUrl: string
+  appId: string
+  appSecret: string
+  tokenUrl: string
+  testOpenId: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -56,11 +88,19 @@ const EMPTY_FORM: FormState = {
   url: '',
   accessToken: '',
   outboundUrl: '',
-  secret: ''
+  secret: '',
+  botToken: '',
+  appToken: '',
+  gatewayUrl: '',
+  apiBaseUrl: '',
+  appId: '',
+  appSecret: '',
+  tokenUrl: '',
+  testOpenId: ''
 }
 
 /**
- * 通讯平台（参考 AstrBot 的多平台接入）：Telegram / OneBot v11（QQ）/ 通用 Webhook。
+ * 通讯平台（参考常见的多平台接入）：Telegram / OneBot v11（QQ）/ 通用 Webhook。
  * 卡片显示适配器实时状态；每 5 秒轮询一次，配置变更后立即同步。
  */
 export function PlatformsPanel(): React.JSX.Element {
@@ -107,7 +147,12 @@ export function PlatformsPanel(): React.JSX.Element {
       baseUrl: text('baseUrl'),
       testChatId: text('testChatId'),
       url: text('url'),
-      outboundUrl: text('outboundUrl')
+      outboundUrl: text('outboundUrl'),
+      gatewayUrl: text('gatewayUrl'),
+      apiBaseUrl: text('apiBaseUrl'),
+      appId: text('appId'),
+      tokenUrl: text('tokenUrl'),
+      testOpenId: text('testOpenId')
     })
     setDialog({ mode: 'edit', platform })
   }
@@ -125,6 +170,41 @@ export function PlatformsPanel(): React.JSX.Element {
         url: form.url,
         ...(form.accessToken ? { accessToken: form.accessToken } : {}),
         testChatId: form.testChatId
+      }
+    }
+    if (kind === 'discord') {
+      return {
+        ...(form.botToken ? { botToken: form.botToken } : {}),
+        gatewayUrl: form.gatewayUrl,
+        apiBaseUrl: form.apiBaseUrl,
+        testChatId: form.testChatId
+      }
+    }
+    if (kind === 'slack') {
+      return {
+        ...(form.botToken ? { botToken: form.botToken } : {}),
+        ...(form.appToken ? { appToken: form.appToken } : {}),
+        apiBaseUrl: form.apiBaseUrl,
+        testChatId: form.testChatId
+      }
+    }
+    if (kind === 'wechat') {
+      return {
+        ...(form.token ? { token: form.token } : {}),
+        appId: form.appId,
+        ...(form.appSecret ? { appSecret: form.appSecret } : {}),
+        apiBaseUrl: form.apiBaseUrl,
+        testOpenId: form.testOpenId
+      }
+    }
+    if (kind === 'qqbot') {
+      return {
+        appId: form.appId,
+        ...(form.appSecret ? { clientSecret: form.appSecret } : {}),
+        tokenUrl: form.tokenUrl,
+        apiBaseUrl: form.apiBaseUrl,
+        gatewayUrl: form.gatewayUrl,
+        testOpenId: form.testOpenId
       }
     }
     return {
@@ -205,7 +285,19 @@ export function PlatformsPanel(): React.JSX.Element {
       ? Boolean(form.token) || Boolean(editing?.config.tokenSet)
       : kind === 'onebot'
         ? Boolean(form.url)
-        : Boolean(form.outboundUrl))
+        : kind === 'discord'
+          ? Boolean(form.botToken) || Boolean(editing?.config.botTokenSet)
+          : kind === 'slack'
+            ? (Boolean(form.botToken) || Boolean(editing?.config.botTokenSet)) &&
+              (Boolean(form.appToken) || Boolean(editing?.config.appTokenSet))
+            : kind === 'wechat'
+              ? (Boolean(form.token) || Boolean(editing?.config.tokenSet)) &&
+                Boolean(form.appId) &&
+                (Boolean(form.appSecret) || Boolean(editing?.config.appSecretSet))
+              : kind === 'qqbot'
+                ? Boolean(form.appId) &&
+                  (Boolean(form.appSecret) || Boolean(editing?.config.clientSecretSet))
+                : Boolean(form.outboundUrl))
 
   return (
     <div className="max-w-2xl">
@@ -236,7 +328,15 @@ export function PlatformsPanel(): React.JSX.Element {
               ? `${typeof config.baseUrl === 'string' && config.baseUrl ? config.baseUrl : 'api.telegram.org'}`
               : platform.kind === 'onebot'
                 ? String(config.url ?? '')
-                : String(config.outboundUrl ?? '')
+                : platform.kind === 'discord'
+                  ? String(config.gatewayUrl || 'gateway.discord.gg')
+                  : platform.kind === 'slack'
+                    ? 'Socket Mode'
+                    : platform.kind === 'wechat'
+                      ? `公众号 ${String(config.appId ?? '')}`
+                      : platform.kind === 'qqbot'
+                        ? `机器人 ${String(config.appId ?? '')}`
+                        : String(config.outboundUrl ?? '')
           return (
             <div
               key={platform.id}
@@ -277,17 +377,20 @@ export function PlatformsPanel(): React.JSX.Element {
                   {status.state === 'error' && status.detail && (
                     <p className="mt-1 break-words text-[11px] text-destructive">{status.detail}</p>
                   )}
-                  {platform.kind === 'webhook' && (
+                  {(platform.kind === 'webhook' || platform.kind === 'wechat') && (
                     <button
                       type="button"
                       onClick={() => {
-                        void copyText(`${BRAIN_URL}/api/platforms/${platform.id}/webhook`)
+                        const suffix = platform.kind === 'wechat' ? 'wechat' : 'webhook'
+                        void copyText(`${BRAIN_URL}/api/platforms/${platform.id}/${suffix}`)
                         toast.success(t('common.copied'))
                       }}
                       className="mt-1 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
                     >
                       <Copy className="size-3" />
-                      {t('settings.platforms.copyWebhook')}
+                      {platform.kind === 'wechat'
+                        ? t('settings.platforms.wechatInbound')
+                        : t('settings.platforms.copyWebhook')}
                     </button>
                   )}
                 </div>
@@ -427,6 +530,179 @@ export function PlatformsPanel(): React.JSX.Element {
                   value={form.testChatId}
                   onChange={(value) => setForm({ ...form, testChatId: value })}
                   placeholder={t('settings.platforms.onebotTestChatPlaceholder')}
+                />
+              </>
+            )}
+            {kind === 'discord' && (
+              <>
+                <Field
+                  testId="platform-discord-token"
+                  label={t('settings.platforms.discordToken')}
+                  value={form.botToken}
+                  onChange={(value) => setForm({ ...form, botToken: value })}
+                  placeholder={
+                    editing?.config.botTokenSet
+                      ? t('settings.platforms.secretKeep')
+                      : 'MTIz…（Bot → Token）'
+                  }
+                  secret
+                />
+                <Field
+                  testId="platform-discord-gateway"
+                  label={t('settings.platforms.discordGateway')}
+                  value={form.gatewayUrl}
+                  onChange={(value) => setForm({ ...form, gatewayUrl: value })}
+                  placeholder="wss://gateway.discord.gg/?v=10&encoding=json"
+                />
+                <Field
+                  testId="platform-discord-api"
+                  label={t('settings.platforms.discordApiBase')}
+                  value={form.apiBaseUrl}
+                  onChange={(value) => setForm({ ...form, apiBaseUrl: value })}
+                  placeholder="https://discord.com/api/v10"
+                />
+                <Field
+                  testId="platform-test-chat"
+                  label={t('settings.platforms.testChatId')}
+                  value={form.testChatId}
+                  onChange={(value) => setForm({ ...form, testChatId: value })}
+                  placeholder={t('settings.platforms.channelIdPlaceholder')}
+                />
+              </>
+            )}
+            {kind === 'slack' && (
+              <>
+                <Field
+                  testId="platform-slack-bot-token"
+                  label={t('settings.platforms.slackBotToken')}
+                  value={form.botToken}
+                  onChange={(value) => setForm({ ...form, botToken: value })}
+                  placeholder={
+                    editing?.config.botTokenSet ? t('settings.platforms.secretKeep') : 'xoxb-…'
+                  }
+                  secret
+                />
+                <Field
+                  testId="platform-slack-app-token"
+                  label={t('settings.platforms.slackAppToken')}
+                  value={form.appToken}
+                  onChange={(value) => setForm({ ...form, appToken: value })}
+                  placeholder={
+                    editing?.config.appTokenSet ? t('settings.platforms.secretKeep') : 'xapp-…'
+                  }
+                  secret
+                />
+                <Field
+                  testId="platform-slack-api"
+                  label={t('settings.platforms.slackApiBase')}
+                  value={form.apiBaseUrl}
+                  onChange={(value) => setForm({ ...form, apiBaseUrl: value })}
+                  placeholder="https://slack.com/api"
+                />
+                <Field
+                  testId="platform-test-chat"
+                  label={t('settings.platforms.testChatId')}
+                  value={form.testChatId}
+                  onChange={(value) => setForm({ ...form, testChatId: value })}
+                  placeholder={t('settings.platforms.channelIdPlaceholder')}
+                />
+              </>
+            )}
+            {kind === 'wechat' && (
+              <>
+                <Field
+                  testId="platform-wechat-token"
+                  label={t('settings.platforms.wechatToken')}
+                  value={form.token}
+                  onChange={(value) => setForm({ ...form, token: value })}
+                  placeholder={
+                    editing?.config.tokenSet ? t('settings.platforms.secretKeep') : 'Token'
+                  }
+                  secret
+                />
+                <Field
+                  testId="platform-wechat-appid"
+                  label={t('settings.platforms.wechatAppId')}
+                  value={form.appId}
+                  onChange={(value) => setForm({ ...form, appId: value })}
+                  placeholder="wx…"
+                />
+                <Field
+                  testId="platform-wechat-secret"
+                  label={t('settings.platforms.wechatAppSecret')}
+                  value={form.appSecret}
+                  onChange={(value) => setForm({ ...form, appSecret: value })}
+                  placeholder={
+                    editing?.config.appSecretSet
+                      ? t('settings.platforms.secretKeep')
+                      : 'AppSecret'
+                  }
+                  secret
+                />
+                <Field
+                  testId="platform-wechat-api"
+                  label={t('settings.platforms.wechatApiBase')}
+                  value={form.apiBaseUrl}
+                  onChange={(value) => setForm({ ...form, apiBaseUrl: value })}
+                  placeholder="https://api.weixin.qq.com"
+                />
+                <Field
+                  testId="platform-wechat-openid"
+                  label={t('settings.platforms.wechatTestOpenId')}
+                  value={form.testOpenId}
+                  onChange={(value) => setForm({ ...form, testOpenId: value })}
+                  placeholder="oXXXX…"
+                />
+              </>
+            )}
+            {kind === 'qqbot' && (
+              <>
+                <Field
+                  testId="platform-qqbot-appid"
+                  label={t('settings.platforms.qqbotAppId')}
+                  value={form.appId}
+                  onChange={(value) => setForm({ ...form, appId: value })}
+                  placeholder="1020…"
+                />
+                <Field
+                  testId="platform-qqbot-secret"
+                  label={t('settings.platforms.qqbotSecret')}
+                  value={form.appSecret}
+                  onChange={(value) => setForm({ ...form, appSecret: value })}
+                  placeholder={
+                    editing?.config.clientSecretSet
+                      ? t('settings.platforms.secretKeep')
+                      : 'AppSecret'
+                  }
+                  secret
+                />
+                <Field
+                  testId="platform-qqbot-token-url"
+                  label={t('settings.platforms.qqbotTokenUrl')}
+                  value={form.tokenUrl}
+                  onChange={(value) => setForm({ ...form, tokenUrl: value })}
+                  placeholder="https://bots.qq.com/app/getAppAccessToken"
+                />
+                <Field
+                  testId="platform-qqbot-api"
+                  label={t('settings.platforms.qqbotApiBase')}
+                  value={form.apiBaseUrl}
+                  onChange={(value) => setForm({ ...form, apiBaseUrl: value })}
+                  placeholder="https://api.sgroup.qq.com"
+                />
+                <Field
+                  testId="platform-qqbot-gateway"
+                  label={t('settings.platforms.qqbotGateway')}
+                  value={form.gatewayUrl}
+                  onChange={(value) => setForm({ ...form, gatewayUrl: value })}
+                  placeholder="wss://api.sgroup.qq.com/websocket"
+                />
+                <Field
+                  testId="platform-qqbot-openid"
+                  label={t('settings.platforms.qqbotTestOpenId')}
+                  value={form.testOpenId}
+                  onChange={(value) => setForm({ ...form, testOpenId: value })}
+                  placeholder="OpenID"
                 />
               </>
             )}

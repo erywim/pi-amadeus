@@ -4,7 +4,9 @@ import type { BrainConfig } from '../config.ts'
 import type { LlmTarget } from '../llm.ts'
 import { createBashTool } from './bash.ts'
 import { createCalculateTool } from './calculate.ts'
+import { createFetchUrlTool } from './fetchUrl.ts'
 import { createSearchTool } from './search.ts'
+import { searchOptions } from './searchConfig.ts'
 import { createTimeTool } from './time.ts'
 import { createWeatherTool } from './weather.ts'
 
@@ -21,15 +23,18 @@ export interface ToolRegistryOptions {
   target: LlmTarget
   /** 由 agentTurn 提供：请求 bash 确认并把 tool_confirm 事件推入 SSE 队列 */
   confirmRequest: (toolCallId: string, command: string) => Promise<boolean>
+  /** 回合取消信号：联网工具随之结束，不让用户点停止后请求还挂着 */
+  signal?: AbortSignal
 }
 
 export function buildToolRegistry(opts: ToolRegistryOptions): AgentTool[] {
-  const proxy = opts.target.proxy || ''
+  const network = searchOptions(opts.cfg, opts.target.proxy, opts.signal)
   const tools: AgentTool[] = [
     createTimeTool(),
     createCalculateTool(),
-    createWeatherTool({ proxy }),
-    createSearchTool({ tavilyKey: opts.cfg.tools.tavilyKey || undefined, proxy })
+    createWeatherTool({ proxy: opts.target.proxy || '' }),
+    createSearchTool(network),
+    createFetchUrlTool(network)
   ]
   if (opts.channel === 'desktop') {
     tools.push(

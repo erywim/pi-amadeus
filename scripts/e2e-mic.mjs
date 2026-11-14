@@ -6,15 +6,26 @@
  *   3. 覆盖 navigator.mediaDevices.getUserMedia → 点工具栏 mic 按钮 → 播放音频
  *   4. 两轮：第一轮覆盖「模型未就绪占位 + stop 时 flush」路径；
  *      第二轮覆盖「模型就绪后静音自然触发段结束」路径（无需手动 stop）
- * 前置：brain(3002)、桌面端 dev(9222) 已启动。
+ * 前置：brain(3002)、桌面端 dev（CDP 默认 9222，可用 CDP_HTTP 覆盖）已启动。
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { resolve } from 'node:path'
 
 const WAV_PATH = resolve(import.meta.dirname, '../.tmp-mic-test.wav')
+// 测试音频由 scripts/gen-mic-wav.mjs 现生成（需要 fish.audio TTS 密钥）。
+// 没有它时明确报「前置不满足」并用退出码 2 跳过，而不是 ENOENT 崩在 import 阶段。
+if (!existsSync(WAV_PATH)) {
+  console.error(
+    `前置不满足：缺少测试音频 ${WAV_PATH}\n` +
+      '  先生成：node scripts/gen-mic-wav.mjs（需要 services/brain/.env 里的 FISH_AUDIO_API_KEY）'
+  )
+  process.exit(2)
+}
 const wavB64 = readFileSync(WAV_PATH).toString('base64')
 
+// 9222 常被本机 Chrome 占用：用 --remoteDebuggingPort 换端口后靠 CDP_HTTP 指过来，
+// 硬编码会把 Chrome 页面当成桌面端测（前置检查通过却测错对象）
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
 const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 

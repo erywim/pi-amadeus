@@ -23,6 +23,14 @@ interface UiState {
   cameraActive: boolean
   /** 静音语音播报（TTS 播放与入队全部关闭） */
   ttsMuted: boolean
+  /** 全局命令面板（⌘K）是否打开 */
+  commandPaletteOpen: boolean
+  /** 消息分支树弹窗是否打开 */
+  branchTreeOpen: boolean
+  /** 快捷键速查弹窗是否打开 */
+  shortcutsOpen: boolean
+  /** 请求在右侧工作区面板里打开某个文件的 diff（消息里的改动卡用） */
+  workspaceDiffRequest: { path: string; nonce: number } | null
 
   openLogin: () => void
   closeLogin: () => void
@@ -34,6 +42,11 @@ interface UiState {
   setMicActive: (active: boolean) => void
   setCameraActive: (active: boolean) => void
   setTtsMuted: (muted: boolean) => void
+  setCommandPaletteOpen: (open: boolean) => void
+  setBranchTreeOpen: (open: boolean) => void
+  setShortcutsOpen: (open: boolean) => void
+  requestWorkspaceDiff: (path: string) => void
+  clearWorkspaceDiffRequest: () => void
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -47,6 +60,10 @@ export const useUiStore = create<UiState>()((set) => ({
   micActive: false,
   cameraActive: false,
   ttsMuted: false,
+  commandPaletteOpen: false,
+  branchTreeOpen: false,
+  shortcutsOpen: false,
+  workspaceDiffRequest: null,
 
   openLogin: () => set({ loginOpen: true }),
   closeLogin: () => set({ loginOpen: false }),
@@ -58,5 +75,11 @@ export const useUiStore = create<UiState>()((set) => ({
   setDebugText: (debugText) => set({ debugText }),
   setMicActive: (micActive) => set({ micActive }),
   setCameraActive: (cameraActive) => set({ cameraActive }),
-  setTtsMuted: (ttsMuted) => set({ ttsMuted })
+  setTtsMuted: (ttsMuted) => set({ ttsMuted }),
+  setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
+  setBranchTreeOpen: (branchTreeOpen) => set({ branchTreeOpen }),
+  setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+  requestWorkspaceDiff: (path) =>
+    set({ workspaceDiffRequest: { path, nonce: Date.now() } }),
+  clearWorkspaceDiffRequest: () => set({ workspaceDiffRequest: null })
 }))

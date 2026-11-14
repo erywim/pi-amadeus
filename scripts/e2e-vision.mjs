@@ -8,13 +8,15 @@
  *     不触碰真实桌面用户的帧缓冲与模型配置）
  *  C. 视觉模型附加：测试用户配 gpt-4o-mini（aihubmix 中转 + Clash 代理）→
  *     上传红色图片帧 → 语音回合 → 回复描述图片主色调（证明 image content 块真正进了 LLM）
- * 前置：brain(3002)、桌面端 dev(9222) 已启动；usage: node scripts/e2e-vision.mjs <brainLogPath>
+ * 前置：brain(3002)、桌面端 dev（CDP 默认 9222，可用 CDP_HTTP 覆盖）已启动；
+ *       usage: node scripts/e2e-vision.mjs <brainLogPath>
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { resolve } from 'node:path'
 
 const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
+// 同 e2e-mic：9222 可能被 Chrome 占用，换端口时用 CDP_HTTP 指过来
 const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
 const brainLogPath = process.argv[2] ?? ''
 
@@ -120,11 +122,18 @@ async function cleanupSessions(cdp) {
 // ---------- 环境密钥 ----------
 
 const envPath = resolve(import.meta.dirname, '../services/brain/.env')
-const whisperKey = readFileSync(envPath, 'utf8')
-  .split('\n')
-  .find((l) => l.startsWith('WHISPER_API_KEY='))
-  .slice('WHISPER_API_KEY='.length)
-  .trim()
+const whisperLine = existsSync(envPath)
+  ? readFileSync(envPath, 'utf8').split('\n').find((l) => l.startsWith('WHISPER_API_KEY='))
+  : undefined
+const whisperKey = (whisperLine ?? '').slice('WHISPER_API_KEY='.length).trim()
+// 语音回合需要 STT：没配密钥时明确跳过（退出码 2），不要在后面炸成 undefined.slice
+if (!whisperKey) {
+  console.error(
+    '前置不满足：services/brain/.env 里没有 WHISPER_API_KEY（语音回合需要 STT）。\n' +
+      '  配置后重跑，或用 CDP 之外的专项脚本验证视觉上传部分。'
+  )
+  process.exit(2)
+}
 
 // ---------- 主流程 ----------
 

@@ -1,6 +1,6 @@
 # 桌宠模式
 
-角色以透明置顶窗口浮在桌面上（交互逻辑参考 XnneHangLab / Open-LLM-VTuber-Web 的 pet mode）。本文说明行为、代码结构、切换时序与验证方法。
+角色以透明置顶窗口浮在桌面上（交互逻辑参考常见的桌宠模式）。本文说明行为、代码结构、切换时序与验证方法。
 
 ## 1. 行为
 
@@ -53,7 +53,7 @@
 2. 渲染层 `usePetPassthrough`：光标下是带 `data-pet-interactive` 的元素，或 `engine.hitTest` 命中 → 可交互；结果变化时发 `pet:set-interactive`。
 3. 主进程 `setIgnoreMouseEvents(!(interactive && !forced), { forward: true })`。
 
-不依赖穿透期间转发的 mousemove：macOS 上穿透窗口收不到可靠的移动事件，轮询让两个平台走同一条路径。命中检测与实际渲染像素对照：一致率约 98%、可见像素零漏判；误判集中在网格边缘超出贴图轮廓的几个像素。按网格包围盒判断（XnneHangLab 的 `isHitOnModel` 做法）一致率只有约 87%，发丝间和手臂旁的空白也会挡住桌面点击。
+不依赖穿透期间转发的 mousemove：macOS 上穿透窗口收不到可靠的移动事件，轮询让两个平台走同一条路径。命中检测与实际渲染像素对照：一致率约 98%、可见像素零漏判；误判集中在网格边缘超出贴图轮廓的几个像素。按网格包围盒判断（常见桌宠实现 的 `isHitOnModel` 做法）一致率只有约 87%，发丝间和手臂旁的空白也会挡住桌面点击。
 
 兜底：
 

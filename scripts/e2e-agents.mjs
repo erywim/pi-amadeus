@@ -188,7 +188,8 @@ await runCases('agents', async (h, check) => {
     await h.request(`/api/agents/tasks/${stopped.id}/resume`, { method: 'POST', body: { userId: otherUser, requestId: h.id() }, status: 404 })
     await h.request('/api/agents/tasks', { method: 'POST', body: { ...body, userId: otherUser, dependsOn: [stopped.id] }, status: [400, 404] })
     for (const origin of ['null', 'https://untrusted.example']) {
-      await h.request(`/api/agents${query}`, { headers: { Origin: origin }, status: 400 })
+      // HTTP boundary rejects hostile browser origins before the Agent route's 400 validation.
+      await h.request(`/api/agents${query}`, { headers: { Origin: origin }, status: [400, 403] })
     }
     const otherOverview = await h.request(`/api/agents?userId=${otherUser}`)
     assert.ok(otherOverview.tasks.every((task) => task.userId === otherUser))

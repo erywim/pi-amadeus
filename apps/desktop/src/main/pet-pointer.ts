@@ -4,7 +4,7 @@ import { screen, type BrowserWindow } from 'electron'
 const POLL_MS = 16
 
 /**
- * 桌宠窗口的鼠标穿透（参考 XnneHangLab）：默认整窗穿透，桌面照常可点。
+ * 桌宠窗口的鼠标穿透（参考常见桌宠实现）：默认整窗穿透，桌面照常可点。
  * 主进程轮询全局光标、换算成窗口内坐标推给渲染层（pet:cursor）；渲染层对角色网格 /
  * 对话框做命中检测，命中时请求可交互（pet:set-interactive），离开时恢复穿透。
  * 不依赖穿透期间 forward 转发的 mousemove（macOS 上不可靠），两平台同一路径。

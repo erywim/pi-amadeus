@@ -7,6 +7,7 @@ export interface TurnMetricSource {
   startedAt: number
   model: string
   providerName?: string
+  providerId?: string
   usage: { input: number; output: number; total: number }
   toolCalls: number
   toolNames: string[]
@@ -24,6 +25,7 @@ export async function recordTurnMetric(db: Db, input: TurnMetricSource): Promise
       channel: input.channel,
       model: input.model,
       provider: input.providerName ?? '',
+      providerId: input.providerId ?? '',
       startedAt: input.startedAt,
       durationMs: Date.now() - input.startedAt,
       toolCalls: input.toolCalls,

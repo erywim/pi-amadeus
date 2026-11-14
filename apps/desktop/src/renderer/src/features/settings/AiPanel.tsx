@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
-import type { OutputLanguage, UserConfig } from '@pi-amadeus/shared'
+import { THINKING_LEVELS, type OutputLanguage, type ThinkingLevel, type UserConfig } from '@pi-amadeus/shared'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
@@ -119,6 +119,66 @@ export function AiPanel(): React.JSX.Element {
             placeholder={t('settings.ai.proxyPlaceholder')}
             onChange={(e) => updateForm({ ...form, provider: { ...form.provider, proxy: e.target.value } })}
           />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="ai-thinking-level">{t('settings.ai.thinkingLevel')}</Label>
+          <Select
+            value={form.provider.thinkingLevel ?? 'off'}
+            onValueChange={(v) =>
+              updateForm({
+                ...form,
+                provider: { ...form.provider, thinkingLevel: v as ThinkingLevel }
+              })
+            }
+          >
+            <SelectTrigger id="ai-thinking-level" data-testid="ai-thinking-level" className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THINKING_LEVELS.map((level) => (
+                <SelectItem key={level} value={level}>
+                  {t(`settings.ai.thinking.${level}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">{t('settings.ai.thinkingHint')}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="ai-context-window">{t('settings.ai.contextWindow')}</Label>
+            <Input
+              id="ai-context-window"
+              data-testid="ai-context-window"
+              type="number"
+              min={0}
+              value={form.provider.contextWindow ?? 0}
+              onChange={(e) =>
+                updateForm({
+                  ...form,
+                  provider: { ...form.provider, contextWindow: Math.max(0, Number(e.target.value) || 0) }
+                })
+              }
+            />
+            <p className="text-xs text-muted-foreground">{t('settings.ai.contextWindowHint')}</p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ai-max-tokens">{t('settings.ai.maxTokens')}</Label>
+            <Input
+              id="ai-max-tokens"
+              data-testid="ai-max-tokens"
+              type="number"
+              min={0}
+              value={form.provider.maxTokens ?? 0}
+              onChange={(e) =>
+                updateForm({
+                  ...form,
+                  provider: { ...form.provider, maxTokens: Math.max(0, Number(e.target.value) || 0) }
+                })
+              }
+            />
+            <p className="text-xs text-muted-foreground">{t('settings.ai.maxTokensHint')}</p>
+          </div>
         </div>
         <div className="space-y-2">
           <Label htmlFor="ai-system-prompt">{t('settings.ai.systemPrompt')}</Label>

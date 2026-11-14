@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useState } from 'react'
-import { Bot, Languages, MessagesSquare, MonitorCog, Send, Sparkles } from 'lucide-react'
+import { Bot, Globe, Heart, Languages, MessagesSquare, MonitorCog, Send, Sparkles } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@renderer/lib/utils'
@@ -9,9 +9,11 @@ import { FeishuPanel } from './FeishuPanel'
 import { GeneralPanel } from './GeneralPanel'
 import { LanguagePanel } from './LanguagePanel'
 import { PlatformsPanel } from './PlatformsPanel'
+import { ProactivePanel } from './ProactivePanel'
+import { SearchPanel } from './SearchPanel'
 import { SkillsPanel } from './SkillsPanel'
 
-type Section = 'ai' | 'feishu' | 'platforms' | 'skills' | 'language' | 'general'
+type Section = 'ai' | 'search' | 'feishu' | 'platforms' | 'proactive' | 'skills' | 'language' | 'general'
 
 /** 设置页（原型布局）：左侧分类导航 + 右侧面板（max-w 居中） */
 export default function SettingsPage(): React.JSX.Element {
@@ -20,8 +22,10 @@ export default function SettingsPage(): React.JSX.Element {
 
   const items: Array<{ key: Section; icon: LucideIcon; label: string }> = [
     { key: 'ai', icon: Bot, label: t('settings.nav.ai') },
+    { key: 'search', icon: Globe, label: t('settings.nav.search') },
     { key: 'feishu', icon: Send, label: t('settings.nav.feishu') },
     { key: 'platforms', icon: MessagesSquare, label: t('settings.nav.platforms') },
+    { key: 'proactive', icon: Heart, label: t('settings.nav.proactive') },
     { key: 'skills', icon: Sparkles, label: t('settings.nav.skills') },
     { key: 'language', icon: Languages, label: t('settings.nav.language') },
     { key: 'general', icon: MonitorCog, label: t('settings.nav.general') }
@@ -50,8 +54,10 @@ export default function SettingsPage(): React.JSX.Element {
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[760px] px-8 pb-8 pt-7">
           {section === 'ai' && <AiPanel />}
+          {section === 'search' && <SearchPanel />}
           {section === 'feishu' && <FeishuPanel />}
           {section === 'platforms' && <PlatformsPanel />}
+          {section === 'proactive' && <ProactivePanel />}
           {section === 'skills' && <SkillsPanel />}
           {section === 'language' && <LanguagePanel />}
           {section === 'general' && <GeneralPanel />}
