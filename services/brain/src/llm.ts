@@ -1,13 +1,23 @@
 import { createModels, createProvider } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
 import { ProxyAgent, fetch as undiciFetch } from 'undici'
-import type { Context, Model, MutableModels } from '@earendil-works/pi-ai'
+import type { Context, Model, MutableModels, ThinkingLevel } from '@earendil-works/pi-ai'
 import type { StreamFn } from '@earendil-works/pi-agent-core'
+import { validateModelRuntimeOptions } from '@pi-amadeus/shared'
+import { assertContextBudget, CONTEXT_TOO_LONG_PREFIX } from './contextBudget.ts'
+
+export const OUTPUT_LIMIT_ERROR = '回复被输出上限截断了。请调高「输出上限」、降低/关闭思考模式，或核对「上下文窗口」是否填得太小。'
+
+/** 请求参数/输出预算问题不是服务故障；保留鉴权、连接等真实故障的冷却行为。 */
+export function shouldCooldownProvider(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return message !== OUTPUT_LIMIT_ERROR && !message.startsWith(CONTEXT_TOO_LONG_PREFIX) && !/^400\b/.test(message)
+}
 
 /**
  * pi-ai 接入层：把用户配置（baseUrl/apiKey/model）映射为一个
  * OpenAI 兼容自定义 provider，统一走 pi-ai 的流式管线。
- * 按 (baseUrl, model, vision) 缓存入口；apiKey/proxy 逐请求传入
+ * 按 (baseUrl, model, vision, 窗口/上限) 缓存入口；apiKey/proxy 逐请求传入
  * （支持每用户独立密钥与独立代理）。
  */
 export interface LlmTarget {
@@ -21,12 +31,24 @@ export interface LlmTarget {
   /** 来源模型服务（多服务列表激活时）；回落内置配置时为空 */
   providerId?: string
   providerName?: string
+  /** 思考级别；off/未设 = 不请求思考（旧行为） */
+  thinkingLevel?: ThinkingLevel
+  /** 上下文窗口（token）；缺省 128k。pi 用它裁剪输出上限，避免输入+输出超窗 */
+  contextWindow?: number
+  /** 单次回复输出上限（token）；缺省 8192 */
+  maxTokens?: number
 }
+
+/** 缺省上下文窗口与输出上限（保持与旧行为一致） */
+export const DEFAULT_CONTEXT_WINDOW = 128_000
+export const DEFAULT_MAX_TOKENS = 8192
 
 export interface StreamOptions {
   signal?: AbortSignal
   temperature?: number
   maxTokens?: number
+  /** 思考级别；不传时用 target 上的配置 */
+  thinkingLevel?: ThinkingLevel | 'off'
 }
 
 interface LlmEntry {
@@ -54,8 +76,13 @@ export function supportsVision(modelId: string): boolean {
 const cache = new Map<string, LlmEntry>()
 
 export function getLlm(target: LlmTarget): LlmEntry {
+  const error = validateModelRuntimeOptions(target)
+  if (error) throw new Error(error)
   const baseUrl = target.baseUrl.replace(/\/+$/, '')
-  const key = `${baseUrl}|${target.model}|${target.vision}`
+  const contextWindow = target.contextWindow && target.contextWindow > 0 ? target.contextWindow : DEFAULT_CONTEXT_WINDOW
+  const maxTokens = target.maxTokens && target.maxTokens > 0 ? target.maxTokens : DEFAULT_MAX_TOKENS
+  // 思考能力只影响请求参数，不影响客户端构造，但窗口/上限会进 Model 元数据
+  const key = `${baseUrl}|${target.model}|${target.vision}|${contextWindow}|${maxTokens}`
   const hit = cache.get(key)
   if (hit) return hit
 
@@ -65,11 +92,32 @@ export function getLlm(target: LlmTarget): LlmEntry {
     api: 'openai-completions',
     provider: 'amadeus',
     baseUrl,
-    reasoning: false,
+    /**
+     * pi-ai 用 model.reasoning 决定是否把 thinkingLevel 映射成供应商参数
+     * （reasoning_effort / thinking.type / enable_thinking…）。
+     * 用户没设思考级别时仍标记为 true：级别为 off 时 pi 不会发任何思考参数，
+     * 与旧行为一致；否则「想开思考却没有开关」永远打不开。
+     */
+    reasoning: true,
+    /**
+     * 声明每个档位映射到同名供应商值：
+     * - 不声明时 pi 会把 xhigh/max 静默降级成 high——用户选了「极高」却发「高」，
+     *   等于偷偷改配置。
+     * - off 故意不声明：off 时不该给供应商发任何思考参数（发 reasoning_effort:"off"
+     *   会被拒），不声明正好让 pi 什么都不发。
+     */
+    thinkingLevelMap: {
+      minimal: 'minimal',
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+      max: 'max'
+    },
     input: target.vision ? ['text', 'image'] : ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128_000,
-    maxTokens: 8192
+    contextWindow,
+    maxTokens
   }
   // ambient-only auth 仅满足 createProvider 的必填结构；真实密钥每次请求显式传入
   const provider = createProvider({
@@ -100,29 +148,51 @@ export function proxyFetch(proxy: string): typeof globalThis.fetch {
   return f as unknown as typeof globalThis.fetch
 }
 
-/** 流式补全：产出文本增量；onUsage 在 done 事件时给出本次调用的用量 */
+/**
+ * 流式补全：产出文本增量；onUsage 在 done 事件时给出本次调用的用量，
+ * onThinking 逐条给出模型真实返回的思考增量（未开思考/供应商不返回时不会调用）。
+ *
+ * 思考级别必须走 streamSimple：pi 的 SimpleStreamOptions.reasoning 才会被
+ * 映射成供应商参数（reasoning_effort / thinking / enable_thinking…）；
+ * 直接 stream() 只认 reasoningEffort 这种底层字段，传 thinkingLevel 会被丢掉；
+ * 而且只有 streamSimple 会用 model.contextWindow 把输出上限裁到窗口内。
+ * 所以统一走 streamSimple：级别为 off 时不传 reasoning，思考参数一个都不发。
+ */
 export async function* streamText(
   target: LlmTarget,
   context: Context,
   options?: StreamOptions,
-  onUsage?: (usage: { input: number; output: number; total: number }) => void
+  onUsage?: (usage: { input: number; output: number; total: number }) => void,
+  onThinking?: (delta: string) => void
 ): AsyncGenerator<string> {
+  const error = validateModelRuntimeOptions(options ?? {})
+  if (error) throw new Error(error)
   const { models, model } = getLlm(target)
-  const stream = models.stream(model, context, {
+  assertContextBudget(context, model.contextWindow)
+  const reasoning = options?.thinkingLevel ?? target.thinkingLevel
+  const stream = models.streamSimple(model, context, {
     apiKey: target.apiKey,
     signal: options?.signal,
     temperature: options?.temperature,
-    maxTokens: options?.maxTokens,
+    // stream() 不会回落到 model.maxTokens：必须显式给出，否则上限形同虚设
+    maxTokens: options?.maxTokens ?? model.maxTokens,
+    reasoning: reasoning === 'off' ? undefined : reasoning,
     ...(target.proxy ? { fetch: proxyFetch(target.proxy) } : {})
   })
   for await (const event of stream) {
     if (event.type === 'text_delta') yield event.delta
-    else if (event.type === 'done' && onUsage) {
-      onUsage({
+    else if (event.type === 'thinking_delta') onThinking?.(event.delta)
+    else if (event.type === 'error') {
+      // pi-ai 将鉴权/上游失败编码成事件；必须从生成中转为失败，不能冒充空回复。
+      throw new Error(event.error.errorMessage || (event.reason === 'aborted' ? 'LLM 请求已中止' : 'LLM 请求失败'))
+    } else if (event.type === 'done') {
+      onUsage?.({
         input: event.message.usage.input ?? 0,
         output: event.message.usage.output ?? 0,
         total: event.message.usage.totalTokens ?? 0
       })
+      // 即使已有正文，length 也代表未完成；先回传真实用量，再告知调用方截断。
+      if (event.reason === 'length') throw new Error(OUTPUT_LIMIT_ERROR)
     }
   }
 }
@@ -144,15 +214,29 @@ export async function completeText(
  * 都会携带 context.tools 与 options.signal（回合 abort），这里透传即可。
  */
 export function createAgentStreamFn(target: LlmTarget, opts?: StreamOptions): StreamFn {
+  const error = validateModelRuntimeOptions(opts ?? {})
+  if (error) throw new Error(error)
   const { models } = getLlm(target)
-  return (model, context, options) =>
-    models.stream(model, context, {
+  return (model, context, options) => {
+    assertContextBudget(context, model.contextWindow)
+    const base = {
       ...options,
       apiKey: target.apiKey,
       temperature: opts?.temperature ?? options?.temperature,
-      maxTokens: opts?.maxTokens ?? options?.maxTokens,
+      // 同上：缺失时补上模型配置的上限，保证「输出上限」设置真的生效
+      maxTokens: opts?.maxTokens ?? options?.maxTokens ?? model.maxTokens,
       ...(target.proxy ? { fetch: proxyFetch(target.proxy) } : {})
+    }
+    // 显式调用参数（含 off）优先于 Agent 状态，再回落模型配置；否则 off 会被继承值覆盖。
+    // streamSimple 负责供应商协议映射与上下文窗口内的输出裁剪。
+    const reasoning = opts?.thinkingLevel ?? options?.reasoning ?? target.thinkingLevel
+    const error = validateModelRuntimeOptions({ ...base, thinkingLevel: reasoning })
+    if (error) throw new Error(error)
+    return models.streamSimple(model, context, {
+      ...base,
+      reasoning: reasoning === 'off' ? undefined : reasoning
     })
+  }
 }
 
 /** 把中文消息历史转成 pi-ai Context 消息（v1：内容只拼中文，不进日文 tts_text） */

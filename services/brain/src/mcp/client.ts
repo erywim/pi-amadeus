@@ -57,9 +57,11 @@ export class McpStdioClient {
   private stderrTail = ''
   private closed = false
   private initialized = false
+  private readonly onClose?: (error: Error) => void
 
-  constructor(spec: McpServerSpec) {
+  constructor(spec: McpServerSpec, onClose?: (error: Error) => void) {
     this.spec = spec
+    this.onClose = onClose
   }
 
   get isReady(): boolean {
@@ -82,12 +84,11 @@ export class McpStdioClient {
       this.stderrTail = (this.stderrTail + chunk).slice(-STDERR_TAIL)
     })
     proc.on('error', (error) => {
-      this.failAll(new Error(`MCP 服务启动失败（${this.spec.command}）：${error.message}`))
+      this.failConnection(new Error(`MCP 服务启动失败（${this.spec.command}）：${error.message}`))
     })
     proc.on('exit', (code, signal) => {
-      this.closed = true
       const tail = this.stderrTail.trim()
-      this.failAll(
+      this.failConnection(
         new Error(
           `MCP 服务已退出（code=${code ?? 'null'}${signal ? `, signal=${signal}` : ''}）${
             tail ? `：${tail.slice(-400)}` : ''
@@ -130,6 +131,7 @@ export class McpStdioClient {
   }
 
   close(): void {
+    // 主动断开 → 关闭；不触发故障通知，避免停用/卸载后又被退出事件标成 error。
     this.closed = true
     this.initialized = false
     this.failAll(new Error('MCP 连接已关闭'))
@@ -210,6 +212,15 @@ export class McpStdioClient {
       return
     }
     pending.resolve(message.result)
+  }
+
+  private failConnection(error: Error): void {
+    if (this.closed) return
+    // 进程退出/启动失败 → 不可用；先撤销 ready，再通知管理器清除状态和工具。
+    this.closed = true
+    this.initialized = false
+    this.failAll(error)
+    this.onClose?.(error)
   }
 
   private failAll(error: Error): void {

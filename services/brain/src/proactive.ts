@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { EMOTIONS, normalizeEmotion, type Emotion, type ProactiveGreeting } from '@pi-amadeus/shared'
+import { EMOTIONS, normalizeEmotion, type Emotion, type ProactiveVisionGreeting } from '@pi-amadeus/shared'
 import type { BrainConfig } from './config.ts'
 import type { Db } from './db.ts'
 import { resolveTarget } from './conversation.ts'
@@ -46,7 +46,7 @@ export interface ProactiveInput {
 }
 
 export type ProactiveOutcome =
-  | { ok: true; greeting: ProactiveGreeting; model: string }
+  | { ok: true; greeting: ProactiveVisionGreeting; model: string }
   | { ok: false; status: 404 | 422 | 502; code: string; error: string }
 
 /** 解析模型回复：首行【情】是情绪（非法值按没有处理），其余行是正文；任何位置的孤立情绪行都剔除 */

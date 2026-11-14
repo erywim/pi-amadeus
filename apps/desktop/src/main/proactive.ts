@@ -1,5 +1,5 @@
 import { desktopCapturer, Notification, screen, systemPreferences } from 'electron'
-import type { Emotion, ProactiveGreeting, ProactiveMessageEvent } from '@pi-amadeus/shared'
+import type { Emotion, ProactiveMessageEvent, ProactiveVisionGreeting } from '@pi-amadeus/shared'
 import type { WindowManager } from './window-manager'
 
 /**
@@ -440,7 +440,7 @@ export class ProactiveWatcher {
   }
 
   /** 系统通知 + 推给两个渲染层（主窗口在后台也收，回来后能看到问候） */
-  private deliver(greeting: ProactiveGreeting): void {
+  private deliver(greeting: ProactiveVisionGreeting): void {
     const event: ProactiveMessageEvent = { ...greeting, mode: this.windows.getMode() }
     for (const win of this.windows.listWindows()) {
       win.webContents.send('proactive:message', event)
@@ -490,7 +490,7 @@ function isNoVisionResponse(body: unknown): boolean {
 }
 
 /** 严格解析大脑响应：缺字段/空正文一律当失败，不让半截数据变成一条通知 */
-function parseGreeting(body: unknown): ProactiveGreeting | null {
+function parseGreeting(body: unknown): ProactiveVisionGreeting | null {
   if (!body || typeof body !== 'object') return null
   const raw = body as Record<string, unknown>
   const text = typeof raw.text === 'string' ? raw.text.trim() : ''

@@ -19,8 +19,8 @@ export async function generateTitle(
           }
         ]
       },
-      // deepseek-v4-pro 是推理模型：小预算会被 thinking 吃光导致空输出，给足余量
-      { temperature: 0.3, maxTokens: 512 }
+      // 标题是小任务，不继承对话的思考档位，避免推理消耗正文预算。
+      { temperature: 0.3, maxTokens: 512, thinkingLevel: 'off' }
     )
     const title = out
       .trim()

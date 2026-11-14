@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { AgentTool, AgentToolResult } from '@earendil-works/pi-agent-core'
 import type { McpServerStatus } from '@pi-amadeus/shared'
 import { Type } from 'typebox'
@@ -35,7 +36,7 @@ export class McpManager {
     const next = new Map(specs.map((spec) => [spec.id, spec]))
     for (const [id, client] of [...this.clients]) {
       const spec = next.get(id)
-      if (!spec || fingerprint(spec) !== fingerprint(client.spec)) {
+      if (!spec || !client.isReady || fingerprint(spec) !== fingerprint(client.spec)) {
         client.close()
         this.clients.delete(id)
         this.tools.delete(id)
@@ -48,14 +49,24 @@ export class McpManager {
   }
 
   async connect(spec: McpServerSpec): Promise<void> {
+    this.disconnect(spec.id)
     this.specs.set(spec.id, spec)
+    // 新配置/重试 → connecting；握手和工具列表都成功后才对外宣告可用。
     this.statuses.set(spec.id, { state: 'connecting', tools: [] })
-    const client = new McpStdioClient(spec)
+    const client = new McpStdioClient(spec, (error) => {
+      if (this.clients.get(spec.id) !== client) return
+      // 当前进程退出 → error；撤掉缓存工具和客户端，让同配置 sync 能重新连接。
+      this.clients.delete(spec.id)
+      this.tools.delete(spec.id)
+      this.statuses.set(spec.id, { state: 'error', tools: [], error: error.message })
+    })
+    this.clients.set(spec.id, client)
     try {
       await client.connect()
       const tools = await client.listTools()
-      this.clients.set(spec.id, client)
+      if (this.clients.get(spec.id) !== client) return
       this.tools.set(spec.id, tools)
+      // connecting → connected；旧连接的迟到结果不能覆盖已断开/替换后的状态。
       this.statuses.set(spec.id, {
         state: 'connected',
         tools: tools.map((tool) => tool.name),
@@ -63,8 +74,10 @@ export class McpManager {
       })
     } catch (error) {
       client.close()
+      if (this.clients.get(spec.id) !== client) return
       this.clients.delete(spec.id)
       this.tools.delete(spec.id)
+      // 握手/列工具失败 → error；不保留不可调用的工具，允许下次 sync 重试。
       this.statuses.set(spec.id, {
         state: 'error',
         tools: [],
@@ -93,9 +106,9 @@ export class McpManager {
     return this.statuses.get(id)
   }
 
-  /** 当前已连接服务的工具数（看板用） */
+  /** 当前已连接服务数（不计仍在握手中的客户端） */
   connectedServerCount(): number {
-    return this.clients.size
+    return [...this.clients.values()].filter((client) => client.isReady).length
   }
 
   /**
@@ -169,10 +182,11 @@ function fingerprint(spec: McpServerSpec): string {
   return JSON.stringify([spec.command, spec.args, spec.env ?? {}])
 }
 
-/** 工具名只允许字母数字下划线短横线；超长截断（前缀已保证同一服务内不重名） */
+/** 用原始二元组的稳定摘要区分截断、字符清洗及前缀分隔造成的同名。 */
 export function agentToolName(serverId: string, toolName: string): string {
   const raw = `mcp_${serverId}_${toolName}`.replace(/[^a-zA-Z0-9_-]/g, '_')
-  return raw.length <= TOOL_NAME_MAX ? raw : raw.slice(0, TOOL_NAME_MAX)
+  const hash = createHash('sha256').update(JSON.stringify([serverId, toolName])).digest('hex').slice(0, 16)
+  return `${raw.slice(0, TOOL_NAME_MAX - hash.length - 1)}_${hash}`
 }
 
 function truncate(text: string, limit: number): string {

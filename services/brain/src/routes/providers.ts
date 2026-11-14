@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { ProviderInput } from '@pi-amadeus/shared'
+import { validateModelRuntimeOptions, type ProviderInput, type ThinkingLevel } from '@pi-amadeus/shared'
 import type { Db } from '../db.ts'
 import {
   activateProvider,
@@ -55,7 +55,7 @@ export function providerRoutes(db: Db): Hono {
 
 async function readInput(c: { req: { json: () => Promise<unknown> } }): Promise<ProviderInput | null> {
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
-  if (!body || typeof body !== 'object') return null
+  if (!body || typeof body !== 'object' || validateModelRuntimeOptions(body)) return null
   const str = (key: string): string => (typeof body[key] === 'string' ? (body[key] as string) : '')
   return {
     name: str('name'),
@@ -63,6 +63,15 @@ async function readInput(c: { req: { json: () => Promise<unknown> } }): Promise<
     model: str('model'),
     apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
     proxy: typeof body.proxy === 'string' ? body.proxy : undefined,
+    tags: Array.isArray(body.tags)
+      ? body.tags.filter((tag): tag is string => typeof tag === 'string')
+      : undefined,
+    dailyTokenQuota:
+      typeof body.dailyTokenQuota === 'number' ? body.dailyTokenQuota : undefined,
+    thinkingLevel:
+      typeof body.thinkingLevel === 'string' ? (body.thinkingLevel as ThinkingLevel) : undefined,
+    contextWindow: typeof body.contextWindow === 'number' ? body.contextWindow : undefined,
+    maxTokens: typeof body.maxTokens === 'number' ? body.maxTokens : undefined,
     enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
     priority: typeof body.priority === 'number' ? body.priority : undefined
   }

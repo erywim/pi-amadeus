@@ -55,7 +55,7 @@ function snapshot(win: BrowserWindow | null): WindowSnapshot | null {
 }
 
 /**
- * 窗口与模式（交互逻辑参考 XnneHangLab 的桌宠模式）：
+ * 窗口与模式（交互逻辑参考常见的桌宠模式）：
  * - window：常规主窗口
  * - pet：独立的透明置顶窗口铺满当前显示器工作区，主窗口隐藏。
  *   桌宠窗口先隐藏加载，渲染层画出首帧（pet:ready）后才显示并隐藏主窗口，切换无闪烁；
@@ -299,7 +299,7 @@ export class WindowManager {
         backgroundThrottling: false
       }
     })
-    // 与 XnneHangLab 一致的置顶层级：盖过普通窗口、Dock 与全屏应用
+    // 与常见桌宠实现一致的置顶层级：盖过普通窗口、Dock 与全屏应用
     pet.setAlwaysOnTop(true, 'screen-saver')
     // 整窗鼠标穿透：桌面照常可点
     pet.setIgnoreMouseEvents(true, { forward: true })

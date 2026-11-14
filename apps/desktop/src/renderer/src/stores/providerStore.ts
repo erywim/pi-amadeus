@@ -10,7 +10,7 @@ import {
 } from '@renderer/lib/api'
 
 /**
- * 模型服务列表（参考 magpie 的 Providers）：同一时间只有一个激活服务，
+ * 模型服务列表（参考常见的多模型服务 的 Providers）：同一时间只有一个激活服务，
  * 激活服务优先于设置页的内置单条配置。密钥只存在服务端。
  */
 interface ProviderState {

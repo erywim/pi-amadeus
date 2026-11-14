@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { MonitorCog, Moon, Sparkles, Sun, VolumeX, Waypoints } from 'lucide-react'
+import { Bell, MonitorCog, Moon, Sparkles, Sun, VolumeX, Waypoints } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Label } from '@renderer/components/ui/label'
 import { Switch } from '@renderer/components/ui/switch'
@@ -12,7 +12,7 @@ export function GeneralPanel(): React.JSX.Element {
   const theme = useSettingsStore((s) => s.theme)
   const defaultMode = useSettingsStore((s) => s.defaultMode)
   const defaultMute = useSettingsStore((s) => s.defaultMute)
-  const proactiveEnabled = useSettingsStore((s) => s.proactiveEnabled)
+  const proactiveEnabled = useSettingsStore((s) => s.proactiveEnabled ?? true)
   const setTheme = useSettingsStore((s) => s.setTheme)
   const setDefaultMode = useSettingsStore((s) => s.setDefaultMode)
   const setDefaultMute = useSettingsStore((s) => s.setDefaultMute)
@@ -33,6 +33,13 @@ export function GeneralPanel(): React.JSX.Element {
       cancelled = true
     }
   }, [proactiveEnabled])
+
+  const notifyOnComplete = useSettingsStore((s) => s.notifyOnComplete)
+  const setNotifyOnComplete = useSettingsStore((s) => s.setNotifyOnComplete)
+  const notifyDenied =
+    notifyOnComplete &&
+    typeof Notification !== 'undefined' &&
+    Notification.permission === 'denied'
 
   return (
     <div className="max-w-xl">
@@ -115,6 +122,21 @@ export function GeneralPanel(): React.JSX.Element {
               }
             }}
           />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label>
+              <Bell className="mr-1 inline size-3.5 align-[-2px]" />
+              {t('settings.general.notifyOnComplete')}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {notifyDenied
+                ? t('settings.general.notifyDenied')
+                : t('settings.general.notifyOnCompleteDesc')}
+            </p>
+          </div>
+          <Switch checked={notifyOnComplete} onCheckedChange={setNotifyOnComplete} />
         </div>
       </div>
     </div>

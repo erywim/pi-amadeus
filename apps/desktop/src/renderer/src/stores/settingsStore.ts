@@ -32,10 +32,9 @@ interface SettingsState {
   defaultMode: DefaultMode
   /** 陪伴模式进入时默认静音语音播报 */
   defaultMute: boolean
-  /**
-   * 主动问候：应用在后台 / 桌宠模式时每 10~15 分钟截屏识别桌面并主动搭话。
-   * 属于界面偏好（本地持久化）；默认开，关掉后不再截屏也不再请求。
-   */
+  /** 窗口不在前台时，回合完成发一条系统通知 */
+  notifyOnComplete: boolean
+  /** 主窗口/桌宠后台视觉主动问候开关（本地持久化） */
   proactiveEnabled: boolean
   aiConfig: UserConfig
   /** 生效密钥状态（default=回落 .env 默认密钥 / custom=用户自定义 / none=未配置） */
@@ -45,6 +44,7 @@ interface SettingsState {
   setTheme: (theme: UiTheme) => void
   setDefaultMode: (mode: DefaultMode) => void
   setDefaultMute: (muted: boolean) => void
+  setNotifyOnComplete: (enabled: boolean) => void
   setProactiveEnabled: (enabled: boolean) => void
   /** 从大脑服务加载用户配置到表单 */
   loadAiConfig: (userId: string) => Promise<void>
@@ -64,6 +64,7 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'paper',
       defaultMode: 'companion',
       defaultMute: false,
+      notifyOnComplete: false,
       proactiveEnabled: true,
       aiConfig: FORM_PLACEHOLDER,
       keyStatus: 'none',
@@ -75,6 +76,14 @@ export const useSettingsStore = create<SettingsState>()(
       setTheme: (theme) => set({ theme }),
       setDefaultMode: (defaultMode) => set({ defaultMode }),
       setDefaultMute: (defaultMute) => set({ defaultMute }),
+      setNotifyOnComplete: (notifyOnComplete) => {
+        // 用户主动开启时请求一次权限；拒绝也保留开关（界面会解释没收到通知的原因），
+        // 下一次再开不会反复弹系统授权框
+        if (notifyOnComplete && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+          void Notification.requestPermission()
+        }
+        set({ notifyOnComplete })
+      },
       setProactiveEnabled: (proactiveEnabled) => set({ proactiveEnabled }),
       loadAiConfig: async (userId) => {
         const { config, keyStatus } = await fetchUserConfig(userId)
@@ -101,6 +110,7 @@ export const useSettingsStore = create<SettingsState>()(
         theme: s.theme,
         defaultMode: s.defaultMode,
         defaultMute: s.defaultMute,
+        notifyOnComplete: s.notifyOnComplete,
         proactiveEnabled: s.proactiveEnabled
       })
     }

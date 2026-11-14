@@ -1,6 +1,12 @@
-import type { PlatformStatus } from '@pi-amadeus/shared'
+import type { PlatformMedia, PlatformStatus } from '@pi-amadeus/shared'
 import WebSocket from 'ws'
-import { configString, splitMessage, type AdapterContext, type PlatformAdapter } from './types.ts'
+import {
+  configString,
+  splitMessage,
+  type AdapterContext,
+  type PlatformAdapter,
+  type SendOptions
+} from './types.ts'
 
 interface OneBotEvent {
   post_type?: string
@@ -8,12 +14,26 @@ interface OneBotEvent {
   self_id?: number
   user_id?: number
   group_id?: number
+  message_id?: number
   raw_message?: string
-  message?: Array<{ type?: string; data?: { text?: string } }>
+  message?: Array<{
+    type?: string
+    data?: {
+      text?: string
+      id?: string | number
+      url?: string
+      file?: string
+      name?: string
+      file_name?: string
+    }
+  }>
   echo?: string
   status?: string
   retcode?: number
   wording?: string
+  data?: {
+    message?: Array<{ type?: string; data?: { text?: string } }>
+  }
 }
 
 /**
@@ -63,12 +83,24 @@ export class OneBotAdapter implements PlatformAdapter {
     return this.state
   }
 
-  async send(chatId: string, chatType: 'private' | 'group', text: string): Promise<void> {
+  async send(
+    chatId: string,
+    chatType: 'private' | 'group',
+    text: string,
+    options?: SendOptions
+  ): Promise<void> {
+    const replyId = options?.replyTo ? Number(options.replyTo) : NaN
     for (const part of splitMessage(text, 4000)) {
+      const message = Number.isFinite(replyId)
+        ? [
+            { type: 'reply', data: { id: replyId } },
+            { type: 'text', data: { text: part } }
+          ]
+        : part
       if (chatType === 'group') {
-        await this.action('send_group_msg', { group_id: Number(chatId), message: part })
+        await this.action('send_group_msg', { group_id: Number(chatId), message })
       } else {
-        await this.action('send_private_msg', { user_id: Number(chatId), message: part })
+        await this.action('send_private_msg', { user_id: Number(chatId), message })
       }
     }
   }
@@ -140,13 +172,75 @@ export class OneBotAdapter implements PlatformAdapter {
         .join('') ??
       event.raw_message ??
       ''
-    if (!text.trim()) return
+    const hasMedia = (event.message ?? []).some((segment) =>
+      ['image', 'record', 'file', 'video'].includes(segment.type ?? '')
+    )
+    if (!text.trim() && !hasMedia) return
+    void this.handleMessage(event, text)
+  }
+
+  /** 文本 + 图片/语音/文件 + 引用（reply 段会反查原消息取正文） */
+  private async handleMessage(event: OneBotEvent, text: string): Promise<void> {
     const isGroup = event.message_type === 'group' && event.group_id !== undefined
+    const media: PlatformMedia[] = []
+    let quote: string | undefined
+    let replyTo: string | undefined
+
+    for (const segment of event.message ?? []) {
+      if (segment.type === 'reply' && segment.data?.id !== undefined) {
+        replyTo = String(segment.data.id)
+        try {
+          const target = await this.action('get_msg', { message_id: Number(segment.data.id) })
+          quote = target.data?.message
+            ?.filter((item) => item.type === 'text')
+            .map((item) => item.data?.text ?? '')
+            .join('')
+            .trim()
+        } catch {
+          /* 原消息取不到就不带引用文本，回复仍用 reply 段 */
+        }
+        continue
+      }
+      if (!['image', 'record', 'file', 'video'].includes(segment.type ?? '')) continue
+      const raw = segment.data?.url ?? segment.data?.file ?? ''
+      if (!raw) continue
+      try {
+        let buffer: Buffer
+        if (raw.startsWith('base64://')) {
+          buffer = Buffer.from(raw.slice('base64://'.length), 'base64')
+        } else if (/^https?:\/\//i.test(raw)) {
+          const res = await fetch(raw, { signal: AbortSignal.timeout(30_000) })
+          if (!res.ok) continue
+          buffer = Buffer.from(await res.arrayBuffer())
+        } else {
+          continue
+        }
+        if (buffer.length === 0 || buffer.length > 20 * 1024 * 1024) continue
+        const kind =
+          segment.type === 'image' ? 'image' : segment.type === 'record' ? 'audio' : 'file'
+        media.push({
+          kind,
+          name:
+            segment.data?.name ||
+            segment.data?.file_name ||
+            (kind === 'image' ? 'image.jpg' : kind === 'audio' ? 'voice.silk' : 'file'),
+          mimeType: kind === 'image' ? 'image/jpeg' : kind === 'audio' ? 'audio/silk' : 'application/octet-stream',
+          data: buffer.toString('base64'),
+          size: buffer.length
+        })
+      } catch (error) {
+        console.warn('[onebot] 附件下载失败：', error instanceof Error ? error.message : error)
+      }
+    }
+
     this.ctx.onMessage({
       externalUserId: String(event.user_id ?? ''),
       chatId: String(isGroup ? event.group_id : event.user_id),
       chatType: isGroup ? 'group' : 'private',
-      text
+      text,
+      messageId: event.message_id !== undefined ? String(event.message_id) : replyTo,
+      quote,
+      media
     })
   }
 

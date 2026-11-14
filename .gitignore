@@ -145,7 +145,7 @@ vite.config.ts.timestamp-*
 # electron-builder output
 release/
 
-# Claude Code
+# AI 编程工具
 .claude/
 
 # 临时/调试产物（E2E 测试音频、视觉调试 payload 等）

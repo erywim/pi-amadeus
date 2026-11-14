@@ -1,13 +1,35 @@
-import type { ProviderInput, ProviderItem, ProviderTestResult } from '@pi-amadeus/shared'
+import type { ProviderInput, ProviderItem, ProviderTestResult, ThinkingLevel } from '@pi-amadeus/shared'
+import { validateModelRuntimeOptions } from '@pi-amadeus/shared'
 import type { Db, ProviderRow } from '../db.ts'
-import { completeText, supportsVision, type LlmTarget } from '../llm.ts'
+import { completeText, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, shouldCooldownProvider, supportsVision, type LlmTarget } from '../llm.ts'
+import { isProviderCoolingDown, markProviderFailure, markProviderSuccess } from './failover.ts'
 
 /**
  * 模型服务注册表：密钥只进不出（列表接口只回传 apiKeySet），
  * 测试连接会真的发一次最小请求——通过与否都以真实响应为准。
  */
 
-export function toProviderItem(row: ProviderRow): ProviderItem {
+const ROUTE_TAGS = new Set(['chat', 'vision', 'summary', 'memory'])
+export function parseThinkingLevel(value: string | undefined): ThinkingLevel {
+  const error = validateModelRuntimeOptions({ thinkingLevel: value })
+  if (error) throw new Error(error)
+  return (value ?? 'off') as ThinkingLevel
+}
+
+export function parseTags(tags: string): string[] {
+  const list = tags
+    .split(',')
+    .map((tag) => tag.trim().toLowerCase())
+    .filter((tag) => ROUTE_TAGS.has(tag))
+  return list.length > 0 ? [...new Set(list)] : ['chat']
+}
+
+function startOfToday(): number {
+  const date = new Date()
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+}
+
+export function toProviderItem(row: ProviderRow, todayTokens = 0): ProviderItem {
   return {
     id: row.id,
     name: row.name,
@@ -17,14 +39,29 @@ export function toProviderItem(row: ProviderRow): ProviderItem {
     enabled: row.enabled,
     active: row.active,
     priority: row.priority,
+    tags: parseTags(row.tags),
+    dailyTokenQuota: row.dailyTokenQuota,
+    thinkingLevel: parseThinkingLevel(row.thinkingLevel),
+    contextWindow: row.contextWindow,
+    maxTokens: row.maxTokens,
+    todayTokens,
+    quotaExceeded: row.dailyTokenQuota > 0 && todayTokens >= row.dailyTokenQuota,
     apiKeySet: row.apiKey.trim().length > 0,
+    coolingDown: isProviderCoolingDown(row.id),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   }
 }
 
+async function withUsage(db: Db, row: ProviderRow): Promise<ProviderItem> {
+  // 即使配额不限也显示真实用量，避免“0 tokens”被误读成没跑过
+  const usage = await db.providerUsageToday(row.id, startOfToday())
+  return toProviderItem(row, usage)
+}
+
 export async function listProviderItems(db: Db): Promise<ProviderItem[]> {
-  return (await db.listProviders()).map(toProviderItem)
+  const rows = await db.listProviders()
+  return Promise.all(rows.map((row) => withUsage(db, row)))
 }
 
 export async function createProviderItem(
@@ -43,10 +80,15 @@ export async function createProviderItem(
     apiKey: (input.apiKey ?? '').trim(),
     model: input.model.trim(),
     proxy: (input.proxy ?? '').trim(),
+    tags: parseTags((input.tags ?? ['chat']).join(',')).join(','),
+    dailyTokenQuota: Math.max(0, Math.floor(input.dailyTokenQuota ?? 0)),
+    thinkingLevel: parseThinkingLevel(input.thinkingLevel),
+    contextWindow: input.contextWindow ?? 0,
+    maxTokens: input.maxTokens ?? 0,
     enabled: input.enabled !== false,
     priority: input.priority ?? maxPriority + 10
   })
-  return { ok: true, provider: toProviderItem(row) }
+  return { ok: true, provider: await withUsage(db, row) }
 }
 
 export async function updateProviderItem(
@@ -65,10 +107,27 @@ export async function updateProviderItem(
     ...(input.apiKey ? { apiKey: input.apiKey.trim() } : {}),
     model: input.model.trim(),
     proxy: (input.proxy ?? '').trim(),
+    ...(input.tags !== undefined
+      ? { tags: parseTags(input.tags.join(',')).join(',') }
+      : {}),
+    ...(input.dailyTokenQuota !== undefined
+      ? { dailyTokenQuota: Math.max(0, Math.floor(input.dailyTokenQuota)) }
+      : {}),
+    ...(input.thinkingLevel !== undefined
+      ? { thinkingLevel: parseThinkingLevel(input.thinkingLevel) }
+      : {}),
+    ...(input.contextWindow !== undefined
+      ? { contextWindow: input.contextWindow }
+      : {}),
+    ...(input.maxTokens !== undefined ? { maxTokens: input.maxTokens } : {}),
     ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
     ...(input.priority !== undefined ? { priority: input.priority } : {})
   })
-  return updated ? { ok: true, provider: toProviderItem(updated) } : { ok: false, error: '更新失败' }
+  // 保存新配置后从冷却恢复为可选，让修正端点/密钥/运行参数的下一次请求立即生效。
+  if (updated) markProviderSuccess(id)
+  return updated
+    ? { ok: true, provider: await withUsage(db, updated) }
+    : { ok: false, error: '更新失败' }
 }
 
 export async function activateProvider(
@@ -80,7 +139,9 @@ export async function activateProvider(
   if (!existing.apiKey.trim()) return { ok: false, error: '该服务还没有配置密钥' }
   await db.setActiveProvider(id)
   const provider = await db.getProvider(id)
-  return provider ? { ok: true, provider: toProviderItem(provider) } : { ok: false, error: '激活失败' }
+  return provider
+    ? { ok: true, provider: await withUsage(db, provider) }
+    : { ok: false, error: '激活失败' }
 }
 
 export async function deleteProviderItem(db: Db, id: string): Promise<boolean> {
@@ -100,7 +161,10 @@ export async function testProvider(db: Db, id: string): Promise<ProviderTestResu
     apiKey: row.apiKey,
     model: row.model,
     vision: supportsVision(row.model),
-    proxy: row.proxy
+    proxy: row.proxy,
+    // 连通性测试只验证端点/密钥，不请求思考（否则推理预算会拖慢测试并可能空回复）
+    contextWindow: row.contextWindow || DEFAULT_CONTEXT_WINDOW,
+    maxTokens: row.maxTokens || DEFAULT_MAX_TOKENS
   }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 25_000)
@@ -112,14 +176,21 @@ export async function testProvider(db: Db, id: string): Promise<ProviderTestResu
         systemPrompt: '你是连通性测试助手。',
         messages: [{ role: 'user', content: '只回复 OK 两个字符。', timestamp: Date.now() }]
       },
-      { signal: controller.signal, maxTokens: 16, temperature: 0 }
+      { signal: controller.signal, maxTokens: 16, temperature: 0, thinkingLevel: 'off' }
     )
+    const trimmed = reply.trim()
+    // 空回复按失败处理：不可达端点在部分客户端里会「成功」返回空流，
+    // 把它当成连通会把真正的坏服务留在池子里
+    if (!trimmed) throw new Error('服务返回了空内容')
+    markProviderSuccess(row.id)
     return {
       ok: true,
       latencyMs: Date.now() - startedAt,
-      reply: reply.trim().slice(0, 40)
+      reply: trimmed.slice(0, 40)
     }
   } catch (error) {
+    // 测试与回合一致：只有真实服务故障进入冷却，参数 400/输出截断保留原错误。
+    if (shouldCooldownProvider(error)) markProviderFailure(row.id)
     return {
       ok: false,
       latencyMs: Date.now() - startedAt,
@@ -131,6 +202,8 @@ export async function testProvider(db: Db, id: string): Promise<ProviderTestResu
 }
 
 function validate(input: ProviderInput): { ok: true } | { ok: false; error: string } {
+  const error = validateModelRuntimeOptions(input)
+  if (error) return { ok: false, error }
   if (!input.name?.trim()) return { ok: false, error: 'name 必填' }
   if (!input.model?.trim()) return { ok: false, error: 'model 必填' }
   const baseUrl = input.baseUrl?.trim()

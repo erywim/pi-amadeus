@@ -1,85 +1,103 @@
-# 后台 / 桌宠主动问候
+# 主动问候（Proactive Greetings）
 
-应用挂在后台或进入桌宠模式后，每 **10 分钟 + 0~5 分钟随机**截一次当前桌面，交给
-视觉模型判断用户在做什么，然后主动说 1~2 句话：系统通知 + 桌宠对话框 / 陪伴页展示，
-并作为一条助手消息落进当前会话，用户回来可以接着聊。
+本项目同时支持两条互补的主动问候路径：
 
-参考实现：Open-LLM-VTuber 的 proactive speak（`prompts/utils/proactive_speak_prompt.txt`
-+ `ai-speak-signal`）——它把"主动开口"建模成一条**不写进历史与记忆**的合成输入，
-模型照常回复。本项目沿用这个思路（合成输入不落库），并按本 issue 的要求把触发条件
-从"前端按钮"换成"后台/桌宠 + 10~15 分钟定时 + 桌面截图"。
+- **后台视觉问候**：桌面应用处于后台或桌宠模式时，由 Electron 主进程每 10~15 分钟截取当前显示器，交给视觉模型生成 1~2 句问候；截图只用于本次请求，不落库。
+- **空闲问候**：用户长时间没有开口时，由 brain 服务按空闲时长、活动时间窗和每日上限，用真实记忆与好感度主动生成一条消息。
 
-## 1. 行为
+两条路径共享 `/api/proactive` 路由但触发条件和持久化模型不同：视觉路径只落助手消息并通过桌面 IPC 推送，空闲路径额外写入 `proactive_greetings` 供设置页查询。
 
-- **触发条件**：桌宠模式；或主窗口在后台（不可见 / 最小化 / 失焦）。
-  前台不截屏、不请求。
-- **节奏**：刚进入后台起算 10 分钟 + 0~5 分钟随机；每次问候后重新抽。
-  回到前台立即清掉到期时刻，下次进入后台从头起算，不会一进后台就弹一条。
-- **不打断**：麦克风开着、语音回合或文本流进行中时顺延 1 分钟再看。
-- **截图**：当前光标所在显示器，长边缩到 1280px、JPEG 质量 70（约 100~300KB）。
-  macOS 需要「屏幕录制」权限，未授权时跳过并顺延 5 分钟（不会反复弹系统授权）；
-  用户在设置页打开开关时才会主动触发一次授权。
-- **生成**：`POST /api/proactive`，视觉模型按人格说 1~2 句中文，首行可带
-  `【情】<情绪>`。模型不支持图像输入时直接 422，不退化成长篇随机搭话。
-- **投递**：系统通知（`Amadeus` 标题，点击回到当前模式的窗口）+ 主进程把问候推给
-  两个渲染层。桌宠窗口的对话框重新出现（即便上一轮被手动收起）并切换表情；
-  主窗口弹 toast。问候同时已落库，回来能在会话里看到。
-- **落库**：只有她说的那句助手消息进库；截图与"系统提示"这条合成用户消息都不落库。
-  主动问候不触发记忆提取 / 好感度——那些只由真实用户回合产生。
-- **开关**：设置 → 通用 →「后台主动问候」，默认开，本地持久化（`amadeus_settings`）。
+## 后台视觉问候
 
-## 2. 代码结构
+- **触发**：桌宠模式；或主窗口不可见、最小化、失焦。前台不截屏。
+- **节奏**：进入后台后 10 分钟 + 0~5 分钟随机；投递后重新抽取。用户回到前台或正在麦克风、语音、文本回合时不打断，忙碌时顺延 1 分钟。
+- **隐私与能力**：截取当前光标所在显示器，缩放到长边约 1280px、JPEG quality 70。macOS 未授予屏幕录制权限时跳过；纯文本模型收到请求前返回 `422 no_vision`，不退化成随机搭话。
+- **投递**：系统通知 + 两个渲染窗口的 IPC 事件；桌宠对话框重新打开并切换情绪，主窗口显示 toast。
+- **落库**：只追加助手消息和回合指标，不写入截图或合成系统输入，也不触发记忆提取/好感度。
 
-| 位置 | 职责 |
-|---|---|
-| `apps/desktop/src/main/proactive.ts` | `ProactiveWatcher`：后台判定、10~15 分钟随机调度、`desktopCapturer` 截屏、请求大脑、系统通知、广播 `proactive:message`；`screenPermission` / `requestScreenPermission` |
-| `apps/desktop/src/main/ipc.ts` | `proactive:config`（渲染层上报开关/身份/会话/忙碌）、`proactive:permission`、`proactive:request-permission` |
-| `apps/desktop/src/main/window-manager.ts` | `isMainWindowBackgrounded()`（不可见/最小化/失焦）、`listWindows()`（广播目标） |
-| `apps/desktop/src/preload/index.ts` | `window.api.proactive`：`setConfig` / `permission` / `requestPermission` / `onMessage` |
-| `apps/desktop/src/renderer/src/lib/proactive.ts` | 渲染层接线：上报配置（去重）、收到问候写对话文本 / 切表情 / 刷新会话 |
-| `apps/desktop/src/renderer/src/stores/settingsStore.ts` | `proactiveEnabled`（本地持久化偏好） |
-| `apps/desktop/src/renderer/src/features/pet/PetDialog.tsx` | 收到问候时把对话框当成新的一轮重新打开 |
-| `services/brain/src/proactive.ts` | 会话选择、视觉能力门控、提示词、情绪/正文解析、落库与指标 |
-| `services/brain/src/routes/proactive.ts` | `POST /api/proactive { userId, sessionId?, frame }` |
-| `services/brain/src/frames.ts` | 摄像头帧与桌面截图共用的 base64/大小校验 |
-| `packages/shared/src/proactive.ts` | `ProactiveGreeting` / `ProactiveMessageEvent` 跨端类型 |
+当用户长时间没有开口时，让角色用**真实记忆与好感度**主动发一条消息。
+不是固定模板，也不是本机定时器伪造的「假在线」：消息由真实模型生成、真实落库，
+并写入用户最近的桌面会话。
 
-## 3. 关键约束
+## 1. 触发条件
 
-- **调度必须在主进程**：隐藏/后台渲染层的定时器会被 Chromium 节流；桌宠模式下主窗口
-  已被隐藏，任何"跑在某个窗口里"的定时器都会随模式切换消失。截屏也只有主进程的
-  `desktopCapturer` 能拿到（不需要用户每次选窗口）。
-- **截图是隐私数据**：只出现在一次请求里，不落库、不写日志、不回显。发给模型服务的
-  只有这张截图 + 一条固定指令；body 里不额外附带会话内容之外的东西。
-- **只推助手消息**：合成输入不落库——否则聊天记录里会出现一条用户没发过的消息。
-  这一点与 Open-LLM-VTuber 的 `skip_history` 口径一致。
-- **模型能力门控**：`supportsVision(model)` 为假时 422（错误码 `no_vision`），
-  不去请求、不建会话。纯文本模型收到 image 块会直接 400。
-- **会话归属**：带了 `sessionId` 就必须存在且属于该 `userId`，否则 404；不带则接
-  最近更新的会话，没有会话才新建。生成成功后才落库，失败不留空会话。
-- **不打断对话**：忙碌状态由渲染层上报（麦克风 / 语音回合 / 文本流），主进程到点
-  先看 busy，忙则顺延 1 分钟。
-- **e2e 钩子只在 dev**：`window.api.debug.proactive`（注入帧 / 模拟后台 / 指定
-  brain / 立即触发 / 读状态）与现有 `debug:*` 一样只在非打包构建注册。
+调度器每 60 秒遍历一次启用该功能的用户；以下条件全部满足才生成：
 
-## 4. 验证
+1. 当前本地时间在 `activeStart` ~ `activeEnd` 之间（支持跨午夜）。
+2. 用户最后一次发消息距今 ≥ `minIdleMinutes`（默认 180）。
+3. 今天已问候次数 < `maxPerDay`（默认 2）。
+4. 距上一条主动问候 ≥ `minIdleMinutes`。
+5. 没有同一用户的生成正在进行（内存防重入）。
+6. 失败后 10 分钟内不重试（避免模型故障时刷屏）。
 
-```bash
-# 终端 1：brain + 桌面端 dev（9222 被占用时换端口，下同）
-npm run dev:all
+## 2. 生成与落库
 
-# 终端 2（桌面端已登录后）
-CDP_HTTP=http://127.0.0.1:9222 node scripts/e2e-proactive.mjs
+```
+proactive 调度器
+  → 读取设置 / 最近用户消息时间 / 今日次数
+  → resolveTarget（chat 路由组，含冷却/配额）
+  → system prompt（角色 + 召回记忆 + 好感度阶段）
+  → completeText（真实模型，maxTokens 220）
+  → 追加到用户最近的桌面会话（没有则建 proactive-<userId>，标题「主动问候」）
+  → 写入 proactive_greetings + last_greeted_at
 ```
 
-`scripts/e2e-proactive.mjs` 自起一个 hermetic brain（临时 `DB_PATH`）+ 本地 OpenAI 兼容
-stub LLM，不碰真实会话库、不消耗真实模型额度，覆盖：
+- 问候是一条普通助手消息，没有伪造的用户消息；会话历史里能看到它。
+- 「最近」指未归档 desktop 会话里 `updatedAt` 最新的一段，与列表的置顶优先顺序无关，
+  不写入其它渠道或已归档会话。没有可用会话时新建「主动问候」；原 `proactive-<userId>` 已存在且归档时使用新 ID，不隐式恢复归档。
+- 生成失败只写日志并短暂退避，不会改动 `last_greeted_at`，也不影响其它功能。
+- 手动「立即问候」绕过时间窗/空闲检查（用于预览与 E2E），仍然使用真实模型。
 
-- 大脑契约：缺字段 / 非法 base64 / 超限帧 → 400；纯文本模型 → 422 且不建会话；
-  视觉模型 → 200 且`【情】`被解析、正文落库为唯一一条助手消息、截图不进库；
-  同一会话第二次问候能看到上一轮历史；拿别人的 sessionId → 404。
-- 桌面调度（CDP + `debug.proactive`）：前台 / busy / 开关关闭都不发请求；
-  后台触发一次 → 大脑收到带 `image_url` 的请求、渲染层 `dialogText` 与
-  `proactiveSeq` 更新、系统通知计数 +1、`nextDueAt` 落在 10~15 分钟；
-  大脑不可达 → `failed` 且记录原因。
-- 真实截屏：仅当系统已授予屏幕录制权限时跑；否则明确输出 `not run`，不伪装通过。
+## 3. 界面
+
+- 设置 → 陪伴：开关、空闲分钟数、时间窗、每天次数、今日次数、最近一条问候、立即问候。
+- 陪伴页每 15 秒轮询 `/api/proactive`；首次进入把已有问候记为已读，不重放历史；
+  新问候到达时自动切到对应会话并刷新消息，同时弹一条提示。
+- 会话列表/文本模式也能看到这条消息（它就是会话里的一条助手消息）。
+
+## 4. 接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/proactive?userId=` | 设置 + 最近一条 + 今日次数 |
+| PUT | `/api/proactive` | 保存开关/空闲/时间窗/次数 |
+| POST | `/api/proactive/run` | 立即生成一条（真实模型） |
+
+## 5. 数据与约束
+
+- `proactive_settings`：按用户一行；默认关闭。
+- `proactive_greetings`：每次成功生成一条，含会话与消息 id，可追溯。
+- 不生成固定文案：模型调用失败就不发。
+- 不修改记忆/好感度：问候不是一次用户互动，不会刷分。
+- 没有真实用户消息的账号不会自动问候（`lastUserMessageAt` 为空直接跳过）。
+- 时间是本机时区；跨午夜窗口按 `from > to` 处理。
+
+## 6. 代码地图
+
+| 位置 | 职责 |
+| --- | --- |
+| `packages/shared/src/proactive.ts` | 设置/问候/接口类型 |
+| `services/brain/src/proactive/index.ts` | 条件判断、真实模型生成、落库、60s 调度 |
+| `services/brain/src/routes/proactive.ts` | 设置 / 最新 / 立即生成 |
+| `services/brain/src/db.ts` | `proactive_settings` / `proactive_greetings` |
+| `apps/desktop/src/renderer/src/features/settings/ProactivePanel.tsx` | 设置面板 |
+| `.../features/live2d/CompanionPage.tsx` | 15s 轮询并展示新问候 |
+| `.../lib/api.ts` | `fetchProactive` / `saveProactive` / `runProactive` |
+
+## 7. 验证
+
+```bash
+# 独立回归：旧置顶/新活动/已归档/其它渠道，使用临时 SQLite 与模型 mock
+node scripts/e2e-regression-contracts.mjs
+
+npm run dev:brain
+npx --prefix apps/desktop electron-vite dev --remoteDebuggingPort 9333
+
+# 后端：触发条件、真实生成、落库
+node scripts/e2e-automation-triggers.mjs
+
+# 桌面端：设置保存、立即问候、陪伴页轮询显示
+CDP_HTTP=http://127.0.0.1:9333 node scripts/e2e-ui-extras.mjs
+```
+
+覆盖：设置保存、真实模型生成、消息落进最近会话、今日次数、陪伴页轮询自动显示。

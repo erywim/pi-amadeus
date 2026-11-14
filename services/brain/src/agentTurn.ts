@@ -6,13 +6,17 @@ import { AsyncQueue } from './bilingual.ts'
 import type { BrainConfig } from './config.ts'
 import { prepareTurn } from './conversation.ts'
 import type { Db } from './db.ts'
-import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
+import { createAgentStreamFn, getLlm, OUTPUT_LIMIT_ERROR, shouldCooldownProvider, type LlmTarget } from './llm.ts'
+import { createKnowledgeTool } from './knowledge/index.ts'
+import type { SavedAttachment } from './media.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { disabledSkillNames } from './plugins/registry.ts'
+import { markProviderFailure, markProviderSuccess } from './providers/failover.ts'
 import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/index.ts'
 import { deniedMessage, rejectAllForTurn, requestBashConfirm } from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
 import { buildToolRegistry } from './tools/index.ts'
+import { diffSnapshots, gitSnapshot } from './workspace.ts'
 
 /**
  * 工具版回合核心（chat 与 feishu 共用）：prepareTurn 复用 →
@@ -30,13 +34,17 @@ export interface AgentTurnOptions {
   mode: TurnMode
   content: string
   signal?: AbortSignal
-  /** LLM 采样参数（缺省不传 = 供应商默认） */
+  /** LLM 采样参数（显式覆盖优先，否则使用用户配置） */
   temperature?: number
   maxTokens?: number
   /** 是否把本次用户消息写入会话（重新生成传 false，历史里已有那条消息） */
   appendUserMessage?: boolean
   /** 重新生成时要排除的历史消息 id（旧助手回答） */
   omitMessageId?: string
+  /** 本次用户消息的附件（图片 / 语音 / 文件） */
+  attachments?: SavedAttachment[]
+  /** 从指定父消息之后分叉（编辑后重发用；null = 根分支） */
+  branchParentId?: string | null
 }
 
 export interface AgentTurnUsage {
@@ -53,6 +61,12 @@ export interface AgentTurnResult {
   /** 本回合实际执行的工具次数与工具名（看板统计用） */
   toolCalls: number
   toolNames: string[]
+  /** 本次落库的用户消息 id（重新生成/编辑重发不写用户消息时为空） */
+  userMessageId?: string
+  /** 本回合工作区改动（桌面端真实 git 快照差集；非 Git 或未知时为空） */
+  changedFiles?: Array<{ path: string; status: string }>
+  /** 模型真实返回的思考内容（开启思考且供应商返回时才有；工具循环内各次调用的思考累计） */
+  thinking?: string
 }
 
 /** 工具结果文本的 UI 上限（超出截断） */
@@ -89,15 +103,30 @@ export async function* runAgentTurn(
     mode: opts.mode,
     content: opts.content,
     appendUserMessage: opts.appendUserMessage,
-    omitMessageId: opts.omitMessageId
+    omitMessageId: opts.omitMessageId,
+    attachments: opts.attachments,
+    branchParentId: opts.branchParentId
   })
   if (opts.signal?.aborted) {
-    return { full: '', target: prepared.target, usage: { input: 0, output: 0, total: 0 }, toolCalls: 0, toolNames: [] }
+    return {
+      full: '',
+      target: prepared.target,
+      usage: { input: 0, output: 0, total: 0 },
+      toolCalls: 0,
+      toolNames: [],
+      userMessageId: prepared.userMessageId
+    }
   }
 
   const toolsEnabled = prepared.userConfig?.tools?.enabled !== false
+  // 思考展示开关：是否把模型返回的 reasoning 上屏与落库
+  // （LlmTarget 只在真正开启时才带 thinkingLevel，off 不会出现在这里）
+  const thinkingEnabled = Boolean(prepared.target.thinkingLevel)
   const queue = new AsyncQueue<SseEvent>()
   let full = ''
+  let thinking = ''
+  /** 最近一条助手消息的停止原因（length = 被输出上限截断） */
+  let lastStopReason = ''
   // 指标：工具循环里每次 LLM 调用都会带 usage，逐次累加才是本回合真实消耗
   const usage: AgentTurnUsage = { input: 0, output: 0, total: 0 }
   const toolNames: string[] = []
@@ -128,7 +157,8 @@ export async function* runAgentTurn(
         cfg: opts.cfg,
         channel: opts.channel,
         target: prepared.target,
-        confirmRequest
+        confirmRequest,
+        ...(opts.signal ? { signal: opts.signal } : {})
       })
     : []
 
@@ -138,6 +168,11 @@ export async function* runAgentTurn(
   const skillBundle = toolsEnabled ? await loadSkillBundle(opts.cfg, disabledSkills) : { skills: [] }
   if (skillBundle.skills.length > 0) {
     tools.push(createUseSkillTool(skillBundle.skills))
+  }
+  // 知识库工具：用户建过知识库才注册（没有知识库时模型不该看到这个工具）
+  if (toolsEnabled) {
+    const knowledgeTool = await createKnowledgeTool(opts.db, opts.userId)
+    if (knowledgeTool) tools.push(knowledgeTool)
   }
   // MCP 插件工具：只取当前已连接的服务，连接失败不阻塞本回合
   if (toolsEnabled) tools.push(...mcpManager.listAgentTools())
@@ -159,12 +194,17 @@ export async function* runAgentTurn(
     initialState: {
       systemPrompt: prepared.systemPrompt + skillsPrompt(skillBundle.skills),
       model: getLlm(prepared.target).model,
+      // 思考级别写进 Agent 状态：pi 每次请求读取它并作为 reasoning 下发。
+      // 未配置时保持默认，参数层面与旧行为完全一致。
+      ...(prepared.target.thinkingLevel
+        ? { thinkingLevel: prepared.target.thinkingLevel }
+        : {}),
       // 历史不含当前用户消息——prompt() 会自行 append，否则上下文里出现两次
       messages: prepared.messages.slice(0, -1),
       tools
     },
     streamFn: createAgentStreamFn(prepared.target, {
-      temperature: opts.temperature,
+      temperature: opts.temperature ?? prepared.userConfig?.temperature,
       maxTokens: opts.maxTokens
     }),
     beforeToolCall
@@ -177,14 +217,29 @@ export async function* runAgentTurn(
           const delta = event.assistantMessageEvent.delta
           full += delta
           queue.push({ type: 'delta', delta })
+        } else if (event.assistantMessageEvent.type === 'thinking_delta') {
+          /**
+           * 思考增量单独上屏：不混进正文，也不参与「LLM 返回为空」的判定。
+           * 只有用户开启了思考才转发与落库——部分端点（如推理模型）即使没请求
+           * 也会回 reasoning_content，开关关闭却照常展示就成了一张假开关。
+           */
+          const delta = event.assistantMessageEvent.delta
+          if (delta && thinkingEnabled) {
+            thinking += delta
+            queue.push({ type: 'thinking', delta })
+          }
         }
         return
       case 'message_end':
         // 每条助手消息结束都带 usage；工具循环里的每次调用都要计入本回合
-        if (event.message.role === 'assistant' && event.message.usage) {
-          usage.input += event.message.usage.input ?? 0
-          usage.output += event.message.usage.output ?? 0
-          usage.total += event.message.usage.totalTokens ?? 0
+        if (event.message.role === 'assistant') {
+          if (event.message.usage) {
+            usage.input += event.message.usage.input ?? 0
+            usage.output += event.message.usage.output ?? 0
+            usage.total += event.message.usage.totalTokens ?? 0
+          }
+          // 记录停止原因：length = 被输出上限截断，用于给出可操作的错误提示
+          if (event.message.stopReason) lastStopReason = event.message.stopReason
         }
         return
       case 'tool_execution_start':
@@ -238,6 +293,11 @@ export async function* runAgentTurn(
   const lastUser = prepared.messages[prepared.messages.length - 1]
   if (!lastUser) throw new Error('LLM 上下文为空')
 
+  // 回合开始前的 git 状态快照：回合结束后取差集，得到「这回合真实改了哪些文件」。
+  // 只在桌面端做（其它渠道没有本机工作区可看），且 shell 工具关闭时也不做
+  const trackWorkspace = opts.channel === 'desktop' && toolsEnabled
+  const beforeSnapshot = trackWorkspace ? await gitSnapshot(opts.cfg.workspace.root) : null
+
   try {
     // Agent 契约不抛（失败编码进事件流），防御性兜底；close 保证
     // done/error 之前队列事件全部排空
@@ -252,11 +312,41 @@ export async function* runAgentTurn(
   }
 
   if (opts.signal?.aborted) {
-    return { full: '', target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
+    return {
+      full: '',
+      target: prepared.target,
+      usage,
+      toolCalls: toolNames.length,
+      toolNames,
+      userMessageId: prepared.userMessageId
+    }
   }
-  if (agent.state.errorMessage) throw new Error(agent.state.errorMessage)
-  if (!full) throw new Error('LLM 返回为空')
+  // 只有真实服务故障才进入冷却；请求 400 原样上报，不根据思考开关猜测原因。
+  if (agent.state.errorMessage) {
+    const raw = agent.state.errorMessage
+    if (shouldCooldownProvider(raw)) markProviderFailure(prepared.target.providerId)
+    throw new Error(raw)
+  }
+  // length 表示未完成，即便已有正文也不能作为成功回合；预算问题不触发服务切换。
+  if (lastStopReason === 'length') throw new Error(OUTPUT_LIMIT_ERROR)
+  if (!full) {
+    markProviderFailure(prepared.target.providerId)
+    throw new Error('LLM 返回为空')
+  }
+  markProviderSuccess(prepared.target.providerId)
   // totalTokens 缺失时用输入+输出兜底（部分兼容端点不返回 total）
   if (usage.total === 0) usage.total = usage.input + usage.output
-  return { full, target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
+  const changedFiles = trackWorkspace
+    ? diffSnapshots(beforeSnapshot, await gitSnapshot(opts.cfg.workspace.root))
+    : []
+  return {
+    full,
+    target: prepared.target,
+    usage,
+    toolCalls: toolNames.length,
+    toolNames,
+    userMessageId: prepared.userMessageId,
+    ...(changedFiles.length > 0 ? { changedFiles } : {}),
+    ...(thinking.trim() ? { thinking: thinking.trim() } : {})
+  }
 }
