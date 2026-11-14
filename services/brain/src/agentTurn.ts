@@ -18,6 +18,9 @@ import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/inde
 import { deniedMessage, rejectAllForTurn, requestBashConfirm } from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
 import { buildToolRegistry } from './tools/index.ts'
+import { workflowPrompt } from './workflow/prompt.ts'
+import { createWorkflowTool } from './workflow/tool.ts'
+import { workflowLevelOf } from './workflow/types.ts'
 import { diffSnapshots, gitSnapshot } from './workspace.ts'
 
 /**
@@ -104,6 +107,7 @@ export async function* runAgentTurn(
     channel: opts.channel,
     mode: opts.mode,
     content: opts.content,
+    signal: opts.signal,
     appendUserMessage: opts.appendUserMessage,
     omitMessageId: opts.omitMessageId,
     attachments: opts.attachments,

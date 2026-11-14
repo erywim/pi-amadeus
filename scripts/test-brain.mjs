@@ -188,7 +188,7 @@ export async function seedMessages(dbPath, sessionId, userId, messages) {
       parentId = message.id
       offset += 1
     }
-    db.prepare('UPDATE sessions SET active_message_id = ? WHERE id = ?').run(parentId, sessionId)
+    db.prepare('UPDATE sessions SET active_leaf_id = ? WHERE id = ?').run(parentId, sessionId)
   } finally {
     db.close()
   }

@@ -2,7 +2,14 @@ import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
-import { THINKING_LEVELS, type OutputLanguage, type ThinkingLevel, type UserConfig } from '@pi-amadeus/shared'
+import {
+  THINKING_LEVELS,
+  type CompactionLevel,
+  type OutputLanguage,
+  type ThinkingLevel,
+  type UserConfig,
+  type WorkflowLevel
+} from '@pi-amadeus/shared'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'

@@ -48,7 +48,7 @@ const jumpHead = (brain, id, messageId, toLeaf) =>
 // 每次回复都不同，才能断言"切世界线后看到的是另一版回复"
 let replySeq = 0
 const mock = await startMockLlm((body) => {
-  const system = (body.messages ?? []).find((m) => m.role === 'system')?.content ?? ''
+  const system = (body.messages ?? []).find((m) => m.role === 'system' || m.role === 'developer')?.content ?? ''
   const text = typeof system === 'string' ? system : ''
   if (text.includes('长期记忆整理器')) return { text: 'NONE' }
   if (text.includes('标题生成器')) return { text: '世界线测试' }

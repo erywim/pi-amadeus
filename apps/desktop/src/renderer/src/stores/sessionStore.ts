@@ -4,8 +4,10 @@ import type {
   Message,
   MessageAttachment,
   Session,
+  SessionMessages,
   SseEvent,
   StreamState,
+  WorldlineInfo,
   ToolActivityItem,
   ToolStatus
 } from '@pi-amadeus/shared'
@@ -24,7 +26,6 @@ import {
   startEditTurn,
   startRegenerate
 } from '@renderer/lib/api'
-import i18n from '@renderer/i18n'
 import { useLive2dStore } from './live2dStore'
 import { useLive2dSpeechStore } from './live2dSpeechStore'
 import { useMemoryStore } from './memoryStore'
@@ -126,6 +127,12 @@ interface SessionState {
   toggleArchive: (id: string) => Promise<void>
   /** 消息分支切换：-1 上一个分支 / 1 下一个分支 */
   switchBranch: (messageId: string, direction: -1 | 1) => Promise<void>
+  /** 世界线跳跃：切到目标消息所在分支的最新叶子 */
+  switchSibling: (messageId: string, direction: -1 | 1) => void
+  /** 回退到某条消息，下一条消息将从这里分叉 */
+  rewindTo: (messageId: string) => void
+  /** 从世界线面板跳到某个叶子 */
+  jumpToWorldline: (leafId: string) => void
   stopStreaming: () => void
   /** bash 确认卡应答（允许/拒绝） */
   respondToolConfirm: (approved: boolean) => void
@@ -267,7 +274,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     if (ownerSessionId) {
       const sessionId = ownerSessionId
       void fetchMessages(sessionId)
-        .then((serverMessages) => {
+        .then((page) => {
+          const serverMessages = page.messages
           set((s) => {
             // 新一轮已经开始：这次回读的旧快照不能碰当前消息列
             if (s.stream.streaming && s.stream.sessionId === sessionId) return {}
@@ -538,11 +546,11 @@ export const useSessionStore = create<SessionState>()((set, get) => {
 
     refreshSession: async (sessionId) => {
       try {
-        const messages = await fetchMessages(sessionId)
+        const page = await fetchMessages(sessionId)
         // 回读期间用户已经发了新回合：旧快照不能覆盖正在流式的消息列
         const stream = get().stream
         if (stream.streaming && stream.sessionId === sessionId) return
-        set((s) => ({ messages: { ...s.messages, [sessionId]: messages } }))
+        applyPage(sessionId, page)
         void get().refreshSessions()
       } catch (error) {
         console.warn('[session] 会话消息刷新失败：', error)
@@ -607,6 +615,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         }
         const queued = { ...s.queued }
         delete queued[id]
+        const worldlines = { ...s.worldlines }
+        delete worldlines[id]
         return {
           sessions,
           messages,
@@ -762,6 +772,29 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         console.warn('[session] 切换分支失败：', error)
         throw error
       }
+    },
+
+    switchSibling: (messageId, direction) => {
+      const { activeSessionId, stream, messages } = get()
+      if (!activeSessionId || stream.streaming) return
+      const message = (messages[activeSessionId] ?? []).find((item) => item.id === messageId)
+      const siblings = message?.siblingIds ?? []
+      const index = siblings.indexOf(messageId)
+      const next = index >= 0 ? siblings[index + direction] : undefined
+      if (!next) return
+      void jump(activeSessionId, next, true).catch((error) => console.warn('[session] 世界线跳转失败：', error))
+    },
+
+    rewindTo: (messageId) => {
+      const { activeSessionId, stream } = get()
+      if (!activeSessionId || stream.streaming) return
+      void jump(activeSessionId, messageId, false).catch((error) => console.warn('[session] 回退失败：', error))
+    },
+
+    jumpToWorldline: (leafId) => {
+      const { activeSessionId, stream } = get()
+      if (!activeSessionId || stream.streaming) return
+      void jump(activeSessionId, leafId, true).catch((error) => console.warn('[session] 世界线跳转失败：', error))
     },
 
     stopStreaming: () => {

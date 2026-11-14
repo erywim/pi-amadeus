@@ -1,5 +1,14 @@
 import * as React from 'react'
-import { ChevronLeft, ChevronRight, Copy, FileText, Mic, Pencil, RotateCcw } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  CornerUpLeft,
+  FileText,
+  Mic,
+  Pencil,
+  RotateCcw
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { Message, MessageAttachment } from '@pi-amadeus/shared'
@@ -86,11 +95,15 @@ function MessageActions({
   content,
   showRegenerate,
   onRegenerate,
+  showRewind,
+  onRewind,
   onEdit
 }: {
   content: string
   showRegenerate: boolean
   onRegenerate?: () => void
+  showRewind?: boolean
+  onRewind?: () => void
   onEdit?: () => void
 }): React.JSX.Element {
   const { t } = useTranslation()
@@ -130,6 +143,18 @@ function MessageActions({
           className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-soft hover:text-foreground"
         >
           <Pencil className="size-3" />
+        </button>
+      )}
+      {showRewind && onRewind && (
+        <button
+          type="button"
+          data-testid="rewind"
+          onClick={onRewind}
+          title={t('worldline.rewindHint')}
+          aria-label={t('worldline.rewind')}
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-soft hover:text-primary"
+        >
+          <CornerUpLeft className="size-3" />
         </button>
       )}
       {showRegenerate && onRegenerate && (
@@ -265,7 +290,6 @@ function UserNode({ message }: { message: Message }): React.JSX.Element {
       <div className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
         {message.mode === 'voice' && <Mic className="size-3" />}
         <span>{timeFormatter.format(message.createdAt)}</span>
-        <BranchSwitcher message={message} />
         <MessageActions
           content={message.content}
           showRegenerate={false}
@@ -273,52 +297,6 @@ function UserNode({ message }: { message: Message }): React.JSX.Element {
         />
       </div>
     </div>
-  )
-}
-
-/** 分支切换器：同一父节点下的第 n/m 条，左右切换当前活跃分支 */
-function BranchSwitcher({ message }: { message: Message }): React.JSX.Element | null {
-  const { t } = useTranslation()
-  const switchBranch = useSessionStore((s) => s.switchBranch)
-  const count = message.branchCount ?? 1
-  if (count <= 1) return null
-  const index = message.branchIndex ?? 1
-  return (
-    <span data-testid="branch-switcher" className="inline-flex items-center gap-0.5 text-[11px]">
-      <button
-        type="button"
-        data-testid="branch-prev"
-        aria-label={t('chat.branchPrev')}
-        title={t('chat.branchPrev')}
-        disabled={index <= 1}
-        onClick={() =>
-          void switchBranch(message.id, -1).catch((error: unknown) =>
-            toast.error(error instanceof Error ? error.message : String(error))
-          )
-        }
-        className="rounded p-0.5 text-muted-foreground hover:bg-surface-soft hover:text-foreground disabled:opacity-30"
-      >
-        <ChevronLeft className="size-3" />
-      </button>
-      <span className="min-w-[24px] text-center font-mono text-[10px] text-muted-foreground">
-        {index}/{count}
-      </span>
-      <button
-        type="button"
-        data-testid="branch-next"
-        aria-label={t('chat.branchNext')}
-        title={t('chat.branchNext')}
-        disabled={index >= count}
-        onClick={() =>
-          void switchBranch(message.id, 1).catch((error: unknown) =>
-            toast.error(error instanceof Error ? error.message : String(error))
-          )
-        }
-        className="rounded p-0.5 text-muted-foreground hover:bg-surface-soft hover:text-foreground disabled:opacity-30"
-      >
-        <ChevronRight className="size-3" />
-      </button>
-    </span>
   )
 }
 
@@ -423,7 +401,11 @@ function AssistantNode({
           {message.mode === 'voice' && <Mic className="size-3" />}
           <span>·</span>
           <span>{timeFormatter.format(message.createdAt)}</span>
-          <BranchSwitcher message={message} />
+          <BranchSwitcher
+            siblings={message.siblingIds ?? []}
+            currentId={message.id}
+            onSwitch={onSwitchSibling}
+          />
           <MessageActions
             content={message.content}
             showRegenerate={isLastAssistant && !streaming}

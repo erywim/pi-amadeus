@@ -78,7 +78,7 @@ export async function startMockLlm(handler) {
 
 /** 按 system prompt 分辨请求类型：摘要 / 记忆提取 / 标题生成 / 主对话 */
 export function kindOf(body) {
-  const system = (body?.messages ?? []).find((m) => m.role === 'system')?.content ?? ''
+  const system = (body?.messages ?? []).find((m) => m.role === 'system' || m.role === 'developer')?.content ?? ''
   const text = typeof system === 'string' ? system : JSON.stringify(system)
   if (text.includes('summarizing conversations')) return 'summary'
   if (text.includes('长期记忆整理器')) return 'memory'
@@ -98,7 +98,7 @@ export function messageText(message) {
 
 /** 非 system 消息的条数（"上下文里带了多少条历史"的断言口径） */
 export function nonSystemMessages(body) {
-  return (body?.messages ?? []).filter((m) => m.role !== 'system')
+  return (body?.messages ?? []).filter((m) => m.role !== 'system' && m.role !== 'developer')
 }
 
 function streamCompletion(res, result, model) {

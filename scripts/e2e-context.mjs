@@ -40,7 +40,7 @@ const SUMMARY_TEXT = '## 用户的核心诉求\n用户在做压缩相关的测�
 
 /** 默认 handler：摘要按剧本返回，记忆/标题/主对话各自有固定回复 */
 function defaultHandler(body) {
-  const system = (body.messages ?? []).find((m) => m.role === 'system')?.content ?? ''
+  const system = (body.messages ?? []).find((m) => m.role === 'system' || m.role === 'developer')?.content ?? ''
   const text = typeof system === 'string' ? system : ''
   if (text.includes('summarizing conversations')) {
     return { text: `<analysis>梳理</analysis>\n<summary>${SUMMARY_TEXT}</summary>` }
@@ -145,7 +145,7 @@ try {
     await seedMessages(brain.dbPath, sessionId, userId, seeded)
 
     mock.setHandler((body) => {
-      const system = (body.messages ?? []).find((m) => m.role === 'system')?.content ?? ''
+      const system = (body.messages ?? []).find((m) => m.role === 'system' || m.role === 'developer')?.content ?? ''
       if (String(system).includes('summarizing conversations')) return { status: 500, error: 'summary down' }
       if (String(system).includes('长期记忆整理器')) return { text: 'NONE' }
       return { text: '照样回复。' }

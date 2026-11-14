@@ -95,6 +95,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           ttsText: null,
           target,
           userText: content || attachments.map((item) => item.name).join('、'),
+          userMessageId: result.userMessageId,
           toolCalls: result.toolCalls,
           changedFiles: result.changedFiles,
           thinking: result.thinking
@@ -158,7 +159,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
     const userText = lastUser.content
     if (last.role === 'assistant') {
       // 活动叶退回到产生旧回复的那条用户消息；否则新回复会挂在旧回复下面成一条链
-      await db.setActiveMessage(sessionId, lastUser.id)
+      await db.setActiveLeaf(sessionId, lastUser.id)
       await db.clearCompaction(sessionId)
     }
 

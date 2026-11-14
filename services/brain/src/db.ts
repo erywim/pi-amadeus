@@ -121,8 +121,6 @@ export interface MessageRow {
   content: string
   ttsText: string | null
   mode: TurnMode
-  /** 分支树父节点；根消息为 null */
-  parentId: string | null
   /** 同一父节点下的第几条（1-based）与总数 */
   branchIndex: number
   branchCount: number
@@ -327,8 +325,6 @@ export interface Db {
     content: string
     ttsText?: string | null
     mode: TurnMode
-    /** 分支父节点；缺省时接在当前活跃叶之后 */
-    parentId?: string | null
     /** 本回合工作区改动（只有桌面端回合会带） */
     changedFiles?: Array<{ path: string; status: string }>
     /** 模型真实返回的思考内容（开启思考的回合才有） */
@@ -689,7 +685,6 @@ export function createDb(cfg: BrainConfig['db']): Db {
             content TEXT NOT NULL,
             tts_text TEXT,
             mode TEXT NOT NULL,
-            parent_id TEXT,
             changed_files TEXT NOT NULL DEFAULT '[]',
             thinking TEXT,
             created_at INTEGER NOT NULL
@@ -903,9 +898,16 @@ export function createDb(cfg: BrainConfig['db']): Db {
         if (!sessionColumns.some((column) => column.name === 'pinned')) {
           sqlite.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
         }
-        // 老库升级：消息分支树（parent_id / active_leaf_id）
+        // 老库升级：消息分支树（parent_id / active_leaf_id）。旧版世界线使用
+        // active_message_id；先复制用户已选择的活动头，不能用最新消息覆盖回退状态。
+        const hasLegacyActiveMessage = sessionColumns.some((column) => column.name === 'active_message_id')
         if (!sessionColumns.some((column) => column.name === 'active_leaf_id')) {
           sqlite.exec('ALTER TABLE sessions ADD COLUMN active_leaf_id TEXT')
+        }
+        if (hasLegacyActiveMessage) {
+          sqlite.exec(
+            "UPDATE sessions SET active_leaf_id = active_message_id WHERE (active_leaf_id IS NULL OR active_leaf_id = '') AND active_message_id IS NOT NULL"
+          )
         }
         // 老库升级：会话归档
         if (!sessionColumns.some((column) => column.name === 'archived')) {
@@ -920,6 +922,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         if (!messageColumns.some((column) => column.name === 'changed_files')) {
           sqlite.exec("ALTER TABLE messages ADD COLUMN changed_files TEXT NOT NULL DEFAULT '[]'")
         }
+        sqlite.exec('CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id)')
         const backfilled = sqlite
           .prepare("SELECT value FROM app_state WHERE key = 'messages_tree_v1'")
           .get() as unknown as { value?: string } | undefined
@@ -1298,7 +1301,6 @@ export function createDb(cfg: BrainConfig['db']): Db {
         content: string
         tts_text: string | null
         mode: TurnMode
-        parent_id: string | null
         changed_files: string
         thinking: string | null
         created_ms: number
@@ -1333,7 +1335,6 @@ export function createDb(cfg: BrainConfig['db']): Db {
           content: row.content,
           ttsText: row.tts_text ?? null,
           mode: row.mode,
-          parentId: row.parent_id ?? null,
           branchIndex: branch.get(row.id)?.index ?? 1,
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
@@ -1371,11 +1372,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
         (row): MessageRow => ({
           id: row.id,
           sessionId: row.session_id,
+          parentId: row.parent_id ?? null,
           role: row.role,
           content: row.content,
           ttsText: row.tts_text ?? null,
           mode: row.mode,
-          parentId: row.parent_id ?? null,
           branchIndex: branch.get(row.id)?.index ?? 1,
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
@@ -1404,7 +1405,6 @@ export function createDb(cfg: BrainConfig['db']): Db {
         content: string
         tts_text: string | null
         mode: TurnMode
-        parent_id: string | null
         changed_files: string
         thinking: string | null
         created_ms: number
@@ -1420,7 +1420,6 @@ export function createDb(cfg: BrainConfig['db']): Db {
       return {
         id: row.id,
         sessionId: row.session_id,
-        parentId: row.parent_id ?? null,
         role: row.role,
         content: row.content,
         ttsText: row.tts_text ?? null,
@@ -1468,11 +1467,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
         (row): MessageRow => ({
           id: row.id,
           sessionId: row.session_id,
+          parentId: row.parent_id ?? null,
           role: row.role,
           content: row.content,
           ttsText: row.tts_text ?? null,
           mode: row.mode,
-          parentId: row.parent_id ?? null,
           branchIndex: branch.get(row.id)?.index ?? 1,
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],

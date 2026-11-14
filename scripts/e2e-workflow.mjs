@@ -35,7 +35,7 @@ function toolNamesOf(body) {
   return (body?.tools ?? []).map((tool) => tool.function?.name).filter(Boolean)
 }
 function systemTextOf(body) {
-  const system = (body?.messages ?? []).find((m) => m.role === 'system')?.content ?? ''
+  const system = (body?.messages ?? []).find((m) => m.role === 'system' || m.role === 'developer')?.content ?? ''
   return typeof system === 'string' ? system : JSON.stringify(system)
 }
 /** 工具结果消息（pi-ai 把 toolResult 转成 OpenAI 的 role:'tool'） */

@@ -45,8 +45,6 @@ export interface Message {
   ttsText?: string | null
   /** 回合发起时的模式 */
   mode: TurnMode
-  /** 分支树父节点；根消息为 null */
-  parentId?: string | null
   /** 同一父节点下的第几条 / 总数（分支切换器） */
   branchIndex?: number
   branchCount?: number
