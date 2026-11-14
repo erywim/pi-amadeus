@@ -1,13 +1,35 @@
-import type { PlatformStatus } from '@pi-amadeus/shared'
-import { configString, splitMessage, type AdapterContext, type PlatformAdapter } from './types.ts'
+import type { PlatformMedia, PlatformStatus } from '@pi-amadeus/shared'
+import {
+  configString,
+  splitMessage,
+  type AdapterContext,
+  type PlatformAdapter,
+  type SendOptions
+} from './types.ts'
+
+interface TelegramFileRef {
+  file_id: string
+  file_size?: number
+  mime_type?: string
+  file_name?: string
+}
+
+interface TelegramMessage {
+  message_id?: number
+  text?: string
+  caption?: string
+  chat: { id: number; type: string }
+  from?: { id: number; is_bot?: boolean }
+  photo?: TelegramFileRef[]
+  voice?: TelegramFileRef
+  audio?: TelegramFileRef
+  document?: TelegramFileRef
+  reply_to_message?: { text?: string; caption?: string }
+}
 
 interface TelegramUpdate {
   update_id: number
-  message?: {
-    text?: string
-    chat: { id: number; type: string }
-    from?: { id: number; is_bot?: boolean }
-  }
+  message?: TelegramMessage
 }
 
 /**
@@ -50,9 +72,21 @@ export class TelegramAdapter implements PlatformAdapter {
     return this.state
   }
 
-  async send(chatId: string, _chatType: 'private' | 'group', text: string): Promise<void> {
+  async send(
+    chatId: string,
+    _chatType: 'private' | 'group',
+    text: string,
+    options?: SendOptions
+  ): Promise<void> {
     for (const part of splitMessage(text, 4000)) {
-      await this.api('sendMessage', { chat_id: chatId, text: part })
+      const replyId = options?.replyTo ? Number(options.replyTo) : NaN
+      await this.api('sendMessage', {
+        chat_id: chatId,
+        text: part,
+        ...(Number.isFinite(replyId)
+          ? { reply_parameters: { message_id: replyId, allow_sending_without_reply: true } }
+          : {})
+      })
     }
   }
 
@@ -72,13 +106,11 @@ export class TelegramAdapter implements PlatformAdapter {
         for (const update of updates) {
           offset = Math.max(offset, update.update_id + 1)
           const message = update.message
-          if (!message?.text || message.from?.is_bot) continue
-          this.ctx.onMessage({
-            externalUserId: String(message.from?.id ?? message.chat.id),
-            chatId: String(message.chat.id),
-            chatType: message.chat.type === 'private' ? 'private' : 'group',
-            text: message.text
-          })
+          if (!message || message.from?.is_bot) continue
+          if (!message.text && !message.caption && !message.photo && !message.voice && !message.audio && !message.document) {
+            continue
+          }
+          void this.handleMessage(message)
         }
       } catch (error) {
         if (this.stopped) return
@@ -90,6 +122,66 @@ export class TelegramAdapter implements PlatformAdapter {
         await new Promise((resolve) => setTimeout(resolve, 5000))
       }
     }
+  }
+
+  /** 文本 + 图片 / 语音 / 文件 + 引用；媒体先下载成 base64 再交给管线 */
+  private async handleMessage(message: TelegramMessage): Promise<void> {
+    const media: PlatformMedia[] = []
+    const add = async (
+      ref: TelegramFileRef | undefined,
+      name: string,
+      fallbackMime: string
+    ): Promise<void> => {
+      if (!ref?.file_id) return
+      if ((ref.file_size ?? 0) > 20 * 1024 * 1024) return
+      try {
+        const file = await this.api<{ file_path?: string; file_size?: number }>('getFile', {
+          file_id: ref.file_id
+        })
+        if (!file.file_path) return
+        const url = `${this.baseUrl}/file/bot${this.token}/${file.file_path}`
+        const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
+        if (!res.ok) return
+        const buffer = Buffer.from(await res.arrayBuffer())
+        if (buffer.length > 20 * 1024 * 1024) return
+        media.push({
+          kind: fallbackMime.startsWith('image/')
+            ? 'image'
+            : fallbackMime.startsWith('audio/')
+              ? 'audio'
+              : 'file',
+          name: ref.file_name || name,
+          mimeType: ref.mime_type || fallbackMime,
+          data: buffer.toString('base64'),
+          size: buffer.length
+        })
+      } catch (error) {
+        console.warn('[telegram] 附件下载失败：', error instanceof Error ? error.message : error)
+      }
+    }
+
+    if (message.photo?.length) {
+      await add(message.photo[message.photo.length - 1], 'photo.jpg', 'image/jpeg')
+    }
+    if (message.voice) await add(message.voice, 'voice.ogg', message.voice.mime_type || 'audio/ogg')
+    if (message.audio) await add(message.audio, 'audio.mp3', message.audio.mime_type || 'audio/mpeg')
+    if (message.document) {
+      await add(
+        message.document,
+        message.document.file_name || 'file',
+        message.document.mime_type || 'application/octet-stream'
+      )
+    }
+
+    this.ctx.onMessage({
+      externalUserId: String(message.from?.id ?? message.chat.id),
+      chatId: String(message.chat.id),
+      chatType: message.chat.type === 'private' ? 'private' : 'group',
+      text: message.text ?? message.caption ?? '',
+      messageId: message.message_id ? String(message.message_id) : undefined,
+      quote: message.reply_to_message?.text ?? message.reply_to_message?.caption,
+      media
+    })
   }
 
   private async api<T>(method: string, params: Record<string, unknown>, timeoutMs = 20_000): Promise<T> {

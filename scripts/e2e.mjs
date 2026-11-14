@@ -1,12 +1,12 @@
 /**
  * CDP 驱动的桌面端 E2E 验证脚本（开发期工具）。
- * 前置：桌面端 dev 已启动（Electron 主进程开 9222 调试端口）、brain 服务运行中。
+ * 前置：桌面端 dev 已启动（CDP 端口默认 9222，可用 CDP_HTTP 覆盖）、brain 服务运行中。
  * 用法：node scripts/e2e.mjs [chat|voice|all]
  */
 import { setTimeout as sleep } from 'node:timers/promises'
 
-const CDP_HTTP = 'http://127.0.0.1:9222'
-const BRAIN = 'http://localhost:3002'
+const CDP_HTTP = process.env.CDP_HTTP ?? 'http://127.0.0.1:9222'
+const BRAIN = process.env.BRAIN_URL ?? 'http://localhost:3002'
 
 const results = []
 function report(name, ok, detail = '') {

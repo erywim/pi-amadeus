@@ -1,3 +1,4 @@
+import type { MessageAttachment } from './attachment.ts'
 import type { Emotion } from './emotion.ts'
 import type { ToolStatus } from './sse.ts'
 
@@ -5,7 +6,17 @@ import type { ToolStatus } from './sse.ts'
  * 渠道：桌面客户端 / 飞书 / 各通讯平台适配器，会话按渠道存同一数据库。
  * 平台渠道值就是 PlatformKind（telegram / onebot / webhook），看板按它分组。
  */
-export type Channel = 'desktop' | 'feishu' | 'telegram' | 'onebot' | 'webhook'
+export type Channel =
+  | 'desktop'
+  | 'feishu'
+  | 'telegram'
+  | 'onebot'
+  | 'webhook'
+  | 'discord'
+  | 'slack'
+  | 'wechat'
+  | 'qqbot'
+  | 'automation'
 
 export type Role = 'user' | 'assistant'
 
@@ -15,6 +26,14 @@ export type Role = 'user' | 'assistant'
  * 每个回合按发起时的模式决定输出格式（语音=双语言，文本=仅中文）。
  */
 export type TurnMode = 'text' | 'voice'
+
+/** 本回合期间工作区里状态发生变化的文件（真实 git status 快照差集） */
+export interface TurnChangedFile {
+  /** 相对工作区根目录的 POSIX 路径 */
+  path: string
+  /** 回合结束时的 porcelain 状态码（M / A / D / R / ?? …） */
+  status: string
+}
 
 export interface Message {
   id: string
@@ -26,6 +45,20 @@ export interface Message {
   ttsText?: string | null
   /** 回合发起时的模式 */
   mode: TurnMode
+  /** 分支树父节点；根消息为 null */
+  parentId?: string | null
+  /** 同一父节点下的第几条 / 总数（分支切换器） */
+  branchIndex?: number
+  branchCount?: number
+  /** 图片 / 语音 / 文件附件（文件本体在服务端数据目录） */
+  attachments?: MessageAttachment[]
+  /** 本回合工作区改动（仅桌面端真实 git 快照有差异时才有） */
+  changedFiles?: TurnChangedFile[]
+  /**
+   * 思考过程（模型真实返回的 reasoning 内容；未开启思考或供应商不返回时为空）。
+   * 只展示，不回灌 LLM 上下文——重放思考块会显著增加成本且易被供应商拒收。
+   */
+  thinking?: string
   createdAt: number
 }
 
@@ -35,8 +68,34 @@ export interface Session {
   title: string
   createdAt: number
   updatedAt: number
+  /** 置顶会话排在列表最前（置顶不改变 updated_at） */
+  pinned?: boolean
+  /** 已归档：默认列表隐藏，可在侧栏「已归档」里恢复 */
+  archived?: boolean
   /** 服务端会话列表附带的消息数（历史页统计用；未加载消息时也可见） */
   messageCount?: number
+}
+
+/** 跨会话消息搜索命中（侧栏全文搜索） */
+export interface MessageSearchHit {
+  sessionId: string
+  sessionTitle: string
+  channel: Channel
+  messageId: string
+  role: Role
+  /** 命中位置前后各 40 字的原文片段 */
+  snippet: string
+  createdAt: number
+}
+
+/** 会话级 token 用量（来自 turn_metrics 的真实累计） */
+export interface SessionUsage {
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  /** 最近一次回合使用的模型 */
+  model: string
 }
 
 /** 会话列表按天分组的组名（今天 / 昨天 / 本周 / 更早） */
@@ -84,6 +143,8 @@ export interface StreamState {
     messageId: string
     content: string
     emotion?: Emotion
+    /** 流式中的思考内容（供应商真实返回的 reasoning 增量） */
+    thinking?: string
   }
   /** 本回合 turnId（首个 tool 事件到来时设置） */
   turnId?: string

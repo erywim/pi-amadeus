@@ -1,19 +1,27 @@
 import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
-import { PanelLeft, Pencil, Trash2 } from 'lucide-react'
+import { Download, GitBranch, PanelLeft, PanelRight, Pencil, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
+import type { SessionUsage } from '@pi-amadeus/shared'
 import { Badge } from '@renderer/components/ui/badge'
+import { fetchSessionUsage } from '@renderer/lib/api'
+import { exportSessionMarkdown } from '@renderer/lib/exportSession'
 import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
+import { useUiStore } from '@renderer/stores/uiStore'
 
 /** 文本模式的标题栏：侧栏开关 + 标题（可重命名） + 渠道徽标 + 轮次统计 + 删除 */
-export function CodexTitlebar({
+export function ChatTitlebar({
   sidebarOpen,
-  onToggleSidebar
+  onToggleSidebar,
+  sideOpen,
+  onToggleSide
 }: {
   sidebarOpen: boolean
   onToggleSidebar: () => void
+  sideOpen: boolean
+  onToggleSide: () => void
 }): React.JSX.Element {
   const { t } = useTranslation()
   const session = useSessionStore((s) => s.sessions.find((x) => x.id === s.activeSessionId))
@@ -25,7 +33,10 @@ export function CodexTitlebar({
   const renameSession = useSessionStore((s) => s.renameSession)
   const [editing, setEditing] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
+  const [usage, setUsage] = useState<SessionUsage | null>(null)
+  const [exporting, setExporting] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const setBranchTreeOpen = useUiStore((s) => s.setBranchTreeOpen)
   /** Esc 取消后紧跟的 blur 不该再提交一次（取消是明确意图） */
   const cancelledRef = useRef(false)
 
@@ -33,6 +44,23 @@ export function CodexTitlebar({
   useEffect(() => {
     setEditing(false)
   }, [session?.id])
+
+  // 会话用量：来自 turn_metrics 的真实累计；回合结束后消息数变化会触发重拉
+  useEffect(() => {
+    if (!session?.id) {
+      setUsage(null)
+      return
+    }
+    let cancelled = false
+    fetchSessionUsage(session.id)
+      .then((value) => {
+        if (!cancelled) setUsage(value)
+      })
+      .catch((error) => console.warn('[usage] 读取失败：', error))
+    return () => {
+      cancelled = true
+    }
+  }, [session?.id, messageCount])
 
   useEffect(() => {
     if (editing) inputRef.current?.select()
@@ -68,6 +96,24 @@ export function CodexTitlebar({
     }
   }
 
+  async function handleExport(): Promise<void> {
+    if (!session || exporting) return
+    setExporting(true)
+    try {
+      const filename = await exportSessionMarkdown(session, {
+        user: t('chat.exportUser'),
+        assistant: 'Amadeus',
+        attachments: t('chat.attachments'),
+        untitled: t('chatShell.untitledTask')
+      })
+      toast.success(t('chat.exported', { name: filename }))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      setExporting(false)
+    }
+  }
+
   if (!session) {
     return <div className="h-[52px] shrink-0 border-b border-border" />
   }
@@ -78,12 +124,26 @@ export function CodexTitlebar({
     <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-5">
       <button
         type="button"
-        aria-label={t('codex.sidebarToggle')}
+        aria-label={t('chatShell.sidebarToggle')}
         aria-pressed={sidebarOpen}
         onClick={onToggleSidebar}
         className="grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft"
       >
         <PanelLeft className="size-4" strokeWidth={1.8} />
+      </button>
+      <button
+        type="button"
+        data-testid="toggle-side-panel"
+        aria-label={sideOpen ? t('workbench.panel.collapse') : t('workbench.panel.expand')}
+        aria-pressed={sideOpen}
+        title={sideOpen ? t('workbench.panel.collapse') : t('workbench.panel.expand')}
+        onClick={onToggleSide}
+        className={cn(
+          'grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft',
+          sideOpen && 'bg-surface-soft text-foreground'
+        )}
+      >
+        <PanelRight className="size-4" strokeWidth={1.8} />
       </button>
       {editing ? (
         <input
@@ -114,7 +174,7 @@ export function CodexTitlebar({
             title={t('chat.renameHint')}
             className="min-w-0 truncate text-[15px] font-semibold"
           >
-            {session.title || t('codex.untitledTask')}
+            {session.title || t('chatShell.untitledTask')}
           </h2>
           <button
             type="button"
@@ -140,9 +200,40 @@ export function CodexTitlebar({
         {t(`channels.${session.channel}`)}
       </Badge>
       <span className="flex-1" />
+      {usage && usage.totalTokens > 0 && (
+        <span
+          data-testid="session-usage"
+          title={`${t('chat.usage')}：in ${usage.inputTokens} / out ${usage.outputTokens}`}
+          className="whitespace-nowrap font-mono text-[11.5px] text-muted-foreground"
+        >
+          {usage.totalTokens.toLocaleString()} {t('chat.tokens')}
+        </span>
+      )}
       <span className="whitespace-nowrap text-[12.5px] text-muted-foreground">
-        {t('codex.turns', { count: turns })}
+        {t('chatShell.turns', { count: turns })}
       </span>
+      <button
+        type="button"
+        data-testid="open-branch-tree"
+        title={t('branchTree.open')}
+        aria-label={t('branchTree.open')}
+        disabled={messageCount === 0}
+        onClick={() => setBranchTreeOpen(true)}
+        className="grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft disabled:opacity-40"
+      >
+        <GitBranch className="size-4" strokeWidth={1.6} />
+      </button>
+      <button
+        type="button"
+        data-testid="export-session"
+        title={t('chat.exportMarkdown')}
+        aria-label={t('chat.exportMarkdown')}
+        disabled={messageCount === 0 || exporting}
+        onClick={() => void handleExport()}
+        className="grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft disabled:opacity-40"
+      >
+        <Download className="size-4" strokeWidth={1.6} />
+      </button>
       <button
         type="button"
         title={t('chat.deleteTitle')}

@@ -228,7 +228,7 @@ try {
   await evalJs(`(() => {
     const el = document.querySelector('[data-testid="session-search"]')
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
-    setter.call(el, 'E2E 会话')
+    setter.call(el, ${JSON.stringify(uniqueTitle)})
     el.dispatchEvent(new Event('input', { bubbles: true }))
     return true
   })()`)

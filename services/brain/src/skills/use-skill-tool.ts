@@ -1,5 +1,5 @@
 /**
- * use_skill 工具（Claude Code 风格）：按名返回 SKILL.md 正文。
+ * use_skill 工具（技能文件风格）：按名返回 SKILL.md 正文。
  * 与其他工具同构（TypeBox schema + execute throw 语义），
  * 只依赖已加载的 Skill[]（由 agentTurn 注入），不自行读盘。
  */

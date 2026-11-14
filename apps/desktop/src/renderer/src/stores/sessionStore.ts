@@ -1,5 +1,14 @@
 import { create } from 'zustand'
-import type { Message, Session, SseEvent, StreamState, ToolActivityItem, ToolStatus } from '@pi-amadeus/shared'
+import type {
+  AttachmentKind,
+  Message,
+  MessageAttachment,
+  Session,
+  SseEvent,
+  StreamState,
+  ToolActivityItem,
+  ToolStatus
+} from '@pi-amadeus/shared'
 import {
   confirmTool,
   deleteSessionApi,
@@ -7,23 +16,56 @@ import {
   fetchMessages,
   fetchSessions,
   renameSessionApi,
+  setSessionArchivedApi,
+  setSessionPinnedApi,
   startChatTurn,
+  switchBranchApi,
+  startEditTurn,
   startRegenerate
 } from '@renderer/lib/api'
 import { useLive2dStore } from './live2dStore'
 import { useLive2dSpeechStore } from './live2dSpeechStore'
 import { useMemoryStore } from './memoryStore'
+import { useSettingsStore } from './settingsStore'
 import { useUiStore } from './uiStore'
 
 /**
- * 回合工作过程日志：一个回合的工具活动快照 + 耗时（Codex 风格折叠卡的数据源）。
+ * 回合工作过程日志：一个回合的工具活动快照 + 耗时（紧凑工作台风格折叠卡的数据源）。
  * 不落库、仅内存：本会话窗口内可回看，重进页面后历史消息不带工作卡。
  */
+/** 输入区待发送的附件（base64 在内存里，发送后才落盘） */
+export interface OutgoingAttachment {
+  name: string
+  mimeType: string
+  size: number
+  /** base64，不含 data: 前缀 */
+  data: string
+  /** 本地预览（图片用 data URL，其它为空） */
+  previewUrl?: string
+}
+
+function attachmentKind(mimeType: string, name: string): AttachmentKind {
+  const mime = mimeType.toLowerCase()
+  if (mime.startsWith('image/')) return 'image'
+  if (mime.startsWith('audio/')) return 'audio'
+  if (/\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(name)) return 'image'
+  if (/\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(name)) return 'audio'
+  return 'file'
+}
+
 export interface TurnWorkLog {
   tools: ToolActivityItem[]
   durationMs: number
   /** 被手动停止（发送键变停止键时点击）的回合 */
   stopped: boolean
+}
+
+/** 流式进行中用户继续发送的消息：排队，本回合正常结束后自动发出下一条 */
+export interface QueuedTurn {
+  id: string
+  text: string
+  attachments: OutgoingAttachment[]
+  createdAt: number
 }
 
 /**
@@ -58,6 +100,8 @@ interface SessionState {
    * 下一次发起回合或手动关闭时清掉。
    */
   turnErrors: Record<string, string>
+  /** sessionId → 排队中的消息（流式期间发送不会丢，也不会并发跑两个回合） */
+  queued: Record<string, QueuedTurn[]>
 
   init: () => Promise<void>
   refreshSessions: () => Promise<void>
@@ -67,21 +111,134 @@ interface SessionState {
   /** 返回当前选中会话；无则新建（语音回合复用文本会话） */
   ensureActiveSession: () => string
   deleteSession: (id: string) => void
-  sendMessage: (text: string) => void
+  sendMessage: (text: string, attachments?: OutgoingAttachment[]) => void
   /** 重新生成最后一条回复（会话末尾是用户消息时等于重试失败的回合） */
   regenerate: () => void
+  /** 编辑用户消息并重发：服务端截断后续消息，本地同步截断后追加新回复 */
+  editMessage: (messageId: string, content: string) => void
+  /** 置顶 / 取消置顶（乐观更新；失败回滚） */
+  togglePin: (id: string) => Promise<void>
+  /** 归档 / 取消归档（乐观更新；失败回滚） */
+  toggleArchive: (id: string) => Promise<void>
+  /** 消息分支切换：-1 上一个分支 / 1 下一个分支 */
+  switchBranch: (messageId: string, direction: -1 | 1) => Promise<void>
   stopStreaming: () => void
   /** bash 确认卡应答（允许/拒绝） */
   respondToolConfirm: (approved: boolean) => void
   /** 手动重命名（乐观更新；失败回滚并抛出，由调用方提示） */
   renameSession: (id: string, title: string) => Promise<void>
   dismissTurnError: (sessionId: string) => void
+  /** 移除一条排队消息 */
+  removeQueued: (sessionId: string, queuedId: string) => void
+  /** 清空某会话的排队消息 */
+  clearQueued: (sessionId: string) => void
+  /** 手动发出排队中的下一条（停止/失败后由用户决定是否继续） */
+  flushQueue: (sessionId: string) => void
 }
 
 export const useSessionStore = create<SessionState>()((set, get) => {
   let abortTurn: AbortController | null = null
   /** 当前回合开始时刻（工作卡耗时统计用） */
   let turnStartedAt = 0
+
+  /** 在指定会话上真正发起一个回合（普通发送与排队发送共用） */
+  function startTurn(sessionId: string, text: string, outgoing: OutgoingAttachment[] = []): void {
+    const { stream, userId } = get()
+    if (stream.streaming || !userId) return
+
+    const trimmed = text.trim()
+    if (!trimmed && outgoing.length === 0) return
+
+    const now = Date.now()
+    const localAttachments: MessageAttachment[] = outgoing.map((item, index) => ({
+      id: `local-${now}-${index}`,
+      kind: attachmentKind(item.mimeType, item.name),
+      name: item.name,
+      mimeType: item.mimeType,
+      size: item.size,
+      url: item.previewUrl ?? ''
+    }))
+    const userMessage: Message = {
+      id: `local-${now}-u`,
+      sessionId,
+      role: 'user',
+      content: trimmed,
+      ttsText: null,
+      mode: 'text',
+      attachments: localAttachments,
+      createdAt: now
+    }
+    const draftId = `local-${now}-a`
+    turnStartedAt = Date.now()
+
+    set((s) => {
+      // 新回合开始：清掉上一回合的停止快照与错误卡
+      const stoppedLogs = { ...s.stoppedLogs }
+      delete stoppedLogs[sessionId]
+      const turnErrors = { ...s.turnErrors }
+      delete turnErrors[sessionId]
+      return {
+        messages: {
+          ...s.messages,
+          [sessionId]: [...(s.messages[sessionId] ?? []), userMessage]
+        },
+        sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
+        stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
+        stoppedLogs,
+        turnErrors
+      }
+    })
+
+    abortTurn = startChatTurn(
+      {
+        userId,
+        sessionId,
+        content: trimmed,
+        attachments: outgoing.map((item) => ({
+          name: item.name,
+          mimeType: item.mimeType,
+          data: item.data
+        }))
+      },
+      (event) => {
+        handleTurnEvent(sessionId, event, false)
+      }
+    )
+  }
+
+  /** 回合完成且窗口不在前台时发系统通知（权限未授予则静默跳过） */
+  function notifyTurnDone(sessionId: string, content: string): void {
+    const settings = useSettingsStore.getState()
+    // hasFocus 比 document.hidden 更准确：Electron 窗口失焦但仍可见时 hidden 为 false
+    if (!settings.notifyOnComplete || document.hasFocus()) return
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+    const title = get().sessions.find((session) => session.id === sessionId)?.title || 'Amadeus'
+    try {
+      const notification = new Notification(title, {
+        body: content.replace(/\s+/g, ' ').trim().slice(0, 120)
+      })
+      notification.onclick = () => {
+        window.focus()
+        notification.close()
+      }
+    } catch (error) {
+      console.warn('[session] 系统通知发送失败：', error)
+    }
+  }
+
+  /** 自动推进队列：优先刚结束的会话，其次当前会话 */
+  function flushNextQueued(preferredSessionId?: string): void {
+    if (get().stream.streaming) return
+    const { queued, activeSessionId } = get()
+    const candidates = [preferredSessionId, activeSessionId].filter(
+      (id): id is string => typeof id === 'string'
+    )
+    for (const sessionId of candidates) {
+      if ((queued[sessionId]?.length ?? 0) === 0) continue
+      get().flushQueue(sessionId)
+      return
+    }
+  }
 
   /** 结束当前回合流（中止 + 清空流状态）；markStopped 时把进行中的工具活动存为停止快照 */
   function endStream(markStopped = false): void {
@@ -100,6 +257,30 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     abortTurn?.abort()
     abortTurn = null
     set({ stream: { streaming: false, tools: [] } })
+    // 停止/失败都不会收到 done 事件，本地用户消息仍是 local-… 临时 id；
+    // 从服务端回读一次、只把 id 对齐到落库值（不覆盖本地消息列，避免把用户
+    // 刚发出的下一条消息冲掉），否则紧接着「编辑后重发」会 404。
+    if (ownerSessionId) {
+      const sessionId = ownerSessionId
+      void fetchMessages(sessionId)
+        .then((serverMessages) => {
+          set((s) => {
+            // 新一轮已经开始：这次回读的旧快照不能碰当前消息列
+            if (s.stream.streaming && s.stream.sessionId === sessionId) return {}
+            const local = s.messages[sessionId] ?? []
+            const next = local.map((message, index) => {
+              const counterpart = serverMessages[index]
+              return counterpart &&
+                counterpart.role === message.role &&
+                counterpart.content === message.content
+                ? { ...message, id: counterpart.id }
+                : message
+            })
+            return { messages: { ...s.messages, [sessionId]: next } }
+          })
+        })
+        .catch((error) => console.warn('[session] 消息 id 对齐失败：', error))
+    }
   }
 
   /**
@@ -119,6 +300,17 @@ export const useSessionStore = create<SessionState>()((set, get) => {
             ...s.stream,
             streaming: true,
             draft: { ...draft, content: draft.content + event.delta }
+          }
+        }))
+        return
+      case 'thinking':
+        if (!draft) return
+        // 思考增量单独累积到 draft.thinking：折叠区展示，不混进正文
+        set((s) => ({
+          stream: {
+            ...s.stream,
+            streaming: true,
+            draft: { ...draft, thinking: (draft.thinking ?? '') + event.delta }
           }
         }))
         return
@@ -197,6 +389,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           content: finalDraft.content,
           ttsText: null,
           mode: 'text',
+          ...(finalDraft.thinking ? { thinking: finalDraft.thinking } : {}),
           createdAt: Date.now()
         }
         set((s) => {
@@ -204,10 +397,19 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           // 重新生成：服务端已替换旧回复，本地同步摘掉末尾那条旧助手消息，
           // 否则界面会留下「旧回答 + 新回答」两条
           const base = replaceLast && prev.at(-1)?.role === 'assistant' ? prev.slice(0, -1) : prev
+          // 发送时插入的用户消息是本地临时 id（local-…）；服务端把落库后的 id 带回来，
+          // 这里替换掉，之后「编辑后重发」才能按真实 id 定位
+          const withServerIds = event.userMessageId
+            ? base.map((message, index) =>
+                index === base.length - 1 && message.role === 'user'
+                  ? { ...message, id: event.userMessageId! }
+                  : message
+              )
+            : base
           return {
             messages: {
               ...s.messages,
-              [sessionId]: [...base, assistantMessage]
+              [sessionId]: [...withServerIds, assistantMessage]
             },
             stream: { streaming: false, tools: [] },
             // 回合正常结束：工具活动快照归档到该条 assistant 消息（工作卡可展开回看）
@@ -225,6 +427,11 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         })
         turnStartedAt = 0
         abortTurn = null
+        notifyTurnDone(sessionId, assistantMessage.content)
+        // 正常结束后自动发下一条排队消息（停止/失败不自动继续，交给用户决定）
+        flushNextQueued(sessionId)
+        // 回合结束后回读一次：同步服务端消息 id、分支序号与附件 URL
+        void get().refreshSession(sessionId)
         // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
         void get().refreshSessions()
         // 回合结束后好感度会变：刷新侧栏的关系读数（服务端按真实事件累计）
@@ -254,6 +461,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     workLogs: {},
     stoppedLogs: {},
     turnErrors: {},
+    queued: {},
 
     init: async () => {
       try{
@@ -298,6 +506,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     refreshSession: async (sessionId) => {
       try {
         const messages = await fetchMessages(sessionId)
+        // 回读期间用户已经发了新回合：旧快照不能覆盖正在流式的消息列
+        const stream = get().stream
+        if (stream.streaming && stream.sessionId === sessionId) return
         set((s) => ({ messages: { ...s.messages, [sessionId]: messages } }))
         void get().refreshSessions()
       } catch (error) {
@@ -323,6 +534,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         title: '',
         createdAt: now,
         updatedAt: now,
+        pinned: false,
+        archived: false,
         messageCount: 0
       }
       set((s) => ({
@@ -355,58 +568,45 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         for (const messageId of removedMessageIds) {
           delete workLogs[messageId]
         }
+        const queued = { ...s.queued }
+        delete queued[id]
         return {
           sessions,
           messages,
           stoppedLogs,
           workLogs,
           turnErrors,
+          queued,
           activeSessionId: s.activeSessionId === id ? null : s.activeSessionId
         }
       })
     },
 
-    sendMessage: (text) => {
+    sendMessage: (text, outgoing = []) => {
       const { activeSessionId, stream, userId } = get()
-      if (stream.streaming || !activeSessionId || !userId) return
+      if (!activeSessionId || !userId) return
 
       const trimmed = text.trim()
-      if (!trimmed) return
+      if (!trimmed && outgoing.length === 0) return
 
-      const sessionId = activeSessionId
-      const userMessage: Message = {
-        id: `local-${Date.now()}-u`,
-        sessionId,
-        role: 'user',
-        content: trimmed,
-        ttsText: null,
-        mode: 'text',
-        createdAt: Date.now()
-      }
-      const draftId = `local-${Date.now()}-a`
-      turnStartedAt = Date.now()
-
-      set((s) => {
-        // 新回合开始：清掉上一回合的停止快照与错误卡
-        const stoppedLogs = { ...s.stoppedLogs }
-        delete stoppedLogs[sessionId]
-        const turnErrors = { ...s.turnErrors }
-        delete turnErrors[sessionId]
-        return {
-          messages: {
-            ...s.messages,
-            [sessionId]: [...(s.messages[sessionId] ?? []), userMessage]
-          },
-          sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
-          stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
-          stoppedLogs,
-          turnErrors
+      // 流式期间继续发送 → 排队（保持顺序，本回合结束后自动发下一条）
+      if (stream.streaming) {
+        const item: QueuedTurn = {
+          id: crypto.randomUUID(),
+          text: trimmed,
+          attachments: outgoing,
+          createdAt: Date.now()
         }
-      })
+        set((s) => ({
+          queued: {
+            ...s.queued,
+            [activeSessionId]: [...(s.queued[activeSessionId] ?? []), item]
+          }
+        }))
+        return
+      }
 
-      abortTurn = startChatTurn({ userId, sessionId, content: trimmed }, (event) => {
-        handleTurnEvent(sessionId, event, false)
-      })
+      startTurn(activeSessionId, trimmed, outgoing)
     },
 
     regenerate: () => {
@@ -431,6 +631,99 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       abortTurn = startRegenerate({ userId, sessionId }, (event) => {
         handleTurnEvent(sessionId, event, true)
       })
+    },
+
+    editMessage: (messageId, content) => {
+      const { activeSessionId, stream, userId, messages } = get()
+      if (stream.streaming || !activeSessionId || !userId) return
+      const trimmed = content.trim()
+      if (!trimmed) return
+      const sessionId = activeSessionId
+      const list = messages[sessionId] ?? []
+      const index = list.findIndex((message) => message.id === messageId && message.role === 'user')
+      if (index < 0) return
+      const kept = list.slice(0, index + 1)
+      const edited: Message = { ...kept[index]!, content: trimmed }
+      const nextMessages = [...kept.slice(0, index), edited]
+      const keptIds = new Set(nextMessages.map((message) => message.id))
+      const draftId = `local-${Date.now()}-a`
+      turnStartedAt = Date.now()
+
+      // 本地与服务端同步截断：编辑点之后的旧分支立即从界面消失，
+      // 新回复以普通回合追加（服务端同样先截断再跑）
+      set((s) => ({
+        messages: { ...s.messages, [sessionId]: nextMessages },
+        stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
+        turnErrors: Object.fromEntries(
+          Object.entries(s.turnErrors).filter(([key]) => key !== sessionId)
+        ),
+        stoppedLogs: Object.fromEntries(
+          Object.entries(s.stoppedLogs).filter(([key]) => key !== sessionId)
+        ),
+        workLogs: Object.fromEntries(
+          Object.entries(s.workLogs).filter(([key]) => keptIds.has(key))
+        )
+      }))
+
+      abortTurn = startEditTurn({ userId, sessionId, messageId, content: trimmed }, (event) => {
+        handleTurnEvent(sessionId, event, false)
+      })
+    },
+
+    togglePin: async (id) => {
+      const { userId, sessions } = get()
+      if (!userId) return
+      const prev = sessions.find((session) => session.id === id)?.pinned ?? false
+      const next = !prev
+      set((s) => ({
+        sessions: s.sessions.map((session) =>
+          session.id === id ? { ...session, pinned: next } : session
+        )
+      }))
+      try {
+        await setSessionPinnedApi(id, next, userId)
+      } catch (error) {
+        set((s) => ({
+          sessions: s.sessions.map((session) =>
+            session.id === id ? { ...session, pinned: prev } : session
+          )
+        }))
+        throw error
+      }
+    },
+
+    toggleArchive: async (id) => {
+      const { userId, sessions } = get()
+      if (!userId) return
+      const prev = sessions.find((session) => session.id === id)?.archived ?? false
+      const next = !prev
+      set((s) => ({
+        sessions: s.sessions.map((session) =>
+          session.id === id ? { ...session, archived: next } : session
+        )
+      }))
+      try {
+        await setSessionArchivedApi(id, next, userId)
+      } catch (error) {
+        set((s) => ({
+          sessions: s.sessions.map((session) =>
+            session.id === id ? { ...session, archived: prev } : session
+          )
+        }))
+        throw error
+      }
+    },
+
+    switchBranch: async (messageId, direction) => {
+      const { activeSessionId, userId, stream } = get()
+      if (!activeSessionId || !userId || stream.streaming) return
+      try {
+        await switchBranchApi({ sessionId: activeSessionId, userId, messageId, direction })
+        await get().refreshSession(activeSessionId)
+      } catch (error) {
+        console.warn('[session] 切换分支失败：', error)
+        throw error
+      }
     },
 
     stopStreaming: () => {
@@ -482,6 +775,39 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         delete turnErrors[sessionId]
         return { turnErrors }
       })
+    },
+
+    removeQueued: (sessionId, queuedId) => {
+      set((s) => {
+        const list = (s.queued[sessionId] ?? []).filter((item) => item.id !== queuedId)
+        const queued = { ...s.queued }
+        if (list.length > 0) queued[sessionId] = list
+        else delete queued[sessionId]
+        return { queued }
+      })
+    },
+
+    clearQueued: (sessionId) => {
+      set((s) => {
+        const queued = { ...s.queued }
+        delete queued[sessionId]
+        return { queued }
+      })
+    },
+
+    flushQueue: (sessionId) => {
+      if (get().stream.streaming) return
+      const list = get().queued[sessionId] ?? []
+      const first = list[0]
+      if (!first) return
+      set((s) => {
+        const next = (s.queued[sessionId] ?? []).slice(1)
+        const queued = { ...s.queued }
+        if (next.length > 0) queued[sessionId] = next
+        else delete queued[sessionId]
+        return { queued }
+      })
+      startTurn(sessionId, first.text, first.attachments)
     }
   }
 })

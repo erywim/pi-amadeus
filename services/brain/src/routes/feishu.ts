@@ -121,7 +121,8 @@ export function feishuRoutes(cfg: BrainConfig, db: Db): Hono {
       ttsText: null,
       target,
       userText: text,
-      toolCalls: result.toolCalls
+      toolCalls: result.toolCalls,
+      ...(result.thinking ? { thinking: result.thinking } : {})
     })
     // 飞书回合同样计入真实看板：渠道维度会显示 feishu
     await recordTurnMetric(db, {
@@ -131,6 +132,7 @@ export function feishuRoutes(cfg: BrainConfig, db: Db): Hono {
       startedAt,
       model: result.target.model,
       providerName: result.target.providerName,
+        providerId: result.target.providerId,
       usage: result.usage,
       toolCalls: result.toolCalls,
       toolNames: result.toolNames
