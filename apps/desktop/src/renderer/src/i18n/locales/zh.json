@@ -377,6 +377,8 @@
       "loginRequired": "请先在陪伴模式登录后配置",
       "toolsEnable": "工具调用",
       "toolsDesc": "允许助手使用时间/计算器/天气/搜索/终端命令等工具（危险命令会被安全策略拦截）",
+      "errorChecksEnable": "错误检查与循环保护",
+      "errorChecksDesc": "检测重复工具调用、连续阻断和异常回合，达到安全边界后停止并说明原因（默认开启）",
       "fallbackHint": "以下内置配置仅在没有任何激活的模型服务时生效。",
       "thinkingLevel": "思考模式",
       "thinkingHint": "让模型返回思考过程（供应商支持时真实展示，可折叠）。关闭时不发送任何思考参数。",

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { Agent } from '@earendil-works/pi-agent-core'
-import type { AgentEvent, AgentMessage, BeforeToolCallContext } from '@earendil-works/pi-agent-core'
-import type { Channel, SseEvent, TurnMode } from '@pi-amadeus/shared'
+import type { AgentEvent, AgentMessage, AfterToolCallContext, AfterToolCallResult, BeforeToolCallContext } from '@earendil-works/pi-agent-core'
+import type { Channel, ResponseGuardConfig, SseErrorCode, SseEvent, TurnMode } from '@pi-amadeus/shared'
 import { AsyncQueue } from './bilingual.ts'
 import type { BrainConfig } from './config.ts'
 import { compactionLevelOf, prepareTurn } from './conversation.ts'
@@ -80,8 +80,87 @@ export interface AgentTurnResult {
   thinking?: string
 }
 
+export class AgentTurnError extends Error {
+  readonly code: SseErrorCode
+  readonly recoverability: 'retry' | 'continue' | 'edit' | 'none'
+  readonly details?: { attempt?: number; limit?: number; toolName?: string; turnCount?: number }
+
+  constructor(
+    message: string,
+    code: SseErrorCode,
+    recoverability: 'retry' | 'continue' | 'edit' | 'none',
+    details?: { attempt?: number; limit?: number; toolName?: string; turnCount?: number }
+  ) {
+    super(message)
+    this.name = 'AgentTurnError'
+    this.code = code
+    this.recoverability = recoverability
+    this.details = details
+  }
+}
+
 /** 工具结果文本的 UI 上限（超出截断） */
 const RESULT_LIMIT = 4000
+const DEFAULT_RESPONSE_GUARD: Required<ResponseGuardConfig> = {
+  errorChecks: true,
+  maxTurns: 32,
+  maxToolCalls: 96,
+  maxRepeatedToolCalls: 8,
+  maxConsecutiveBlocked: 3
+}
+
+function positiveInt(value: number | undefined, fallback: number): number {
+  return value !== undefined && Number.isSafeInteger(value) && value > 0 ? value : fallback
+}
+
+function responseGuardOf(config: import('@pi-amadeus/shared').UserConfig | null): Required<ResponseGuardConfig> {
+  const input = config?.responseGuard ?? {}
+  return {
+    errorChecks: input.errorChecks !== false,
+    maxTurns: positiveInt(input.maxTurns, DEFAULT_RESPONSE_GUARD.maxTurns),
+    maxToolCalls: positiveInt(input.maxToolCalls, DEFAULT_RESPONSE_GUARD.maxToolCalls),
+    maxRepeatedToolCalls: positiveInt(input.maxRepeatedToolCalls, DEFAULT_RESPONSE_GUARD.maxRepeatedToolCalls),
+    maxConsecutiveBlocked: positiveInt(input.maxConsecutiveBlocked, DEFAULT_RESPONSE_GUARD.maxConsecutiveBlocked)
+  }
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  const object = value as Record<string, unknown>
+  return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${stableJson(object[key])}`).join(',')}}`
+}
+
+function toolSignature(toolName: string, args: unknown, result: unknown, isError: boolean): string {
+  return `${toolName}\nargs=${stableJson(args ?? {})}\nresult=${stableJson(result ?? null)}\nerror=${isError ? '1' : '0'}`
+}
+
+function blockedReason(toolName: string, result: string, details: Record<string, unknown>): string | null {
+  const denied = typeof details.deniedReason === 'string' ? details.deniedReason : ''
+  if (denied) return `${toolName}:${denied}`
+  if (!result) return null
+  if (/拦截|拒绝|blocked|denied|permission|安全策略/i.test(result)) return `${toolName}:${result.slice(0, 160)}`
+  return null
+}
+
+export interface AgentTurnErrorInfo {
+  code: SseErrorCode
+  recoverability: 'retry' | 'continue' | 'edit' | 'none'
+  details?: { attempt?: number; limit?: number; toolName?: string; turnCount?: number }
+}
+
+export function agentTurnErrorInfo(error: unknown): AgentTurnErrorInfo {
+  if (error instanceof AgentTurnError) {
+    return { code: error.code, recoverability: error.recoverability, ...(error.details ? { details: error.details } : {}) }
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  if (/输出上限截断|output token limit|maximum output/i.test(message)) return { code: 'output_limit', recoverability: 'retry' }
+  if (/上下文过长|context.{0,20}(window|limit)|prompt.{0,20}too long/i.test(message)) return { code: 'context_limit', recoverability: 'edit' }
+  if (/aborted|中止|取消|已停止/i.test(message)) return { code: 'aborted', recoverability: 'none' }
+  if (/429|529|rate limit|retry/i.test(message)) return { code: 'provider_retry_exhausted', recoverability: 'retry' }
+  if (/工具|tool/i.test(message)) return { code: 'tool_execution_failed', recoverability: 'continue' }
+  return { code: 'provider_error', recoverability: 'retry' }
+}
 
 /** content 块拼文本（ImageContent 忽略——工具结果 v1 只出文本） */
 function textOf(content: unknown): string {
@@ -128,6 +207,7 @@ export async function* runAgentTurn(
   }
 
   const toolsEnabled = prepared.userConfig?.tools?.enabled !== false
+  const responseGuard = responseGuardOf(prepared.userConfig)
   const queue = new AsyncQueue<SseEvent>()
   // 本回合开始前发生了上下文压缩：先上屏一条提示（在正文 delta 之前）
   if (prepared.compaction) {
@@ -143,6 +223,14 @@ export async function* runAgentTurn(
   // 指标：工具循环里每次 LLM 调用都会带 usage，逐次累加才是本回合真实消耗
   const usage: AgentTurnUsage = { input: 0, output: 0, total: 0 }
   const toolNames: string[] = []
+  let reservedToolCalls = 0
+  let toolTurns = 0
+  let lastToolTurn: unknown = null
+  let lastToolSignature = ''
+  let repeatedToolCalls = 0
+  let lastBlockedReason = ''
+  let consecutiveBlocked = 0
+  let guardError: AgentTurnError | null = null
 
   // bash 确认握手：登记 pending → tool_confirm 事件上屏 → execute 内 await 放行
   const confirmRequest = async (toolCallId: string, command: string): Promise<boolean> => {
@@ -280,6 +368,84 @@ export async function* runAgentTurn(
     }
   }
 
+  const beforeToolCallWithGuard = async (
+    context: BeforeToolCallContext
+  ): Promise<{ block: boolean; reason?: string; terminate?: boolean } | undefined> => {
+    const remaining = responseGuard.maxToolCalls - reservedToolCalls
+    if (remaining <= 0) {
+      guardError = new AgentTurnError(
+        `已停止：本回合工具调用达到上限（${responseGuard.maxToolCalls} 次）。请检查任务是否陷入循环后重试。`,
+        'max_tool_calls',
+        'retry',
+        { limit: responseGuard.maxToolCalls }
+      )
+      // 预算是硬保护，即使用户关闭重复检查也不能无限执行工具。
+      return { block: true, reason: guardError.message, terminate: true }
+    }
+    reservedToolCalls += 1
+    return beforeToolCall(context)
+  }
+
+  const afterToolCall = async (context: AfterToolCallContext): Promise<AfterToolCallResult | undefined> => {
+    const turnKey = context.assistantMessage
+    if (turnKey !== lastToolTurn) {
+      lastToolTurn = turnKey
+      toolTurns += 1
+      if (toolTurns >= responseGuard.maxTurns) {
+        guardError = new AgentTurnError(
+          `已停止：本回合工具循环达到上限（${responseGuard.maxTurns} 轮）。请检查任务是否陷入循环后重试。`,
+          'max_turns',
+          'retry',
+          { limit: responseGuard.maxTurns, turnCount: toolTurns }
+        )
+        return { terminate: true }
+      }
+    }
+    const resultText = textOf(context.result.content)
+    const details = (context.result.details && typeof context.result.details === 'object' ? context.result.details : {}) as Record<string, unknown>
+    const signature = toolSignature(context.toolCall.name, context.args, resultText, context.isError)
+    if (signature === lastToolSignature) repeatedToolCalls += 1
+    else {
+      lastToolSignature = signature
+      repeatedToolCalls = 1
+    }
+    const blocked = blockedReason(context.toolCall.name, resultText, details)
+    if (blocked === lastBlockedReason) consecutiveBlocked += 1
+    else {
+      lastBlockedReason = blocked ?? ''
+      consecutiveBlocked = blocked ? 1 : 0
+    }
+    if (reservedToolCalls >= responseGuard.maxToolCalls) {
+      guardError = new AgentTurnError(
+        `已停止：本回合工具调用达到上限（${responseGuard.maxToolCalls} 次）。请检查任务是否陷入循环后重试。`,
+        'max_tool_calls',
+        'retry',
+        { limit: responseGuard.maxToolCalls }
+      )
+      return { terminate: true }
+    }
+    if (responseGuard.errorChecks && repeatedToolCalls >= responseGuard.maxRepeatedToolCalls) {
+      guardError = new AgentTurnError(
+        `已停止：检测到工具 ${context.toolCall.name} 连续 ${repeatedToolCalls} 次产生完全相同的调用与结果，模型可能陷入重复。请告诉 Agent 下一步怎么做，或关闭“错误检查”。`,
+        'repeated_blocked_action',
+        'retry',
+        { attempt: repeatedToolCalls, limit: responseGuard.maxRepeatedToolCalls, toolName: context.toolCall.name }
+      )
+      // 先保留这次结果，再阻止下一次模型请求；这样日志与 UI 仍能看到最后一次真实工具结果。
+      return { terminate: true }
+    }
+    if (responseGuard.errorChecks && consecutiveBlocked >= responseGuard.maxConsecutiveBlocked) {
+      guardError = new AgentTurnError(
+        `已停止：工具 ${context.toolCall.name} 连续 ${consecutiveBlocked} 次被阻断或拒绝，需要用户介入。`,
+        'repeated_blocked_action',
+        'continue',
+        { attempt: consecutiveBlocked, limit: responseGuard.maxConsecutiveBlocked, toolName: context.toolCall.name }
+      )
+      return { terminate: true }
+    }
+    return undefined
+  }
+
   const agent = new Agent({
     initialState: {
       // 工具总开关关闭时工作流也不可用：手册一并省略，避免模型调用不存在的工具
@@ -296,7 +462,8 @@ export async function* runAgentTurn(
       temperature: opts.temperature,
       maxTokens: opts.maxTokens
     }),
-    beforeToolCall,
+    beforeToolCall: beforeToolCallWithGuard,
+    afterToolCall,
     transformContext
   })
 
@@ -387,6 +554,7 @@ export async function* runAgentTurn(
   if (opts.signal?.aborted) {
     return { full: '', target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
   }
+  if (guardError) throw guardError
   if (agent.state.errorMessage) throw new Error(agent.state.errorMessage)
   if (!full) throw new Error('LLM 返回为空')
   // totalTokens 缺失时用输入+输出兜底（部分兼容端点不返回 total）

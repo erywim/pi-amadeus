@@ -224,6 +224,21 @@ export function AiPanel(): React.JSX.Element {
             onCheckedChange={(checked) => updateForm({ ...form, tools: { enabled: checked } })}
           />
         </div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label>{t('settings.ai.errorChecksEnable')}</Label>
+            <p className="text-xs text-muted-foreground">{t('settings.ai.errorChecksDesc')}</p>
+          </div>
+          <Switch
+            checked={form.responseGuard?.errorChecks ?? true}
+            onCheckedChange={(checked) =>
+              updateForm({
+                ...form,
+                responseGuard: { ...form.responseGuard, errorChecks: checked }
+              })
+            }
+          />
+        </div>
         {/* 上下文压缩档位：关闭 = 旧行为（最近 40 条），均衡/激进 = 超阈值时摘要旧历史 */}
         <div className="space-y-2">
           <Label>{t('settings.ai.compactionTitle')}</Label>

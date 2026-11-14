@@ -377,6 +377,8 @@
       "loginRequired": "Log in on the Companion page first",
       "toolsEnable": "Tool Calling",
       "toolsDesc": "Let the assistant use tools: time, calculator, weather, web search, terminal commands (dangerous commands are blocked by the safety policy)",
+      "errorChecksEnable": "Error checks and loop protection",
+      "errorChecksDesc": "Detect repeated tool calls, consecutive blocks, and abnormal turns; stop at safe boundaries with a reason (on by default)",
       "fallbackHint": "The built-in config below is used only when no model service is active.",
       "thinkingLevel": "Thinking mode",
       "thinkingHint": "Show the model’s real reasoning when the provider returns it (collapsible). Off sends no thinking parameters.",

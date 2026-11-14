@@ -60,10 +60,30 @@ export interface SseDoneEvent extends SseEventBase {
   title?: string
 }
 
+export type SseErrorCode =
+  | 'tool_input_invalid'
+  | 'tool_blocked'
+  | 'permission_denied'
+  | 'tool_execution_failed'
+  | 'repeated_blocked_action'
+  | 'max_turns'
+  | 'max_tool_calls'
+  | 'context_limit'
+  | 'output_limit'
+  | 'provider_error'
+  | 'provider_retry_exhausted'
+  | 'aborted'
+  | 'unknown'
+
+export type SseErrorRecoverability = 'retry' | 'continue' | 'edit' | 'none'
+
 export interface SseErrorEvent extends SseEventBase {
   type: 'error'
   message: string
-  code?: string
+  code?: SseErrorCode
+  recoverability?: SseErrorRecoverability
+  /** 仅用于诊断/日志；不得包含完整命令、密钥或工具结果。 */
+  details?: { attempt?: number; limit?: number; toolName?: string; turnCount?: number }
 }
 
 /** 语音模式：用户语音转写结果 */

@@ -105,6 +105,8 @@ interface SessionState {
    * 下一次发起回合或手动关闭时清掉。
    */
   turnErrors: Record<string, string>
+  /** sessionId → 最近一次错误的稳定分类，供恢复入口区分。 */
+  turnErrorInfo: Record<string, { code?: string; recoverability?: string; details?: Record<string, unknown> }>
   /** sessionId → 排队中的消息（流式期间发送不会丢，也不会并发跑两个回合） */
   queued: Record<string, QueuedTurn[]>
 
@@ -190,6 +192,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       delete stoppedLogs[sessionId]
       const turnErrors = { ...s.turnErrors }
       delete turnErrors[sessionId]
+      const turnErrorInfo = { ...s.turnErrorInfo }
+      delete turnErrorInfo[sessionId]
       return {
         messages: {
           ...s.messages,
@@ -198,7 +202,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         sessions: s.sessions.map((x) => (x.id === sessionId ? { ...x, updatedAt: Date.now() } : x)),
         stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
         stoppedLogs,
-        turnErrors
+        turnErrors,
+        turnErrorInfo
       }
     })
 
@@ -461,7 +466,13 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       case 'error':
         console.warn('[session] 回合出错：', event.message)
         // 失败先落错误信息再清流：错误卡挂在产生它的会话上，切走再回来仍在
-        set((s) => ({ turnErrors: { ...s.turnErrors, [sessionId]: event.message } }))
+        set((s) => ({
+          turnErrors: { ...s.turnErrors, [sessionId]: event.message },
+          turnErrorInfo: {
+            ...s.turnErrorInfo,
+            [sessionId]: { code: event.code, recoverability: event.recoverability, details: event.details }
+          }
+        }))
         endStream()
         return
       case 'audio':
@@ -489,9 +500,11 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     set((s) => {
       const turnErrors = { ...s.turnErrors }
       delete turnErrors[sessionId]
+      const turnErrorInfo = { ...s.turnErrorInfo }
+      delete turnErrorInfo[sessionId]
       const stoppedLogs = { ...s.stoppedLogs }
       delete stoppedLogs[sessionId]
-      return { turnErrors, stoppedLogs }
+      return { turnErrors, turnErrorInfo, stoppedLogs }
     })
   }
 
@@ -506,6 +519,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     workLogs: {},
     stoppedLogs: {},
     turnErrors: {},
+    turnErrorInfo: {},
     queued: {},
 
     init: async () => {
@@ -614,6 +628,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         delete stoppedLogs[id]
         const turnErrors = { ...s.turnErrors }
         delete turnErrors[id]
+        const turnErrorInfo = { ...s.turnErrorInfo }
+        delete turnErrorInfo[id]
         const workLogs = { ...s.workLogs }
         for (const messageId of removedMessageIds) {
           delete workLogs[messageId]
@@ -629,6 +645,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
           stoppedLogs,
           workLogs,
           turnErrors,
+          turnErrorInfo,
           queued,
           activeSessionId: s.activeSessionId === id ? null : s.activeSessionId
         }
@@ -677,7 +694,10 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         delete turnErrors[sessionId]
         return {
           stream: { streaming: true, sessionId, draft: { messageId: draftId, content: '' }, tools: [] },
-          turnErrors
+          turnErrors,
+          turnErrorInfo: Object.fromEntries(
+            Object.entries(s.turnErrorInfo).filter(([key]) => key !== sessionId)
+          )
         }
       })
 
@@ -853,7 +873,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       set((s) => {
         const turnErrors = { ...s.turnErrors }
         delete turnErrors[sessionId]
-        return { turnErrors }
+        const turnErrorInfo = { ...s.turnErrorInfo }
+        delete turnErrorInfo[sessionId]
+        return { turnErrors, turnErrorInfo }
       })
     },
 
