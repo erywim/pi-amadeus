@@ -7,6 +7,9 @@
  * 前置不满足时不逐个跑，直接报错退出——回归套件的价值在于
  * 绿就是真的绿，"环境没起"不能被误读成"测试全过"。
  *
+ * 单个脚本的**可选**前置（某个渠道没启用、某个密钥没配）用退出码 2 表示「跳过」：
+ * 汇总里单独标 SKIP 并列出原因，既不算通过也不算失败，不会被误读成绿。
+ *
  * 用法：node scripts/e2e-all.mjs [脚本名子串过滤，如 interrupt]
  * 新写的 e2e-*.mjs 自动被本套件收编，无需登记。
  */
@@ -41,7 +44,7 @@ async function checkPreconditions() {
 
 const files = (await readdir(here))
   .filter((f) => /^e2e(-[\w-]+)?\.mjs$/.test(f))
-  .filter((f) => join(here, f) !== self)
+  .filter((f) => join(here, f) !== self && f !== 'e2e-isolated.mjs')
   .filter((f) => !filter || f.includes(filter))
   .sort()
 
@@ -69,8 +72,19 @@ for (const f of files) {
   console.log('')
 }
 
-const failed = summary.filter((s) => s.code !== 0)
+const skipped = summary.filter((s) => s.code === 2)
+const failed = summary.filter((s) => s.code !== 0 && s.code !== 2)
 console.log('════ 套件汇总 ════')
-for (const s of summary) console.log(`${s.code === 0 ? 'PASS' : 'FAIL'}  ${s.f}${s.code ? `（退出码 ${s.code}）` : ''}`)
-console.log(`\n=== ${summary.length - failed.length}/${summary.length} 个脚本通过 ===`)
+for (const s of summary) {
+  const tag = s.code === 0 ? 'PASS' : s.code === 2 ? 'SKIP' : 'FAIL'
+  console.log(`${tag}  ${s.f}${s.code && s.code !== 2 ? `（退出码 ${s.code}）` : ''}`)
+}
+const ran = summary.length - skipped.length
+console.log(
+  `\n=== ${ran - failed.length}/${ran} 个脚本通过` +
+    `${skipped.length ? `，${skipped.length} 个因前置不满足跳过` : ''} ===`
+)
+if (skipped.length > 0) {
+  console.log('跳过的脚本在上方各自打印了原因；要跑它们请补齐对应前置。')
+}
 if (failed.length > 0) process.exitCode = 1

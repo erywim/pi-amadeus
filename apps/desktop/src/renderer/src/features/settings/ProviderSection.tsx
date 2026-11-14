@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { LoaderCircle, Pencil, PlugZap, Plus, Radio, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
-import type { ProviderItem } from '@pi-amadeus/shared'
+import { THINKING_LEVELS, type ProviderItem, type ThinkingLevel } from '@pi-amadeus/shared'
 import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import {
@@ -16,6 +16,13 @@ import {
 } from '@renderer/components/ui/dialog'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@renderer/components/ui/select'
 import { Switch } from '@renderer/components/ui/switch'
 import { useProviderStore } from '@renderer/stores/providerStore'
 
@@ -25,6 +32,11 @@ interface FormState {
   apiKey: string
   model: string
   proxy: string
+  tags: string[]
+  dailyTokenQuota: number
+  thinkingLevel: ThinkingLevel
+  contextWindow: number
+  maxTokens: number
   enabled: boolean
 }
 
@@ -34,11 +46,16 @@ const EMPTY_FORM: FormState = {
   apiKey: '',
   model: '',
   proxy: '',
+  tags: ['chat'],
+  dailyTokenQuota: 0,
+  thinkingLevel: 'off',
+  contextWindow: 0,
+  maxTokens: 0,
   enabled: true
 }
 
 /**
- * 多模型服务（参考 magpie）：列表 + 添加/编辑/删除 + 激活 + 真实连通性测试。
+ * 多模型服务（参考常见的多模型服务）：列表 + 添加/编辑/删除 + 激活 + 真实连通性测试。
  * 激活的服务优先于下面的内置单项配置；密钥保存后不回显。
  */
 export function ProviderSection(): React.JSX.Element {
@@ -74,6 +91,11 @@ export function ProviderSection(): React.JSX.Element {
       apiKey: '',
       model: provider.model,
       proxy: provider.proxy,
+      tags: provider.tags.length > 0 ? provider.tags : ['chat'],
+      dailyTokenQuota: provider.dailyTokenQuota,
+      thinkingLevel: provider.thinkingLevel,
+      contextWindow: provider.contextWindow,
+      maxTokens: provider.maxTokens,
       enabled: provider.enabled
     })
     setDialog({ mode: 'edit', provider })
@@ -88,6 +110,11 @@ export function ProviderSection(): React.JSX.Element {
         baseUrl: form.baseUrl,
         model: form.model,
         proxy: form.proxy,
+        tags: form.tags,
+        dailyTokenQuota: form.dailyTokenQuota,
+        thinkingLevel: form.thinkingLevel,
+        contextWindow: form.contextWindow,
+        maxTokens: form.maxTokens,
         enabled: form.enabled,
         ...(form.apiKey ? { apiKey: form.apiKey } : {})
       }
@@ -210,10 +237,45 @@ export function ProviderSection(): React.JSX.Element {
                       {t('settings.providers.noKey')}
                     </Badge>
                   )}
+                  {provider.coolingDown && (
+                    <Badge
+                      data-testid="provider-cooling"
+                      variant="outline"
+                      className="border-destructive/40 px-1.5 py-0 text-[10px] text-destructive"
+                    >
+                      {t('settings.providers.coolingDown')}
+                    </Badge>
+                  )}
                 </div>
                 <p className="truncate font-mono text-[11px] text-muted-foreground">
                   {provider.baseUrl} · {provider.model}
                 </p>
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {provider.tags.map((tag) => (
+                    <Badge
+                      key={tag}
+                      variant="outline"
+                      className="px-1.5 py-0 text-[9.5px] text-muted-foreground"
+                    >
+                      {t(`settings.providers.tag.${tag}`)}
+                    </Badge>
+                  ))}
+                  {provider.dailyTokenQuota > 0 && (
+                    <span
+                      data-testid="provider-quota"
+                      className={
+                        provider.quotaExceeded
+                          ? 'font-mono text-[10px] text-destructive'
+                          : 'font-mono text-[10px] text-muted-foreground'
+                      }
+                    >
+                      {t('settings.providers.quotaUsed', {
+                        used: provider.todayTokens,
+                        quota: provider.dailyTokenQuota
+                      })}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <Button
@@ -290,6 +352,98 @@ export function ProviderSection(): React.JSX.Element {
               onChange={(v) => setForm({ ...form, proxy: v })}
               placeholder="http://127.0.0.1:7890"
             />
+            <div className="grid gap-1.5">
+              <Label className="text-[12.5px]">{t('settings.providers.tags')}</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {(['chat', 'vision', 'summary', 'memory'] as const).map((tag) => {
+                  const selected = form.tags.includes(tag)
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      data-testid={`provider-tag-${tag}`}
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          tags: selected
+                            ? form.tags.filter((item) => item !== tag)
+                            : [...form.tags, tag]
+                        })
+                      }
+                      className={
+                        selected
+                          ? 'rounded-full border border-primary/40 bg-accent-soft px-2 py-0.5 text-[11px] text-foreground'
+                          : 'rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-surface-soft'
+                      }
+                    >
+                      {t(`settings.providers.tag.${tag}`)}
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {t('settings.providers.tagsHint')}
+              </p>
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-[12.5px]">{t('settings.providers.dailyQuota')}</Label>
+              <Input
+                data-testid="provider-quota-input"
+                type="number"
+                min={0}
+                value={form.dailyTokenQuota}
+                onChange={(e) =>
+                  setForm({ ...form, dailyTokenQuota: Math.max(0, Number(e.target.value) || 0) })
+                }
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-[12.5px]">{t('settings.ai.thinkingLevel')}</Label>
+              <Select
+                value={form.thinkingLevel}
+                onValueChange={(v) => setForm({ ...form, thinkingLevel: v as ThinkingLevel })}
+              >
+                <SelectTrigger data-testid="provider-thinking-level">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {THINKING_LEVELS.map((level) => (
+                    <SelectItem key={level} value={level}>
+                      {t(`settings.ai.thinking.${level}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-[12.5px]">{t('settings.ai.contextWindow')}</Label>
+                <Input
+                  data-testid="provider-context-window"
+                  type="number"
+                  min={0}
+                  value={form.contextWindow}
+                  onChange={(e) =>
+                    setForm({ ...form, contextWindow: Math.max(0, Number(e.target.value) || 0) })
+                  }
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-[12.5px]">{t('settings.ai.maxTokens')}</Label>
+                <Input
+                  data-testid="provider-max-tokens"
+                  type="number"
+                  min={0}
+                  value={form.maxTokens}
+                  onChange={(e) =>
+                    setForm({ ...form, maxTokens: Math.max(0, Number(e.target.value) || 0) })
+                  }
+                />
+              </div>
+            </div>
+            <p className="-mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              {t('settings.ai.modelRuntimeHint')}
+            </p>
             <label className="flex items-center gap-2 text-[12.5px] text-ink-2">
               <Switch checked={form.enabled} onCheckedChange={(checked) => setForm({ ...form, enabled: checked })} />
               {t('settings.providers.enabled')}

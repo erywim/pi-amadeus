@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { MonitorCog, Moon, Sun, VolumeX, Waypoints } from 'lucide-react'
+import { Bell, MonitorCog, Moon, Sun, VolumeX, Waypoints } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Label } from '@renderer/components/ui/label'
 import { Switch } from '@renderer/components/ui/switch'
@@ -15,6 +15,12 @@ export function GeneralPanel(): React.JSX.Element {
   const setTheme = useSettingsStore((s) => s.setTheme)
   const setDefaultMode = useSettingsStore((s) => s.setDefaultMode)
   const setDefaultMute = useSettingsStore((s) => s.setDefaultMute)
+  const notifyOnComplete = useSettingsStore((s) => s.notifyOnComplete)
+  const setNotifyOnComplete = useSettingsStore((s) => s.setNotifyOnComplete)
+  const notifyDenied =
+    notifyOnComplete &&
+    typeof Notification !== 'undefined' &&
+    Notification.permission === 'denied'
 
   return (
     <div className="max-w-xl">
@@ -71,6 +77,21 @@ export function GeneralPanel(): React.JSX.Element {
             <p className="text-xs text-muted-foreground">{t('settings.general.defaultMuteDesc')}</p>
           </div>
           <Switch checked={defaultMute} onCheckedChange={setDefaultMute} />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label>
+              <Bell className="mr-1 inline size-3.5 align-[-2px]" />
+              {t('settings.general.notifyOnComplete')}
+            </Label>
+            <p className="text-xs text-muted-foreground">
+              {notifyDenied
+                ? t('settings.general.notifyDenied')
+                : t('settings.general.notifyOnCompleteDesc')}
+            </p>
+          </div>
+          <Switch checked={notifyOnComplete} onCheckedChange={setNotifyOnComplete} />
         </div>
       </div>
     </div>

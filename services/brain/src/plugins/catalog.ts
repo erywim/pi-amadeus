@@ -3,7 +3,7 @@ import type { CatalogEntry } from '@pi-amadeus/shared'
 /**
  * 内置插件目录（「发现」页的数据源）。
  *
- * 参考 DeepSeek Harness 生态的组织方式：插件按 kind + category 分类，
+ * 参考常见插件生态的组织方式：插件按 kind + category 分类，
  * 一份目录条目自带安装所需的全部内容（skill 正文 / prompt 模板 / 主题变量 / MCP 启动配置），
  * 大脑不需要联网拉市场索引——离线也能浏览与安装。
  *

@@ -9,6 +9,7 @@ import type { ToolConfirmKind } from './session.ts'
  */
 export type SseEventType =
   | 'delta'
+  | 'thinking'
   | 'done'
   | 'error'
   | 'transcript'
@@ -34,11 +35,26 @@ export interface SseDeltaEvent extends SseEventBase {
   delta: string
 }
 
+/**
+ * 思考增量：模型真实返回的 reasoning 内容（仅在开启思考且供应商返回时出现）。
+ * 与 delta 分开，UI 用折叠区展示，不混进正文。
+ */
+export interface SseThinkingEvent extends SseEventBase {
+  type: 'thinking'
+  delta: string
+}
+
 /** 单回合完成 */
 export interface SseDoneEvent extends SseEventBase {
   type: 'done'
   sessionId: string
   messageId: string
+  /**
+   * 本回合落库后的用户消息 id。
+   * 客户端发送时先插入一条本地临时消息（id 以 local- 开头），
+   * 拿到服务端 id 后替换，编辑/重发等按 id 定位的操作才不会打到不存在的消息上。
+   */
+  userMessageId?: string
   /** 会话自动标题（首轮后异步生成，可能后到） */
   title?: string
 }
@@ -126,6 +142,7 @@ export type SseComputerRequestEvent = ComputerRequest
 
 export type SseEvent =
   | SseDeltaEvent
+  | SseThinkingEvent
   | SseDoneEvent
   | SseErrorEvent
   | SseTranscriptEvent

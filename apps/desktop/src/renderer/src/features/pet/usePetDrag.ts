@@ -2,7 +2,7 @@ import * as React from 'react'
 import { useRef, useState } from 'react'
 import type { Live2DEngine, Placement } from '@renderer/features/live2d/lib/live2d-engine'
 
-// 点按 / 拖动判定阈值（与 XnneHangLab 一致）
+// 点按 / 拖动判定阈值（与常见桌宠实现一致）
 const TAP_MAX_MS = 200
 const DRAG_START_PX = 5
 
@@ -26,7 +26,7 @@ interface PetDragOptions {
 }
 
 /**
- * 角色上的指针手势（XnneHangLab 的点按/拖动判定）：
+ * 角色上的指针手势（桌宠的点按/拖动判定）：
  * 在角色网格上按下 → 移动超过 5px，或按住超过 200ms 且有移动 → 拖动，角色跟着指针走；
  * 200ms 内松开且移动不足 5px → 点按。指针捕获保证快速拖出网格时不丢事件。
  */

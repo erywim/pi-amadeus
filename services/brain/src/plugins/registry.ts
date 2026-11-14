@@ -33,6 +33,16 @@ function toInstalled(row: PluginRow): InstalledPlugin {
     config: row.config
   }
   if (row.kind === 'mcp') {
+    const env = row.config.env
+    // API 只返回变量名与配置状态；复制配置，不能把数据库/运行时的活凭证改成脱敏值。
+    plugin.config = {
+      ...row.config,
+      env: Object.fromEntries(
+        Object.entries(env && typeof env === 'object' && !Array.isArray(env) ? env : {}).map(
+          ([key, value]) => [key, typeof value === 'string' && value.length > 0]
+        )
+      )
+    }
     plugin.status = row.enabled
       ? (mcpManager.statusOf(row.id) ?? { state: 'connecting', tools: [] })
       : { state: 'disabled', tools: [] }
