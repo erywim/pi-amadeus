@@ -1,21 +1,17 @@
-/**
- * 主动问候：用户长时间没说话时，角色基于真实记忆/好感度主动发一条消息。
- * 只由真实空闲时间与真实模型触发，不发固定模板、不伪造互动。
- */
+import type { Emotion } from './emotion.ts'
 
+/** 主动问候设置：服务端空闲/时间窗/每日次数约束。 */
 export interface ProactiveSettings {
   userId: string
   enabled: boolean
-  /** 至少空闲多少分钟才考虑问候 */
   minIdleMinutes: number
-  /** 允许问候的时间窗（本地时间 HH:MM，支持跨午夜） */
   activeStart: string
   activeEnd: string
-  /** 每天最多问候次数 */
   maxPerDay: number
   lastGreetedAt: number | null
 }
 
+/** 服务端持久化的传统空闲主动问候记录。 */
 export interface ProactiveGreeting {
   id: string
   userId: string
@@ -25,11 +21,18 @@ export interface ProactiveGreeting {
   createdAt: number
 }
 
+/** 截图视觉主动问候的响应；它不会伪造空闲问候记录的持久化字段。 */
+export interface ProactiveVisionGreeting {
+  sessionId: string
+  messageId: string
+  text: string
+  emotion: Emotion | null
+  createdAt: number
+}
+
 export interface ProactiveResponse {
   settings: ProactiveSettings
-  /** 最近一条主动问候（没有则为 null） */
   latest: ProactiveGreeting | null
-  /** 今天已经问候的次数 */
   todayCount: number
 }
 
@@ -39,4 +42,9 @@ export interface ProactiveInput {
   activeStart?: string
   activeEnd?: string
   maxPerDay?: number
+}
+
+/** 主进程推送给渲染层的视觉问候事件。 */
+export interface ProactiveMessageEvent extends ProactiveVisionGreeting {
+  mode: 'window' | 'pet'
 }

@@ -65,7 +65,7 @@ export async function exportSessionMarkdown(
   session: Pick<Session, 'id' | 'title' | 'channel' | 'createdAt'>,
   labels: ExportLabels
 ): Promise<string> {
-  const messages = await fetchMessages(session.id)
+  const { messages } = await fetchMessages(session.id)
   const content = buildSessionMarkdown(session, messages, labels)
   const filename = safeFilename(session.title, session.id)
   const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' })

@@ -8,12 +8,45 @@
     "companion": "Companion",
     "text": "Text",
     "plugins": "Plugins",
+    "agents": "Agents",
     "dashboard": "Insights",
+    "conversion": "Convert",
     "settings": "Settings",
     "modeSwitch": "Chat mode",
     "memory": "Memory",
     "knowledge": "Knowledge",
     "automations": "Automations"
+  },
+  "conversion": {
+    "eyebrow": "LOCAL FILE LAB",
+    "title": "File conversion",
+    "subtitle": "Process images, text, Office files, ebooks, media, and PDFs locally. Capabilities reflect the current runtime; unavailable engines stay clearly unavailable.",
+    "refresh": "Refresh conversion capabilities",
+    "serviceOffline": "Conversion service is unavailable",
+    "retry": "Retry",
+    "dropTitle": "Drop files to begin",
+    "dropHint": "Batch selection is supported; files stay inside the local brain service",
+    "chooseFiles": "Choose files",
+    "selected": "{{count}} files selected",
+    "clear": "Clear",
+    "removeFile": "Remove file",
+    "operation": "Operation",
+    "target": "Target format",
+    "noTargets": "No targets available",
+    "loadingTargets": "Loading target formats…",
+    "convert": "Convert",
+    "converting": "Converting…",
+    "download": "Download result",
+    "capabilities": "Capability status",
+    "engines": "Engine probes",
+    "detected": "Detected (not enabled)",
+    "localOnly": "Conversion runs locally and never uploads to the cloud. Results stay in this page until you download them.",
+    "operations": {
+      "convert": "File format conversion",
+      "imagesToPdf": "Images to PDF",
+      "imagesToZip": "Images to ZIP",
+      "mergePdfs": "Merge PDFs"
+    }
   },
   "topbar": {
     "modelChip": "Current LLM (switchable in Text mode)",
@@ -159,7 +192,9 @@
       "search": "Web Search",
       "fetch_url": "Read Page",
       "bash": "Terminal",
-      "use_skill": "Read Skill"
+      "use_skill": "Read Skill",
+      "workflow": "Dynamic Workflow",
+      "compact": "Context compaction"
     },
     "toolStatus": {
       "running": "Running",
@@ -424,6 +459,9 @@
       "defaultMode": "Startup Mode",
       "defaultMute": "Mute by default in Companion mode",
       "defaultMuteDesc": "When on, voice playback starts muted in Companion mode (toggle anytime in the HUD)",
+      "proactive": "Proactive greetings in the background",
+      "proactiveDesc": "While the window is in the background or in desktop-pet mode, she looks at your screen every 10–15 minutes and starts a conversation. The screenshot is used only for that one request, is never stored, and goes nowhere except the model service you configured",
+      "proactivePermission": "Screen Recording permission is not granted, so proactive greetings cannot see the screen. Allow Amadeus in System Settings → Privacy & Security → Screen Recording",
       "notifyOnComplete": "Notify when a reply completes",
       "notifyOnCompleteDesc": "Send a system notification when a turn finishes while the window is in the background",
       "notifyDenied": "Notification permission was denied. Allow notifications for this app in system settings."

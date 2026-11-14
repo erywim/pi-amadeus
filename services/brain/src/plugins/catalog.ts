@@ -535,6 +535,27 @@ description: 当用户要求画流程图、架构图、时序图、状态机或 
 
   // ============================ MCP ============================
   {
+    id: 'mcp-open-computer-use',
+    kind: 'mcp',
+    name: 'Open Computer Use',
+    description: '通过本机辅助功能和窗口自动化控制桌面应用：观察、点击、滚动、拖拽、输入并回读结果。',
+    details:
+      '真实 Computer Use runtime，支持 macOS、Windows 和 Linux 的截图、应用发现、无障碍元素定位、点击/双击、滚动、拖拽、键盘输入和值设置。\n安装并运行后，只有桌面渠道、视觉模型且设置中显式开启“电脑操作”时才会把工具交给助手；每一次动作都需要确认。\nmacOS 需要 Accessibility 与 Screen Recording 权限；Windows/Linux 需要已登录桌面会话。该插件是本机第三方子进程，请确认来源和权限后再安装。',
+    author: 'iFurySt',
+    version: '1.1.4',
+    category: 'MCP',
+    tags: ['Computer Use', '桌面', '点击', '自动化'],
+    icon: '🖱️',
+    accent: '#8b5cf6',
+    homepage: 'https://github.com/iFurySt/open-computer-use',
+    mcp: {
+      transport: 'stdio',
+      command: 'open-computer-use',
+      args: ['mcp'],
+      capabilities: ['computer-use']
+    }
+  },
+  {
     id: 'mcp-filesystem',
     kind: 'mcp',
     name: '文件系统',

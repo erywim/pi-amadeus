@@ -34,6 +34,8 @@ interface SettingsState {
   defaultMute: boolean
   /** 窗口不在前台时，回合完成发一条系统通知 */
   notifyOnComplete: boolean
+  /** 主窗口/桌宠后台视觉主动问候开关（本地持久化） */
+  proactiveEnabled: boolean
   aiConfig: UserConfig
   /** 生效密钥状态（default=回落 .env 默认密钥 / custom=用户自定义 / none=未配置） */
   keyStatus: ApiKeyStatus
@@ -43,6 +45,7 @@ interface SettingsState {
   setDefaultMode: (mode: DefaultMode) => void
   setDefaultMute: (muted: boolean) => void
   setNotifyOnComplete: (enabled: boolean) => void
+  setProactiveEnabled: (enabled: boolean) => void
   /** 从大脑服务加载用户配置到表单 */
   loadAiConfig: (userId: string) => Promise<void>
   /** 保存表单到大脑服务（apiKey 留空 = 保持服务端已有密钥） */
@@ -62,6 +65,7 @@ export const useSettingsStore = create<SettingsState>()(
       defaultMode: 'companion',
       defaultMute: false,
       notifyOnComplete: false,
+      proactiveEnabled: true,
       aiConfig: FORM_PLACEHOLDER,
       keyStatus: 'none',
       configLoaded: false,
@@ -80,6 +84,7 @@ export const useSettingsStore = create<SettingsState>()(
         }
         set({ notifyOnComplete })
       },
+      setProactiveEnabled: (proactiveEnabled) => set({ proactiveEnabled }),
       loadAiConfig: async (userId) => {
         const { config, keyStatus } = await fetchUserConfig(userId)
         // 密钥不回填表单：留空提交即保持服务端密钥不变
@@ -105,7 +110,8 @@ export const useSettingsStore = create<SettingsState>()(
         theme: s.theme,
         defaultMode: s.defaultMode,
         defaultMute: s.defaultMute,
-        notifyOnComplete: s.notifyOnComplete
+        notifyOnComplete: s.notifyOnComplete,
+        proactiveEnabled: s.proactiveEnabled
       })
     }
   )

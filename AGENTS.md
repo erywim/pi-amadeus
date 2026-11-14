@@ -20,8 +20,10 @@
 - `npm run verify` — 依次跑 typecheck、lint、build（提交前一键全量检查）
 - `node scripts/e2e.mjs [chat|voice|all]` — 桌面端 E2E（需 dev 已启动，端口 9222）
 - 9222 被占用（如本机 Chrome 开着远程调试）时：`npx --prefix apps/desktop electron-vite dev --remoteDebuggingPort <port>`，
-  再用 `CDP_HTTP=http://127.0.0.1:<port>` 指给读取该变量的脚本（`e2e-pet.mjs`、`e2e-all.mjs` 的前置检查等；多数专项脚本仍固定 9222）
+  再用 `CDP_HTTP=http://127.0.0.1:<port>` 指给专项脚本；`BRAIN_URL` 同样可覆盖 Brain 地址。测试时用 `AMADEUS_USER_DATA_DIR=<隔离目录>` 启动桌面端，配合隔离 `DB_PATH`，不要连接用户真实 Chrome 或数据目录
 - `npm run e2e` — 全部 `scripts/e2e-*.mjs` 的回归套件（前置同上；前置不满足会直接报错，不会伪装成全过）
+- `node scripts/e2e-agents.mjs` / `node scripts/e2e-collaboration.mjs` — 自建隔离 Brain/SQLite/本地模拟模型，验证 Agent 任务与设备网关，不依赖用户真实凭证或已启动 dev
+- `node scripts/e2e-tool-approval-abort.mjs` / `node scripts/e2e-agent-process-stop.mjs` — 等待审批取消与内置命令树停止回归
 - 其它专项 e2e 见 `scripts/e2e-*.mjs`（config / vision / tools / feishu / mic / skills …）
 
 ## 规则

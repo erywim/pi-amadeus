@@ -1,9 +1,13 @@
+import type { ComputerResult } from '@pi-amadeus/shared'
 import type {
   AffinitySummary,
   AttachmentPayload,
   AutomationInput,
   AutomationItem,
   BranchTreeResponse,
+  ConversionCapabilities,
+  ConversionErrorResponse,
+  ConversionTargetsResponse,
   InstalledPlugin,
   KnowledgeBase,
   KnowledgeDoc,
@@ -30,9 +34,11 @@ import type {
   SearchEngineName,
   SearchTestResponse,
   Session,
+  SessionMessages,
   SessionUsage,
   SseEvent,
   StatsResponse,
+  WorldlineSummary,
   UserConfig,
   WorkspaceDiff,
   WorkspaceEntry,
@@ -100,11 +106,37 @@ export async function fetchSessions(userId: string): Promise<Session[]> {
   return json.sessions
 }
 
-export async function fetchMessages(sessionId: string): Promise<Message[]> {
+/** 活动世界线的消息页（消息 + 世界线元信息） */
+export async function fetchMessages(sessionId: string): Promise<SessionMessages> {
   const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}/messages`)
   if (!res.ok) throw new Error(`消息加载失败: HTTP ${res.status}`)
-  const json = (await res.json()) as { messages: Message[] }
-  return json.messages
+  return (await res.json()) as SessionMessages
+}
+
+/**
+ * 世界线跳跃 / 回退：toLeaf=true 跳到目标所在支路的最新状态；
+ * 省略则精确停在该消息（回退，之后发消息会分叉出新世界线）。
+ */
+export async function jumpWorldline(
+  sessionId: string,
+  messageId: string,
+  toLeaf: boolean
+): Promise<SessionMessages> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}/head`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messageId, toLeaf })
+  })
+  if (!res.ok) throw new Error(`世界线跳转失败: HTTP ${res.status}`)
+  return (await res.json()) as SessionMessages
+}
+
+/** 世界线列表（跳转面板） */
+export async function fetchWorldlines(sessionId: string): Promise<WorldlineSummary[]> {
+  const res = await fetch(`${BRAIN_URL}/api/sessions/${encodeURIComponent(sessionId)}/worldlines`)
+  if (!res.ok) throw new Error(`世界线列表加载失败: HTTP ${res.status}`)
+  const json = (await res.json()) as { worldlines: WorldlineSummary[] }
+  return json.worldlines
 }
 
 export async function deleteSessionApi(sessionId: string): Promise<void> {
@@ -412,6 +444,15 @@ export function startVoiceTurn(
 // ---------- 工具确认回执 ----------
 
 /** bash 工具确认卡的应答（tool_confirm 事件的回执） */
+export async function confirmComputer(input: ComputerResult): Promise<void> {
+  const res = await fetch(`${BRAIN_URL}/api/desktop-result`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input)
+  })
+  if (!res.ok) throw new Error(`computer 回执失败: HTTP ${res.status}`)
+}
+
 export async function confirmTool(input: {
   turnId: string
   toolCallId: string
@@ -725,6 +766,76 @@ export async function testPlatformApi(id: string): Promise<void> {
     method: 'POST'
   })
   if (!res.ok) throw new Error(await readError(res, '测试消息发送失败'))
+}
+
+// ---------- 文件转换 ----------
+
+export async function fetchConversionCapabilities(): Promise<ConversionCapabilities> {
+  const res = await fetch(`${BRAIN_URL}/api/conversion/capabilities`)
+  if (!res.ok) throw new Error(await readError(res, '转换能力读取失败'))
+  return (await res.json()) as ConversionCapabilities
+}
+
+export async function refreshConversionCapabilities(): Promise<ConversionCapabilities> {
+  const res = await fetch(`${BRAIN_URL}/api/conversion/capabilities/refresh`, { method: 'POST' })
+  if (!res.ok) throw new Error(await readError(res, '转换能力刷新失败'))
+  return (await res.json()) as ConversionCapabilities
+}
+
+export async function fetchConversionTargets(extension: string): Promise<ConversionTargetsResponse> {
+  const res = await fetch(`${BRAIN_URL}/api/conversion/targets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extension })
+  })
+  if (!res.ok) throw new Error(await readError(res, '转换目标读取失败'))
+  return (await res.json()) as ConversionTargetsResponse
+}
+
+async function conversionBlob(res: Response, fallback: string): Promise<{ blob: Blob; name: string }> {
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    try {
+      const payload = JSON.parse(text) as ConversionErrorResponse
+      throw new Error(payload.error || fallback)
+    } catch (error) {
+      if (error instanceof Error && error.message !== fallback) throw error
+      throw new Error(`${fallback}: HTTP ${res.status}`)
+    }
+  }
+  const disposition = res.headers.get('content-disposition') ?? ''
+  const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  const plain = disposition.match(/filename="([^"]+)"/i)?.[1]
+  return { blob: await res.blob(), name: decodeURIComponent(encoded ?? plain ?? 'converted.bin') }
+}
+
+export async function convertFileApi(file: File, target: string): Promise<{ blob: Blob; name: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('to', target)
+  const res = await fetch(`${BRAIN_URL}/api/conversion/convert`, { method: 'POST', body: form })
+  return conversionBlob(res, '文件转换失败')
+}
+
+export async function imagesToPdfApi(files: File[]): Promise<{ blob: Blob; name: string }> {
+  const form = new FormData()
+  files.forEach((file) => form.append('files', file))
+  const res = await fetch(`${BRAIN_URL}/api/conversion/images-to-pdf`, { method: 'POST', body: form })
+  return conversionBlob(res, '图片转 PDF 失败')
+}
+
+export async function mergePdfsApi(files: File[]): Promise<{ blob: Blob; name: string }> {
+  const form = new FormData()
+  files.forEach((file) => form.append('files', file))
+  const res = await fetch(`${BRAIN_URL}/api/conversion/merge-pdfs`, { method: 'POST', body: form })
+  return conversionBlob(res, 'PDF 合并失败')
+}
+
+export async function imagesToZipApi(files: File[]): Promise<{ blob: Blob; name: string }> {
+  const form = new FormData()
+  files.forEach((file) => form.append('files', file))
+  const res = await fetch(`${BRAIN_URL}/api/conversion/images-to-zip`, { method: 'POST', body: form })
+  return conversionBlob(res, '图片打包失败')
 }
 
 // ---------- 数据看板 ----------

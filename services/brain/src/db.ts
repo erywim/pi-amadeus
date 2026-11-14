@@ -115,12 +115,12 @@ export interface MessageMediaRow {
 export interface MessageRow {
   id: string
   sessionId: string
+  /** 父消息 id（会话树；根消息为 null） */
+  parentId: string | null
   role: 'user' | 'assistant'
   content: string
   ttsText: string | null
   mode: TurnMode
-  /** 分支树父节点；根消息为 null */
-  parentId: string | null
   /** 同一父节点下的第几条（1-based）与总数 */
   branchIndex: number
   branchCount: number
@@ -130,6 +130,33 @@ export interface MessageRow {
   /** 模型真实返回的思考内容（开启思考的回合才有） */
   thinking: string | null
   createdAt: number
+}
+
+/** 树的轻量节点（不含正文）：算兄弟关系与世界线列表用 */
+export interface MessageTreeNode {
+  id: string
+  parentId: string | null
+  role: 'user' | 'assistant'
+  createdAt: number
+}
+
+/**
+ * 会话级上下文压缩记录（每个会话至多一条，代表"边界之前的消息已被摘要"）。
+ * 边界用被摘要的最后一条消息定位：消息被删（重新生成替换旧回复）时按
+ * createdAt 兜底，宁可少摘一条，也不把没摘过的消息当成已摘过丢掉。
+ */
+export interface CompactionRow {
+  sessionId: string
+  summary: string
+  /** 已摘要到的最后一条消息 id */
+  throughMessageId: string
+  /** 该消息的 created_at（id 找不到时的时间边界兜底） */
+  throughCreatedAt: number
+  /** 本次摘要覆盖的消息条数（诊断用） */
+  messagesSummarized: number
+  tokensBefore: number
+  tokensAfter: number
+  updatedAt: number
 }
 
 export interface PluginRow {
@@ -292,18 +319,22 @@ export interface Db {
   appendMessage(input: {
     id: string
     sessionId: string
+    /** 父消息 id：新消息接在哪个节点后面（根消息传 null） */
+    parentId?: string | null
     role: 'user' | 'assistant'
     content: string
     ttsText?: string | null
     mode: TurnMode
-    /** 分支父节点；缺省时接在当前活跃叶之后 */
-    parentId?: string | null
     /** 本回合工作区改动（只有桌面端回合会带） */
     changedFiles?: Array<{ path: string; status: string }>
     /** 模型真实返回的思考内容（开启思考的回合才有） */
     thinking?: string | null
   }): Promise<void>
   countMessages(sessionId: string): Promise<number>
+  // session compactions（上下文压缩边界与摘要）
+  getCompaction(sessionId: string): Promise<CompactionRow | null>
+  setCompaction(row: CompactionRow): Promise<void>
+  clearCompaction(sessionId: string): Promise<void>
   // auth: 当前登录用户
   getCurrentUser(): Promise<{id: string; username : string} | null>
   setCurrentUser(id:string): Promise<void>
@@ -648,11 +679,12 @@ export function createDb(cfg: BrainConfig['db']): Db {
           CREATE TABLE IF NOT EXISTS messages (
             id TEXT PRIMARY KEY,
             session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            -- 父消息 id：会话是一棵树，同一父节点下的多个子节点 = 世界线分叉
+            parent_id TEXT,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             tts_text TEXT,
             mode TEXT NOT NULL,
-            parent_id TEXT,
             changed_files TEXT NOT NULL DEFAULT '[]',
             thinking TEXT,
             created_at INTEGER NOT NULL
@@ -670,6 +702,19 @@ export function createDb(cfg: BrainConfig['db']): Db {
             created_at INTEGER NOT NULL
           );
           CREATE INDEX IF NOT EXISTS idx_message_media_message ON message_media(message_id);
+
+          -- 上下文压缩边界：一行代表"该会话边界之前的消息已折叠成 summary"。
+          -- 独立成表而不是加列，避免 messages 存量表迁移，也不影响历史读取路径。
+          CREATE TABLE IF NOT EXISTS session_compactions (
+            session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+            summary TEXT NOT NULL,
+            through_message_id TEXT NOT NULL,
+            through_created_at INTEGER NOT NULL,
+            messages_summarized INTEGER NOT NULL DEFAULT 0,
+            tokens_before INTEGER NOT NULL DEFAULT 0,
+            tokens_after INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL
+          );
 
           CREATE TABLE IF NOT EXISTS app_state (
             key TEXT PRIMARY KEY,
@@ -853,9 +898,16 @@ export function createDb(cfg: BrainConfig['db']): Db {
         if (!sessionColumns.some((column) => column.name === 'pinned')) {
           sqlite.exec('ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0')
         }
-        // 老库升级：消息分支树（parent_id / active_leaf_id）
+        // 老库升级：消息分支树（parent_id / active_leaf_id）。旧版世界线使用
+        // active_message_id；先复制用户已选择的活动头，不能用最新消息覆盖回退状态。
+        const hasLegacyActiveMessage = sessionColumns.some((column) => column.name === 'active_message_id')
         if (!sessionColumns.some((column) => column.name === 'active_leaf_id')) {
           sqlite.exec('ALTER TABLE sessions ADD COLUMN active_leaf_id TEXT')
+        }
+        if (hasLegacyActiveMessage) {
+          sqlite.exec(
+            "UPDATE sessions SET active_leaf_id = active_message_id WHERE (active_leaf_id IS NULL OR active_leaf_id = '') AND active_message_id IS NOT NULL"
+          )
         }
         // 老库升级：会话归档
         if (!sessionColumns.some((column) => column.name === 'archived')) {
@@ -870,6 +922,7 @@ export function createDb(cfg: BrainConfig['db']): Db {
         if (!messageColumns.some((column) => column.name === 'changed_files')) {
           sqlite.exec("ALTER TABLE messages ADD COLUMN changed_files TEXT NOT NULL DEFAULT '[]'")
         }
+        sqlite.exec('CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id)')
         const backfilled = sqlite
           .prepare("SELECT value FROM app_state WHERE key = 'messages_tree_v1'")
           .get() as unknown as { value?: string } | undefined
@@ -1243,11 +1296,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
       const rows = all<{
         id: string
         session_id: string
+        parent_id: string | null
         role: 'user' | 'assistant'
         content: string
         tts_text: string | null
         mode: TurnMode
-        parent_id: string | null
         changed_files: string
         thinking: string | null
         created_ms: number
@@ -1277,11 +1330,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
         (row): MessageRow => ({
           id: row.id,
           sessionId: row.session_id,
+          parentId: row.parent_id ?? null,
           role: row.role,
           content: row.content,
           ttsText: row.tts_text ?? null,
           mode: row.mode,
-          parentId: row.parent_id ?? null,
           branchIndex: branch.get(row.id)?.index ?? 1,
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
@@ -1319,11 +1372,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
         (row): MessageRow => ({
           id: row.id,
           sessionId: row.session_id,
+          parentId: row.parent_id ?? null,
           role: row.role,
           content: row.content,
           ttsText: row.tts_text ?? null,
           mode: row.mode,
-          parentId: row.parent_id ?? null,
           branchIndex: branch.get(row.id)?.index ?? 1,
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
@@ -1347,11 +1400,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
       const row = first<{
         id: string
         session_id: string
+        parent_id: string | null
         role: 'user' | 'assistant'
         content: string
         tts_text: string | null
         mode: TurnMode
-        parent_id: string | null
         changed_files: string
         thinking: string | null
         created_ms: number
@@ -1414,11 +1467,11 @@ export function createDb(cfg: BrainConfig['db']): Db {
         (row): MessageRow => ({
           id: row.id,
           sessionId: row.session_id,
+          parentId: row.parent_id ?? null,
           role: row.role,
           content: row.content,
           ttsText: row.tts_text ?? null,
           mode: row.mode,
-          parentId: row.parent_id ?? null,
           branchIndex: branch.get(row.id)?.index ?? 1,
           branchCount: branch.get(row.id)?.count ?? 1,
           attachments: media.get(row.id) ?? [],
@@ -1582,6 +1635,70 @@ export function createDb(cfg: BrainConfig['db']): Db {
         [sessionId]
       )
       return Number(row?.n ?? 0)
+    },
+
+    // ---------- session compactions ----------
+
+    async getCompaction(sessionId) {
+      const row = first<{
+        session_id: string
+        summary: string
+        through_message_id: string
+        through_created_at: number
+        messages_summarized: number
+        tokens_before: number
+        tokens_after: number
+        updated_at: number
+      }>(
+        getConn(),
+        `SELECT session_id, summary, through_message_id, through_created_at,
+                messages_summarized, tokens_before, tokens_after, updated_at
+         FROM session_compactions WHERE session_id = ?`,
+        [sessionId]
+      )
+      if (!row) return null
+      return {
+        sessionId: row.session_id,
+        summary: row.summary,
+        throughMessageId: row.through_message_id,
+        throughCreatedAt: Number(row.through_created_at),
+        messagesSummarized: Number(row.messages_summarized),
+        tokensBefore: Number(row.tokens_before),
+        tokensAfter: Number(row.tokens_after),
+        updatedAt: Number(row.updated_at)
+      }
+    },
+
+    async setCompaction(row) {
+      run(
+        getConn(),
+        `INSERT INTO session_compactions
+           (session_id, summary, through_message_id, through_created_at,
+            messages_summarized, tokens_before, tokens_after, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           summary = excluded.summary,
+           through_message_id = excluded.through_message_id,
+           through_created_at = excluded.through_created_at,
+           messages_summarized = excluded.messages_summarized,
+           tokens_before = excluded.tokens_before,
+           tokens_after = excluded.tokens_after,
+           updated_at = excluded.updated_at`,
+        [
+          row.sessionId,
+          row.summary,
+          row.throughMessageId,
+          row.throughCreatedAt,
+          row.messagesSummarized,
+          row.tokensBefore,
+          row.tokensAfter,
+          row.updatedAt
+        ]
+      )
+    },
+
+    async clearCompaction(sessionId) {
+      run(getConn(), 'DELETE FROM session_compactions WHERE session_id = ?', [sessionId])
     },
 
     // ---------- plugins ----------

@@ -1,4 +1,6 @@
+import type { ComputerRequest } from './computer.ts'
 import type { Emotion, Gesture } from './emotion.ts'
+import type { ToolConfirmKind } from './session.ts'
 
 /**
  * SSE 事件词汇（沿用原版跨端契约）：delta / done / error。
@@ -18,6 +20,8 @@ export type SseEventType =
   | 'tool_update'
   | 'tool_end'
   | 'tool_confirm'
+  | 'compact'
+  | 'computer_request'
 
 /** 工具执行状态（渲染端展示用） */
 export type ToolStatus = 'running' | 'success' | 'error' | 'denied' | 'timeout' | 'blocked'
@@ -128,10 +132,29 @@ export interface SseToolConfirmEvent extends SseEventBase {
   toolCallId: string
   toolName: string
   label: string
+  kind: ToolConfirmKind
   args: Record<string, unknown>
   /** 确认截止时间（epoch ms），渲染端倒计时；到时服务端自动拒绝 */
   expiresAt: number
 }
+
+/**
+ * 上下文压缩发生（本回合开始前把较早的历史折叠成摘要）。
+ * 只在真正做了摘要时发一次；关闭压缩或未达阈值时没有这个事件。
+ */
+export interface SseCompactEvent extends SseEventBase {
+  type: 'compact'
+  turnId: string
+  /** 被折叠进摘要的消息条数 */
+  summarizedMessages: number
+  /** 压缩前历史估算 token */
+  tokensBefore: number
+  /** 压缩后上下文估算 token */
+  tokensAfter: number
+}
+
+/** Computer Use 请求：renderer 负责确认并通过 IPC 执行动作，再 POST 结果回 brain。 */
+export type SseComputerRequestEvent = ComputerRequest
 
 export type SseEvent =
   | SseDeltaEvent
@@ -146,3 +169,5 @@ export type SseEvent =
   | SseToolUpdateEvent
   | SseToolEndEvent
   | SseToolConfirmEvent
+  | SseCompactEvent
+  | SseComputerRequestEvent

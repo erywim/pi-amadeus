@@ -11,6 +11,9 @@
 
 export type PluginKind = 'skill' | 'prompt' | 'theme' | 'mcp'
 
+/** MCP 服务的受控高风险能力标记；只由内置目录项声明。 */
+export type McpCapability = 'computer-use'
+
 /** MCP 安装时向用户收集的字段：追加到启动参数或环境变量 */
 export interface PluginField {
   key: string
@@ -29,6 +32,7 @@ export interface McpPreset {
   args: string[]
   env?: Record<string, string>
   fields?: PluginField[]
+  capabilities?: McpCapability[]
 }
 
 export interface CatalogEntry {
@@ -71,7 +75,7 @@ export interface InstalledPlugin {
   name: string
   enabled: boolean
   installedAt: number
-  /** skill: { dir } / prompt: { prompt } / theme: { vars } / mcp: { command, args, env } */
+  /** skill: { dir } / prompt: { prompt } / theme: { vars } / mcp: { command, args, env, capabilities } */
   config: Record<string, unknown>
   /** 仅 mcp */
   status?: McpServerStatus

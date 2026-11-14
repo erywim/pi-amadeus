@@ -30,6 +30,7 @@ export interface BrainConfig {
     searchProxy?: string
     confirmTimeoutMs: number
     bashCwd: string
+    computerTimeoutMs: number
     /** 搜索端点覆盖（未设置的引擎走官方地址）；E2E 用它指向本地 mock */
     searchEndpoints: Partial<Record<'tavily' | 'bing' | 'so' | 'sogou' | 'duckduckgo', string>>
   }
@@ -39,6 +40,16 @@ export interface BrainConfig {
   skills: { dir: string }
   /** 消息附件（图片/语音/文件）落盘目录 */
   media: { dir: string }
+  /** 可选的 Alma-compatible outbound Relay client；默认关闭。 */
+  relay: {
+    enabled: boolean
+    serverUrl: string
+    connectCode: string
+    registrationKey: string
+    e2eEncryption: boolean
+    userId: string
+    deviceName: string
+  }
 }
 
 export function loadConfig(): BrainConfig {
@@ -96,6 +107,7 @@ export function loadConfig(): BrainConfig {
       ...(process.env.SEARCH_PROXY !== undefined ? { searchProxy: env('SEARCH_PROXY').trim() } : {}),
       confirmTimeoutMs: Number(env('TOOL_CONFIRM_TIMEOUT_MS', '60000')) || 60000,
       bashCwd,
+      computerTimeoutMs: Math.min(120_000, Math.max(5_000, Number(env('COMPUTER_TIMEOUT_MS', '30000')) || 30_000)),
       // 引擎端点可用环境变量覆盖（镜像站 / 自建代理 / E2E 本地 mock）；
       // 留空时 search.ts 用官方地址，不把默认值复制到这里
       searchEndpoints: Object.fromEntries(
@@ -129,6 +141,15 @@ export function loadConfig(): BrainConfig {
     },
     media: {
       dir: env('MEDIA_DIR') ? resolve(env('MEDIA_DIR')) : resolve(import.meta.dirname, '../data/media')
+    },
+    relay: {
+      enabled: env('RELAY_ENABLED', 'false') === 'true',
+      serverUrl: env('RELAY_URL').trim(),
+      connectCode: env('RELAY_CONNECT_CODE').trim(),
+      registrationKey: env('RELAY_REGISTRATION_KEY'),
+      e2eEncryption: env('RELAY_E2E_ENCRYPTION', 'true') !== 'false',
+      userId: env('RELAY_USER_ID').trim(),
+      deviceName: env('RELAY_NAME', 'pi-amadeus').trim() || 'pi-amadeus'
     }
   }
 }

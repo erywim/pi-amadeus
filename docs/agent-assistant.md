@@ -24,7 +24,7 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
 
 1. **会话是一等公民**：列表、按时间分组、新建、重命名、搜索、删除；会话拥有独立上下文。
 2. **回合状态必须可见**：流式正文 + 工具调用摘要（默认折叠）+ 停止；失败要看见原因并可重试。
-3. **消息可操作**：复制、重新生成（常见实现还有编辑后重发与分支，本轮不做）。
+3. **消息可操作**：复制、重新生成、编辑后重发与分支/世界线切换。
 4. **输入区是工具行**：模型选择、附件/技能入口、发送↔停止一体。
 5. **阅读不被打断**：用户上滚后暂停自动跟随，提供「回到底部」。
 6. **权限与安全**：命令执行前确认（本项目已有 bash 确认卡）；工具结果截断后展示。
@@ -37,7 +37,7 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
 | 会话置顶 | ✅ | 侧栏悬停图钉；置顶会话单独成组排在按天分组之前，置顶不刷新 `updated_at` |
 | 会话搜索 | ✅ | 侧栏按标题本地过滤；同时用 350ms 防抖请求 `/api/sessions/search` 搜正文，命中消息按会话列出（带片段） |
 | 消息复制 | ✅ | 用户 / 助手消息均可复制；Markdown 代码块带语言标签与一键复制 |
-| 重新生成 | ✅ | 只对最后一条助手回复；服务端定位最后一条用户消息重跑，**成功落库时才替换旧回复**，失败保留上一版 |
+| 重新生成 | ✅ | 只对最后一条助手回复；活动路径切到同一用户消息下的新回复，旧回复作为兄弟节点保留，可从世界线切回；失败时旧分支保留 |
 | 编辑后重发 | ✅ | 用户消息可内联编辑；服务端把新正文写成原消息的兄弟分支并跑回合，旧分支保留，可在消息 meta 的 `‹ 1/2 ›` 间切换 |
 | 失败可见 + 重试 | ✅ | SSE `error` 落到会话级错误卡（含重试/关闭），不再只打 console |
 | 滚动跟随 | ✅ | 用户上滚后暂停自动跟随，出现「回到底部」；自己发消息时强制跟到底部 |
@@ -62,13 +62,14 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
 | `apps/desktop/src/renderer/src/lib/api.ts` | `startRegenerate`、`startEditTurn`、`renameSessionApi`、`setSessionPinnedApi`、`searchMessagesApi`、`fetchSessionUsage` |
 | `services/brain/src/routes/chat.ts` | `POST /api/chat/regenerate`、`POST /api/chat/edit` |
 | `services/brain/src/routes/sessions.ts` | `PATCH /api/sessions/:id`（重命名 / 置顶 / 空会话补建）、`GET /api/sessions/search`、`GET /api/sessions/:id/usage` |
-| `services/brain/src/conversation.ts` | `appendUserMessage` / `omitMessageId` / `replaceMessageId`：重新生成不重复写用户消息，成功后替换旧回复；用户消息 id 随 done 事件返回 |
+| `services/brain/src/conversation.ts` | `appendUserMessage` / `omitMessageId` / `branchParentId` / `userMessageId` / `parentMessageId`：重新生成不重复写用户消息并创建兄弟回复；编辑重发从原消息父节点创建新分支 |
 
 ## 4. 关键状态与约束
 
-- **重新生成的三段语义**：旧助手回复既不进 LLM 上下文，也不在生成前删除；只有新回复成功落库时才替换。
-  生成失败时旧回复仍在——用户不会因为一次重试丢掉上一版答案。
-- **不重复用户消息**：重新生成传 `appendUserMessage: false`，历史末尾必须仍是那条用户消息，
+- **重新生成 = 世界线分叉**：活动叶先退回产生旧回复的那条用户消息，新回复作为它的第二个
+  子节点落库；旧回复不删除、不进当前上下文，但留在树上（消息旁的 `‹ 2/3 ›` 可切回）。
+  生成失败时活动叶停在那条用户消息上，旧回复同样还在。详见 `docs/worldline.md`。
+- **不重复用户消息**：重新生成传 `appendUserMessage: false`，活动世界线末端必须仍是那条用户消息，
   否则 `prepareTurn` 直接抛错（宁可失败，也不要给模型一个重复提问的上下文）。
 - **流全局唯一**：`stream` 只有一个，展示与归档只认 `stream.sessionId`；切会话不串台。
 - **错误按会话归档**：`turnErrors[sessionId]`，切走再回来仍在；发起新回合时清掉。
@@ -102,12 +103,12 @@ npm run verify
 ```
 
 `scripts/e2e-chat-assistant.mjs` 覆盖：失败回合的错误卡与重试（用户消息不重复）、成功后重新生成
-（替换而非追加）、重命名（store / 侧栏 / 服务端一致且不动 `updated_at`）、标题搜索与 Esc 恢复、
+（活动路径切换但旧回复保留为兄弟）、重命名（store / 侧栏 / 服务端一致且不动 `updated_at`）、标题搜索与 Esc 恢复、
 消息与代码块复制（逐字断言剪贴板内容）、滚动跟随与「回到底部」。
 LLM 不可用时成功路径明确输出 `not run`，不伪装通过；有真实 key 时失败路径同理。
 
 `scripts/e2e-workspace.mjs` 覆盖本轮新增的聊天增强：置顶同步到服务端、真实回合后侧栏正文搜索、
-标题栏 token 用量、编辑后重发（服务端仍只有当前分支的一问一答，旧分支可切回）、HTML 工件在沙箱 iframe 中渲染、
+标题栏 token 用量、编辑后重发（新分支成为活动路径，旧分支保留可切回）、HTML 工件在沙箱 iframe 中渲染、
 Mermaid 渲染成 SVG。工件用例向页面 store 注入一条内存消息作为渲染夹具（不落库、脚本结束即随会话清理）。
 
 文本模式现在采用 Agent 工作台布局（模型服务条 / 阶段管线 / 右侧运行图与终端 / 底部状态条）；

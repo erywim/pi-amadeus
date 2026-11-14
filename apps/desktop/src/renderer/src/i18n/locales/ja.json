@@ -8,12 +8,45 @@
     "companion": "コンパニオン",
     "text": "テキスト",
     "plugins": "プラグイン",
+    "agents": "Agent ワークベンチ",
     "dashboard": "データ",
+    "conversion": "変換",
     "settings": "設定",
     "modeSwitch": "会話モード",
     "memory": "記憶",
     "knowledge": "ナレッジ",
     "automations": "自動化"
+  },
+  "conversion": {
+    "eyebrow": "LOCAL FILE LAB",
+    "title": "ファイル変換",
+    "subtitle": "画像・テキスト・Office・電子書籍・メディア・PDFをローカルで処理します。利用可能な機能は現在の実行環境に合わせて表示されます。",
+    "refresh": "変換機能を更新",
+    "serviceOffline": "変換サービスを利用できません",
+    "retry": "再試行",
+    "dropTitle": "ファイルをドロップして開始",
+    "dropHint": "複数選択に対応。ファイルはローカルの脳サービス内で処理されます",
+    "chooseFiles": "ファイルを選択",
+    "selected": "{{count}} 個のファイルを選択中",
+    "clear": "クリア",
+    "removeFile": "ファイルを削除",
+    "operation": "操作",
+    "target": "出力形式",
+    "noTargets": "利用可能な形式なし",
+    "loadingTargets": "出力形式を読み込み中…",
+    "convert": "変換開始",
+    "converting": "変換中…",
+    "download": "結果をダウンロード",
+    "capabilities": "機能状態",
+    "engines": "エンジン検出",
+    "detected": "検出済み（未有効）",
+    "localOnly": "変換はローカルで完了し、クラウドへアップロードしません。結果はダウンロードするまでページ内だけに保持されます。",
+    "operations": {
+      "convert": "ファイル形式変換",
+      "imagesToPdf": "画像を PDF に変換",
+      "imagesToZip": "画像を ZIP にまとめる",
+      "mergePdfs": "PDF を結合"
+    }
   },
   "topbar": {
     "modelChip": "現在の LLM モデル（テキストモードの入力欄で切替可能）",
@@ -159,7 +192,9 @@
       "search": "ウェブ検索",
       "fetch_url": "ページ読取",
       "bash": "ターミナル",
-      "use_skill": "スキル読込"
+      "use_skill": "スキル読込",
+      "workflow": "動的ワークフロー",
+      "compact": "コンテキスト圧縮"
     },
     "toolStatus": {
       "running": "実行中",
@@ -424,6 +459,9 @@
       "defaultMode": "起動時モード",
       "defaultMute": "コンパニオンモードを既定でミュート",
       "defaultMuteDesc": "有効にすると、コンパニオンモードの音声読み上げがミュートで始まります（HUD でいつでも解除）",
+      "proactive": "バックグラウンドでの主動的な挨拶",
+      "proactiveDesc": "ウィンドウがバックグラウンドまたはデスクトップマスコットモードのとき、10〜15 分おきに画面を一度見て、こちらから話しかけます。スクリーンショットはその 1 回の認識にのみ使われ、保存も、設定したモデルサービス以外への送信もされません",
+      "proactivePermission": "画面収録の権限がありません。主動的な挨拶は画面を見られません。システム設定 → プライバシーとセキュリティ → 画面収録 で Amadeus を許可してください",
       "notifyOnComplete": "返信完了時に通知",
       "notifyOnCompleteDesc": "ウィンドウが前面にないとき、ターン完了時にシステム通知を送ります",
       "notifyDenied": "通知権限が拒否されています。システム設定でこのアプリの通知を許可してください"

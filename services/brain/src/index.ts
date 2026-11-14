@@ -1,8 +1,17 @@
 import { serve } from '@hono/node-server'
+import { bodyLimit } from 'hono/body-limit'
+import { cors } from 'hono/cors'
 import { automationScheduler } from './automation/scheduler.ts'
 import { loadConfig } from './config.ts'
 import { createDb } from './db.ts'
 import { createHttpApp } from './http/access.ts'
+import { AgentStore } from './agents/store.ts'
+import { AgentManager } from './agents/manager.ts'
+import { CollaborationManager } from './collaboration/manager.ts'
+import { RelayManager } from './relay/manager.ts'
+import { agentRoutes } from './routes/agents.ts'
+import { collaborationRoutes } from './routes/collaboration.ts'
+import { relayRoutes } from './routes/relay.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { platformManager } from './platforms/manager.ts'
 import { proactiveScheduler } from './proactive/index.ts'
@@ -12,6 +21,8 @@ import { chatRoutes } from './routes/chat.ts'
 import { knowledgeRoutes } from './routes/knowledge.ts'
 import { mediaRoutes } from './routes/media.ts'
 import { configRoutes } from './routes/config.ts'
+import { conversionRoutes } from './routes/conversion.ts'
+import { desktopResultRoutes } from './routes/desktop-result.ts'
 import { feishuRoutes } from './routes/feishu.ts'
 import { frameRoutes } from './routes/frames.ts'
 import { memoryRoutes } from './routes/memories.ts'
@@ -31,8 +42,28 @@ import { workspaceRoutes } from './routes/workspace.ts'
 
 const cfg = loadConfig()
 const app = createHttpApp(cfg)
+// 开发渲染层与 Electron 打包页需要跨源访问；管理边界先由 createHttpApp 校验。
+app.use('/api/*', cors({
+  origin: (origin) => origin === 'null'
+    ? 'null'
+    : origin === 'file://'
+      || origin === 'http://localhost:5173'
+      || origin === 'http://localhost:5174'
+      || origin === 'http://127.0.0.1:5173'
+      || origin === 'http://127.0.0.1:5174'
+      ? origin
+      : undefined,
+  exposeHeaders: ['Content-Disposition', 'Content-Length']
+}))
+// 在 multipart/json 解析前限制转换请求体，避免超大上传先整体读入内存。
+app.use('/api/conversion/*', bodyLimit({ maxSize: 128 * 1024 * 1024 }))
 const db = createDb(cfg.db)
 await db.init()
+const agentStore = new AgentStore(cfg.db.path)
+const agents = new AgentManager(cfg, db, agentStore)
+await agents.init()
+const collaboration = new CollaborationManager(cfg, agents, agentStore)
+const relay = new RelayManager(cfg)
 
 // 拉起已启用的 MCP 插件：npx 首次下载可能较慢，放后台，不阻塞 HTTP 服务可用
 void syncMcpPlugins(db)
@@ -51,15 +82,21 @@ app.get('/api/health', (c) =>
   c.json({ ok: true, service: 'pi-amadeus-brain', time: Date.now(), feishuEnabled: cfg.feishu.enabled })
 )
 
+app.route('/api', agentRoutes(agents, agentStore))
+app.route('/api', collaborationRoutes(collaboration))
+app.route('/api', relayRoutes(relay))
 app.route('/api', chatRoutes(cfg, db))
 app.route('/api', voiceRoutes(cfg, db))
 app.route('/api', sessionRoutes(db))
 app.route('/api', userRoutes(db))
 app.route('/api', configRoutes(cfg, db))
+app.route('/api', conversionRoutes())
+app.route('/api', desktopResultRoutes())
 app.route('/api', sttRoutes(cfg))
 app.route('/api', frameRoutes())
 app.route('/api', skillRoutes(cfg))
 app.route('/api', pluginRoutes(cfg, db))
+app.route('/api', proactiveRoutes(cfg, db))
 app.route('/api', providerRoutes(db))
 app.route('/api', searchRoutes(cfg, db))
 app.route('/api', platformRoutes(db))
@@ -67,7 +104,6 @@ app.route('/api', memoryRoutes(db))
 app.route('/api', knowledgeRoutes(db))
 app.route('/api', mediaRoutes(db))
 app.route('/api', automationRoutes(db))
-app.route('/api', proactiveRoutes(db))
 app.route('/api', workspaceRoutes(cfg))
 app.route('/api', statsRoutes(db))
 app.route('/api', toolConfirmRoutes())
@@ -75,22 +111,42 @@ if (cfg.feishu.enabled) {
   app.route('/api', feishuRoutes(cfg, db))
 }
 
-// 从未监听进入显式绑定状态：默认 loopback，公网回调需要主动设置 BRAIN_HOST。
-serve({ fetch: app.fetch, port: cfg.port, hostname: cfg.host }, (info) => {
+// 旧 API 默认仍留在 loopback；需要公网回调时必须显式设置 BRAIN_HOST。
+const server = serve({ fetch: app.fetch, hostname: cfg.host, port: cfg.port }, (info) => {
   console.log(`[brain] pi-amadeus 大脑服务已启动: ${info.address}:${info.port}`)
   console.log(`[brain] LLM: ${cfg.llm.model} @ ${cfg.llm.baseUrl}`)
   console.log(`[brain] SQLite: ${cfg.db.path}`)
   console.log(`[brain] 飞书: ${cfg.feishu.enabled ? '启用' : '停用'}`)
+  console.log(`[brain] Relay: ${cfg.relay.enabled ? '启用' : '停用'}`)
+  // 必须等 HTTP 服务真正监听后再拨号 Relay：客户端会把手机请求转发回本机端口。
+  void relay.startIfEnabled()
 })
 
-// 优雅退出
+// 优雅退出：先停止接受任务与远程订阅，再等待自己启动的执行器退出，最后关库。
+let shuttingDown = false
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
-    // 先断开 MCP 子进程与平台连接，再关数据库：退出后不留孤儿连接
-    mcpManager.closeAll()
-    platformManager.stopAll()
-    automationScheduler.stop()
-    proactiveScheduler.stop()
-    void db.close().finally(() => process.exit(0))
+    if (shuttingDown) return
+    shuttingDown = true
+    server.close()
+    void (async () => {
+      // 先断开 Relay 隧道，再关闭数据库与存储，避免退出期间仍有转发请求落库。
+      await relay.shutdown()
+      await collaboration.shutdown()
+      await agents.shutdown()
+      // 先断开 MCP 子进程与平台连接，再关数据库：退出后不留孤儿连接
+      mcpManager.closeAll()
+      platformManager.stopAll()
+      automationScheduler.stop()
+      proactiveScheduler.stop()
+      agentStore.close()
+      await db.close()
+    })().then(
+      () => process.exit(0),
+      (error: unknown) => {
+        console.error('[brain] 退出清理失败：', error)
+        process.exit(1)
+      }
+    )
   })
 }

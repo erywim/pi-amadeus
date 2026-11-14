@@ -1,11 +1,13 @@
 import * as React from 'react'
 import { useEffect, useRef } from 'react'
 import {
+  ArrowLeftRight,
   BarChart3,
   Blocks,
   BookOpen,
   Brain,
   CalendarClock,
+  Bot,
   Settings,
   Terminal,
   UserRound
@@ -31,7 +33,9 @@ const TAB_ROUTES = [
   '/knowledge',
   '/automations',
   '/plugins',
-  '/dashboard'
+  '/dashboard',
+  '/conversion',
+  '/agents'
 ] as const
 
 /**
@@ -131,12 +135,14 @@ export default function AppShell(): React.JSX.Element {
     { path: '/knowledge', icon: BookOpen, label: t('nav.knowledge') },
     { path: '/automations', icon: CalendarClock, label: t('nav.automations') },
     { path: '/plugins', icon: Blocks, label: t('nav.plugins') },
-    { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') }
+    { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') },
+    { path: '/conversion', icon: ArrowLeftRight, label: t('nav.conversion') },
+    { path: '/agents', icon: Bot, label: t('nav.agents') }
   ]
 
   return (
     <div className="grid h-screen grid-rows-[auto_minmax(0,1fr)]">
-      <header className="flex h-14 items-center gap-4 border-b border-border bg-surface px-5">
+      <header className="flex h-14 min-w-0 items-center gap-3 border-b border-border bg-surface px-4">
         <div className="flex items-center gap-2">
           <span className="grid size-7 place-items-center rounded-[9px] bg-primary text-primary-foreground">
             <span className="font-serif text-[16px] font-bold italic leading-none">A</span>
@@ -147,7 +153,7 @@ export default function AppShell(): React.JSX.Element {
           </span>
         </div>
 
-        <nav role="tablist" aria-label={t('nav.modeSwitch')} className="mx-auto flex gap-0.5 rounded-xl border border-border bg-surface-soft p-[3px]">
+        <nav role="tablist" aria-label={t('nav.modeSwitch')} className="mx-auto flex min-w-0 gap-0.5 overflow-x-auto rounded-xl border border-border bg-surface-soft p-[3px]">
           {tabs.map(({ path, icon: Icon, label }) => {
             const selected = location.pathname === path
             return (
@@ -186,7 +192,7 @@ export default function AppShell(): React.JSX.Element {
           </button>
           <span
             title={t('topbar.modelChip')}
-            className="hidden max-w-60 items-center gap-2 rounded-full border border-border px-3 py-1 text-[12.5px] text-muted-foreground lg:flex"
+            className="hidden max-w-40 items-center gap-2 rounded-full border border-border px-3 py-1 text-[12.5px] text-muted-foreground xl:flex"
           >
             <span className={cn('size-1.5 shrink-0 rounded-full', modelLabel ? 'bg-mint' : 'bg-line-strong')} />
             <span className="overflow-hidden text-ellipsis whitespace-nowrap">

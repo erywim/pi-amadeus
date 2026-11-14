@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, Menu, screen, session, shell, type WebContents } from 'electron'
 import { buildModeMenuItems } from './menus'
 import { PetPointer } from './pet-pointer'
+import type { ComputerControl } from './computer-control'
 
 export type AppMode = 'window' | 'pet'
 
@@ -71,7 +72,7 @@ export class WindowManager {
   private quitting = false
   private readonly listeners = new Set<() => void>()
 
-  constructor() {
+  constructor(private readonly computer?: ComputerControl) {
     app.on('before-quit', () => {
       this.quitting = true
     })
@@ -79,6 +80,22 @@ export class WindowManager {
 
   getMode(): AppMode {
     return this.mode
+  }
+
+  /**
+   * 主窗口是否处于后台：不可见 / 最小化 / 失焦。
+   * 主动问候的触发条件之一（另一个是桌宠模式）。主窗口已销毁时也算后台——
+   * macOS 关掉窗口但应用还在运行，角色仍可能以桌宠窗口存在。
+   */
+  isMainWindowBackgrounded(): boolean {
+    const main = this.main
+    if (!main || main.isDestroyed()) return true
+    return !main.isVisible() || main.isMinimized() || !main.isFocused()
+  }
+
+  /** 现存渲染窗口（主窗口 + 桌宠窗口）：主动问候广播用 */
+  listWindows(): BrowserWindow[] {
+    return [this.main, this.pet].filter((win): win is BrowserWindow => !!win && !win.isDestroyed())
   }
 
   /** 模式或强制穿透变化时回调（托盘据此刷新） */
@@ -163,6 +180,7 @@ export class WindowManager {
     })
     loadRenderer(win)
     this.main = win
+    this.computer?.registerWindow(win)
     return win
   }
 
@@ -299,6 +317,7 @@ export class WindowManager {
       if (this.pet === pet && !this.petShown) this.setMode('window')
     }, PET_READY_TIMEOUT_MS)
     loadRenderer(pet, { window: 'pet' })
+    // 桌宠窗口没有聊天回合，不登记为 computer 执行 sender，避免跨窗口误操作。
     return pet
   }
 

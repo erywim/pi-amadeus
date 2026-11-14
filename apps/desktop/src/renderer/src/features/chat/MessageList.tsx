@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowDown } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { BashConfirmCard } from './BashConfirmCard'
+import { ComputerConfirmCard } from './ComputerConfirmCard'
 import { MessageBubble } from './MessageBubble'
 import { RunningBorder } from './RunningBorder'
 import { ThinkingBlock } from './ThinkingBlock'
@@ -27,8 +28,14 @@ export function MessageList(): React.JSX.Element {
     s.activeSessionId ? s.turnErrors[s.activeSessionId] : undefined
   )
   const respondToolConfirm = useSessionStore((s) => s.respondToolConfirm)
+  const respondComputer = useSessionStore((s) => s.respondComputer)
   const regenerate = useSessionStore((s) => s.regenerate)
   const dismissTurnError = useSessionStore((s) => s.dismissTurnError)
+  const worldline = useSessionStore((s) =>
+    s.activeSessionId ? s.worldlines[s.activeSessionId] : undefined
+  )
+  const switchSibling = useSessionStore((s) => s.switchSibling)
+  const rewindTo = useSessionStore((s) => s.rewindTo)
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
@@ -125,7 +132,10 @@ export function MessageList(): React.JSX.Element {
               key={m.id}
               message={m}
               isLastAssistant={m.id === lastAssistantId}
+              isHead={m.id === worldline?.headId}
               onRegenerate={regenerate}
+              onSwitchSibling={(direction) => switchSibling(m.id, direction)}
+              onRewind={() => rewindTo(m.id)}
             />
           ))}
 
@@ -186,6 +196,12 @@ export function MessageList(): React.JSX.Element {
             <div className="grid grid-cols-[30px_minmax(0,1fr)] gap-3">
               <div className="size-[30px]" aria-hidden />
               <BashConfirmCard confirm={stream.pendingConfirm} onRespond={respondToolConfirm} />
+            </div>
+          )}
+          {streamInView && stream.pendingComputer && (
+            <div className="grid grid-cols-[30px_minmax(0,1fr)] gap-3">
+              <div className="size-[30px]" aria-hidden />
+              <ComputerConfirmCard request={stream.pendingComputer} onRespond={respondComputer} />
             </div>
           )}
           <div ref={bottomRef} />

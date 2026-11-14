@@ -1,8 +1,16 @@
+import { resolve } from 'node:path'
 import { app, ipcMain } from 'electron'
 import { registerIpcHandlers } from './ipc'
+import { registerAgentIpc } from './agent-ipc'
 import { setMenuLanguage } from './labels'
+import { ProactiveWatcher } from './proactive'
 import { AppTray } from './tray'
+import { ComputerControl } from './computer-control'
 import { WindowManager } from './window-manager'
+import { startBrain, stopBrain } from './brain-process'
+
+// 测试显式提供隔离目录时不触碰用户真实登录态/摆位；正常启动仍沿用原 userData。
+if (process.env['AMADEUS_USER_DATA_DIR']) app.setPath('userData', resolve(process.env['AMADEUS_USER_DATA_DIR']))
 
 // 开发期开 CDP 调试端口，供自动化 E2E 验证驱动。
 // 命令行已指定时不覆盖（9222 被占用时可用 electron-vite dev --remoteDebuggingPort <port>）
@@ -10,12 +18,15 @@ if (!app.isPackaged && !app.commandLine.hasSwitch('remote-debugging-port')) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222')
 }
 
-app.whenReady().then(() => {
-  const windows = new WindowManager()
+app.whenReady().then(async () => {
+  await startBrain()
+  const computer = new ComputerControl()
+  const windows = new WindowManager(computer)
   const tray = new AppTray(windows)
-  registerIpcHandlers(windows, (lang) => {
+  const proactive = new ProactiveWatcher(windows)
+  registerIpcHandlers(windows, proactive, (lang) => {
     if (setMenuLanguage(lang)) tray.refresh()
-  })
+  }, computer)
   windows.onStateChange(() => tray.refresh())
   // 开发期 e2e 断言主进程窗口状态（打包产物不注册）
   if (!app.isPackaged) {
@@ -28,10 +39,16 @@ app.whenReady().then(() => {
     ipcMain.handle('debug:pet-passthrough', (_event, forced: unknown) => {
       if (typeof forced === 'boolean') windows.setPassthroughForced(forced)
     })
+    // 主动问候：注入帧 / 模拟后台 / 指定 brain / 立即触发 / 读状态
+    ipcMain.handle('debug:proactive', (_event, command: unknown) => proactive.debugCommand(command))
   }
 
+  registerAgentIpc()
   windows.createMainWindow()
   tray.create()
+  // 主动问候调度：主进程不受隐藏窗口的定时器节流，后台/桌宠都靠它
+  proactive.start()
+  app.on('before-quit', () => proactive.stop())
 
   app.on('activate', (_event, hasVisibleWindows) => {
     if (!hasVisibleWindows) windows.showCurrent()
@@ -40,4 +57,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+app.on('before-quit', () => {
+  stopBrain()
 })

@@ -1,5 +1,14 @@
 import * as React from 'react'
-import { ChevronLeft, ChevronRight, Copy, FileText, Mic, Pencil, RotateCcw } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  CornerUpLeft,
+  FileText,
+  Mic,
+  Pencil,
+  RotateCcw
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useTranslation } from 'react-i18next'
 import type { Message, MessageAttachment } from '@pi-amadeus/shared'
@@ -20,22 +29,81 @@ interface MessageBubbleProps {
   streaming?: boolean
   /** 最后一条助手消息：提供「重新生成」入口 */
   isLastAssistant?: boolean
+  /** 当前世界线末端：它自己不需要「回退到此处」 */
+  isHead?: boolean
   onRegenerate?: () => void
+  /** 世界线分叉箭头：在同一条消息的多个版本之间跳跃 */
+  onSwitchSibling?: (direction: -1 | 1) => void
+  /** 回退到这条消息（世界线分叉点） */
+  onRewind?: () => void
 }
 
 /**
- * 消息级操作：复制正文；最后一条助手回复额外给「重新生成」。
+ * 世界线分叉指示：同一条消息有多个版本时显示 `‹ 2/3 ›`。
+ * 这是世界线的分叉点——左右切换等于跳到另一条世界线的同一位置。
+ */
+function BranchSwitcher({
+  siblings,
+  currentId,
+  onSwitch
+}: {
+  siblings: string[]
+  currentId: string
+  onSwitch?: (direction: -1 | 1) => void
+}): React.JSX.Element | null {
+  const { t } = useTranslation()
+  const index = siblings.indexOf(currentId)
+  if (!onSwitch || siblings.length < 2 || index < 0) return null
+  return (
+    <span
+      title={t('worldline.switchHint')}
+      className="inline-flex items-center gap-0.5 rounded-full border border-border bg-surface px-1 font-mono text-[10.5px] text-ink-2"
+    >
+      <button
+        type="button"
+        data-testid="branch-prev"
+        disabled={index === 0}
+        aria-label={t('worldline.prev')}
+        onClick={() => onSwitch(-1)}
+        className="rounded p-0.5 transition-colors hover:bg-surface-soft disabled:opacity-30 disabled:hover:bg-transparent"
+      >
+        <ChevronLeft className="size-3" />
+      </button>
+      <span className="px-0.5" data-testid="branch-index">
+        {index + 1}/{siblings.length}
+      </span>
+      <button
+        type="button"
+        data-testid="branch-next"
+        disabled={index === siblings.length - 1}
+        aria-label={t('worldline.next')}
+        onClick={() => onSwitch(1)}
+        className="rounded p-0.5 transition-colors hover:bg-surface-soft disabled:opacity-30 disabled:hover:bg-transparent"
+      >
+        <ChevronRight className="size-3" />
+      </button>
+    </span>
+  )
+}
+
+/**
+ * 消息级操作：复制正文；最后一条助手回复额外给「重新生成」；
+ * 不在世界线末端的消息额外给「回到这里」（回退后发消息 = 分叉出新世界线）。
  * 按钮默认隐藏，悬停或键盘聚焦时出现（与常见助手一致，不打断阅读）。
  */
 function MessageActions({
   content,
   showRegenerate,
   onRegenerate,
+  showRewind,
+  onRewind,
   onEdit
 }: {
   content: string
   showRegenerate: boolean
   onRegenerate?: () => void
+  showRewind?: boolean
+  onRewind?: () => void
   onEdit?: () => void
 }): React.JSX.Element {
   const { t } = useTranslation()
@@ -77,6 +145,18 @@ function MessageActions({
           <Pencil className="size-3" />
         </button>
       )}
+      {showRewind && onRewind && (
+        <button
+          type="button"
+          data-testid="rewind"
+          onClick={onRewind}
+          title={t('worldline.rewindHint')}
+          aria-label={t('worldline.rewind')}
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-soft hover:text-primary"
+        >
+          <CornerUpLeft className="size-3" />
+        </button>
+      )}
       {showRegenerate && onRegenerate && (
         <button
           type="button"
@@ -101,7 +181,10 @@ export function MessageBubble({
   message,
   streaming = false,
   isLastAssistant = false,
-  onRegenerate
+  isHead = false,
+  onRegenerate,
+  onSwitchSibling,
+  onRewind
 }: MessageBubbleProps): React.JSX.Element {
   if (message.role === 'user') {
     return <UserNode message={message} />
@@ -112,7 +195,10 @@ export function MessageBubble({
       message={message}
       streaming={streaming}
       isLastAssistant={isLastAssistant}
+      isHead={isHead}
       onRegenerate={onRegenerate}
+      onSwitchSibling={onSwitchSibling}
+      onRewind={onRewind}
     />
   )
 }
@@ -204,7 +290,6 @@ function UserNode({ message }: { message: Message }): React.JSX.Element {
       <div className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
         {message.mode === 'voice' && <Mic className="size-3" />}
         <span>{timeFormatter.format(message.createdAt)}</span>
-        <BranchSwitcher message={message} />
         <MessageActions
           content={message.content}
           showRegenerate={false}
@@ -212,52 +297,6 @@ function UserNode({ message }: { message: Message }): React.JSX.Element {
         />
       </div>
     </div>
-  )
-}
-
-/** 分支切换器：同一父节点下的第 n/m 条，左右切换当前活跃分支 */
-function BranchSwitcher({ message }: { message: Message }): React.JSX.Element | null {
-  const { t } = useTranslation()
-  const switchBranch = useSessionStore((s) => s.switchBranch)
-  const count = message.branchCount ?? 1
-  if (count <= 1) return null
-  const index = message.branchIndex ?? 1
-  return (
-    <span data-testid="branch-switcher" className="inline-flex items-center gap-0.5 text-[11px]">
-      <button
-        type="button"
-        data-testid="branch-prev"
-        aria-label={t('chat.branchPrev')}
-        title={t('chat.branchPrev')}
-        disabled={index <= 1}
-        onClick={() =>
-          void switchBranch(message.id, -1).catch((error: unknown) =>
-            toast.error(error instanceof Error ? error.message : String(error))
-          )
-        }
-        className="rounded p-0.5 text-muted-foreground hover:bg-surface-soft hover:text-foreground disabled:opacity-30"
-      >
-        <ChevronLeft className="size-3" />
-      </button>
-      <span className="min-w-[24px] text-center font-mono text-[10px] text-muted-foreground">
-        {index}/{count}
-      </span>
-      <button
-        type="button"
-        data-testid="branch-next"
-        aria-label={t('chat.branchNext')}
-        title={t('chat.branchNext')}
-        disabled={index >= count}
-        onClick={() =>
-          void switchBranch(message.id, 1).catch((error: unknown) =>
-            toast.error(error instanceof Error ? error.message : String(error))
-          )
-        }
-        className="rounded p-0.5 text-muted-foreground hover:bg-surface-soft hover:text-foreground disabled:opacity-30"
-      >
-        <ChevronRight className="size-3" />
-      </button>
-    </span>
   )
 }
 
@@ -330,7 +369,10 @@ function AssistantNode({
   message,
   streaming = false,
   isLastAssistant = false,
-  onRegenerate
+  isHead = false,
+  onRegenerate,
+  onSwitchSibling,
+  onRewind
 }: MessageBubbleProps): React.JSX.Element {
   const workLog = useSessionStore((s) => s.workLogs[message.id])
 
@@ -359,11 +401,17 @@ function AssistantNode({
           {message.mode === 'voice' && <Mic className="size-3" />}
           <span>·</span>
           <span>{timeFormatter.format(message.createdAt)}</span>
-          <BranchSwitcher message={message} />
+          <BranchSwitcher
+            siblings={message.siblingIds ?? []}
+            currentId={message.id}
+            onSwitch={onSwitchSibling}
+          />
           <MessageActions
             content={message.content}
             showRegenerate={isLastAssistant && !streaming}
             onRegenerate={onRegenerate}
+            showRewind={!isHead && !streaming}
+            onRewind={onRewind}
           />
         </div>
       </div>
