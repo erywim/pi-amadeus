@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useEffect, useRef } from 'react'
 import {
+  ArrowLeftRight,
   BarChart3,
   Blocks,
   BookOpen,
@@ -31,7 +32,8 @@ const TAB_ROUTES = [
   '/knowledge',
   '/automations',
   '/plugins',
-  '/dashboard'
+  '/dashboard',
+  '/conversion'
 ] as const
 
 /**
@@ -131,7 +133,8 @@ export default function AppShell(): React.JSX.Element {
     { path: '/knowledge', icon: BookOpen, label: t('nav.knowledge') },
     { path: '/automations', icon: CalendarClock, label: t('nav.automations') },
     { path: '/plugins', icon: Blocks, label: t('nav.plugins') },
-    { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') }
+    { path: '/dashboard', icon: BarChart3, label: t('nav.dashboard') },
+    { path: '/conversion', icon: ArrowLeftRight, label: t('nav.conversion') }
   ]
 
   return (

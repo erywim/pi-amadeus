@@ -1,4 +1,6 @@
 import { serve } from '@hono/node-server'
+import { bodyLimit } from 'hono/body-limit'
+import { cors } from 'hono/cors'
 import { automationScheduler } from './automation/scheduler.ts'
 import { loadConfig } from './config.ts'
 import { createDb } from './db.ts'
@@ -12,6 +14,7 @@ import { chatRoutes } from './routes/chat.ts'
 import { knowledgeRoutes } from './routes/knowledge.ts'
 import { mediaRoutes } from './routes/media.ts'
 import { configRoutes } from './routes/config.ts'
+import { conversionRoutes } from './routes/conversion.ts'
 import { feishuRoutes } from './routes/feishu.ts'
 import { frameRoutes } from './routes/frames.ts'
 import { memoryRoutes } from './routes/memories.ts'
@@ -31,6 +34,21 @@ import { workspaceRoutes } from './routes/workspace.ts'
 
 const cfg = loadConfig()
 const app = createHttpApp(cfg)
+// 开发渲染层与 Electron 打包页需要跨源访问；管理边界先由 createHttpApp 校验。
+app.use('/api/*', cors({
+  origin: (origin) => origin === 'null'
+    ? 'null'
+    : origin === 'file://'
+      || origin === 'http://localhost:5173'
+      || origin === 'http://localhost:5174'
+      || origin === 'http://127.0.0.1:5173'
+      || origin === 'http://127.0.0.1:5174'
+      ? origin
+      : undefined,
+  exposeHeaders: ['Content-Disposition', 'Content-Length']
+}))
+// 在 multipart/json 解析前限制转换请求体，避免超大上传先整体读入内存。
+app.use('/api/conversion/*', bodyLimit({ maxSize: 128 * 1024 * 1024 }))
 const db = createDb(cfg.db)
 await db.init()
 
@@ -56,6 +74,7 @@ app.route('/api', voiceRoutes(cfg, db))
 app.route('/api', sessionRoutes(db))
 app.route('/api', userRoutes(db))
 app.route('/api', configRoutes(cfg, db))
+app.route('/api', conversionRoutes())
 app.route('/api', sttRoutes(cfg))
 app.route('/api', frameRoutes())
 app.route('/api', skillRoutes(cfg))

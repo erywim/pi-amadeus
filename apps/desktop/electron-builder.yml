@@ -1,5 +1,6 @@
 appId: com.pi-amadeus.desktop
 productName: Amadeus
+electronVersion: 43.4.0
 directories:
   buildResources: build
   output: release
@@ -8,6 +9,12 @@ files:
   # 主进程以 ?asset 引用的托盘图标（electron-vite 按 out/main/../../resources 原位引用，不复制）
   - resources/**/*
   - '!**/*.map'
+extraResources:
+  - from: resources/brain
+    to: brain
+    filter:
+      - index.mjs
+      - sharp-native/**
 win:
   target: nsis
 npmRebuild: false
