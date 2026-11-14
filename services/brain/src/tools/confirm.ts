@@ -74,7 +74,8 @@ export function requestToolConfirm(
   }
 
   const onAbort = (): void => {
-    settle(() => deny('aborted'))
+    // 取消直接走 deny 的唯一 settle：外层先移除记录会让内层无法 reject，回合永久挂起。
+    deny('aborted')
   }
 
   let approve!: () => void
@@ -87,6 +88,8 @@ export function requestToolConfirm(
   const timer = setTimeout(() => deny('timeout'), input.timeoutMs)
   input.signal?.addEventListener('abort', onAbort, { once: true })
   pending.set(k, { ...input, expiresAt, settled: false, approve, deny, timer, onAbort })
+  // 登记前 signal 已取消不会触发新监听，补走同一拒绝出口，不能等到超时。
+  if (input.signal?.aborted) onAbort()
 
   return { promise, expiresAt }
 }

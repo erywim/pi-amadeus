@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>Amadeus · 局域网协作</title>
+  <style>
+    :root { color: #24211f; background: #f3f0e9; font-family: "Helvetica Neue", Helvetica, "PingFang SC", sans-serif; line-height: 1.6; font-size: 15px; --ink: #24211f; --muted: #69625c; --line: #d6d0c6; --accent: #963c30; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); background-image: repeating-linear-gradient(0deg, transparent, transparent 31px, #24211f03 32px); }
+    main { max-width: 1180px; margin: auto; }
+    header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 10px; padding: 12px 0 20px; border-bottom: 2px solid var(--ink); }
+    h1 { margin: 0; font-family: Georgia, "Songti SC", serif; font-weight: 400; font-size: 30px; letter-spacing: -.7px; }
+    h1 span { font-family: "Helvetica Neue", Helvetica, sans-serif; font-size: 12px; letter-spacing: .12em; color: var(--accent); margin-left: 10px; white-space: nowrap; }
+    h2 { font-family: Georgia, "Songti SC", serif; font-size: 22px; font-weight: 500; line-height: 1.4; margin: 0 0 14px; }
+    h3 { font-size: 14px; margin: 16px 0 6px; }
+    p { margin: 8px 0; }
+    .muted, small { color: var(--muted); }
+    .warning { padding: 14px 0 14px 14px; border-left: 3px solid var(--accent); font-size: 13px; margin: 20px 0; max-width: 870px; }
+    .warning strong { color: var(--accent); }
+    #connection { min-height: 26px; color: var(--muted); font-size: 13px; }
+    #connection[data-state="live"] { color: #3c6545; }
+    #connection[data-state="error"] { color: var(--accent); }
+    .pair { max-width: 480px; padding: 20px 0; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 16px 0 6px; }
+    input, textarea, select { width: 100%; border: 1px solid #bdb5aa; background: #fffdf8; color: var(--ink); border-radius: 4px; padding: 11px 12px; font: inherit; min-width: 0; }
+    textarea { resize: vertical; min-height: 110px; }
+    fieldset { border: 0; margin: 0; padding: 0; }
+    input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; }
+    .check { display: flex; gap: 9px; align-items: flex-start; font-weight: 400; }
+    .check input { margin: 3px 0 0; }
+    button { border: 1px solid var(--ink); background: var(--ink); color: #f8f4ee; border-radius: 4px; font: inherit; padding: 10px 16px; min-height: 44px; cursor: pointer; touch-action: manipulation; transition: background-color 120ms, border-color 120ms; }
+    button:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+    button.secondary { background: transparent; color: var(--ink); border-color: #afa69b; }
+    button.secondary:hover:not(:disabled) { background: #e7e0d5; border-color: var(--ink); }
+    button.danger { background: var(--accent); border-color: var(--accent); }
+    button:disabled, input:disabled, select:disabled, textarea:disabled { opacity: .48; cursor: not-allowed; }
+    :focus-visible { outline: 3px solid #995328; outline-offset: 3px; }
+    .row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .identity { justify-content: space-between; padding: 8px 0 18px; border-bottom: 1px solid var(--line); }
+    #identity { font-size: 13px; overflow-wrap: anywhere; }
+    .grid { display: grid; grid-template-columns: minmax(240px, .8fr) minmax(0, 1.7fr); gap: 32px; padding-top: 24px; }
+    .task-list { list-style: none; margin: 0; padding: 0; max-height: 55vh; overflow-y: auto; }
+    .task-list li { border-top: 1px solid var(--line); }
+    .task-list button { width: 100%; display: block; border: 0; border-radius: 0; background: none; color: var(--ink); text-align: left; padding: 13px 10px; }
+    .task-list button:hover:not(:disabled) { background: #e7e0d5; }
+    .task-list button[aria-pressed="true"] { background: #e7e0d5; box-shadow: inset 3px 0 var(--accent); }
+    .task-title { display: block; overflow-wrap: anywhere; font-weight: 600; }
+    .task-meta { font-size: 12px; color: var(--muted); }
+    .detail { min-width: 0; }
+    #task-title { overflow-wrap: anywhere; }
+    #task-meta, #task-cwd { font-size: 12px; overflow-wrap: anywhere; }
+    pre { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; margin: 8px 0 16px; }
+    #output { background: #252320; color: #eae3d7; padding: 18px; min-height: 230px; max-height: 62vh; overflow-y: auto; border-radius: 4px; }
+    #task-prompt { max-height: 140px; overflow-y: auto; color: #514a43; }
+    #approval { border-left: 3px solid var(--accent); padding-left: 14px; margin: 18px 0; }
+    #approval-command { max-height: 180px; overflow-y: auto; }
+    details { border-top: 1px solid var(--line); margin-top: 24px; padding-top: 16px; }
+    summary { cursor: pointer; font-weight: 600; min-height: 36px; }
+    .message { min-height: 26px; font-size: 13px; color: var(--accent); overflow-wrap: anywhere; }
+    .empty { color: var(--muted); padding: 18px 0; }
+    #observer-note { color: var(--accent); font-size: 13px; }
+    [hidden] { display: none !important; }
+    .actions { margin-top: 16px; }
+    .hint { font-size: 12px; color: var(--muted); }
+    footer { border-top: 1px solid var(--line); margin-top: 36px; padding-top: 12px; font-size: 12px; color: var(--muted); }
+    @media (max-width: 720px) { .grid { grid-template-columns: minmax(0, 1fr); gap: 26px; } .task-list { max-height: 240px; } h1 { font-size: 27px; } #output { max-height: 55vh; } .identity .row { width: 100%; } }
+    @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+  </style>
+</head>
+<body>
+<main>
+  <header><h1>Amadeus <span>LAN / 协作</span></h1><div id="connection" role="status" aria-live="polite">尚未配对</div></header>
+  <aside class="warning"><strong>HTTP 明文连接，不是端到端加密。</strong> 配对码、令牌、任务和输出会经过当前网络。只在可信局域网使用；需要保密时请自行配置 SSH 转发或 TLS。这里没有云中继，也不会自动开放防火墙。</aside>
+  <section id="pair-panel" class="pair" aria-labelledby="pair-title">
+    <h2 id="pair-title">把这个屏幕接入桌面</h2>
+    <p class="muted">在桌面端开启协作并生成一次性配对码。配对码 5 分钟有效，权限和用户由桌面端决定。</p>
+    <form id="pair-form">
+      <label for="device-name">设备名称</label><input id="device-name" name="name" autocomplete="off" maxlength="80" placeholder="例如：我的手机" required>
+      <label for="pair-code">一次性配对码</label><input id="pair-code" name="code" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="128" required>
+      <label class="check"><input id="remember" type="checkbox"><span>在此标签页临时保存令牌，刷新后保持连接。<br><small>使用 sessionStorage，不写入 localStorage。共享设备请勿勾选；关闭标签页或点「忘记连接」可清除，浏览器恢复标签页时仍可能保留。</small></span></label>
+      <div class="actions"><button id="pair-submit" type="submit">配对此设备</button></div>
+    </form>
+  </section>
+  <section id="workspace" hidden aria-label="任务工作区">
+    <div class="identity row"><span id="identity"></span><div class="row"><button id="refresh" class="secondary" type="button">刷新</button><button id="forget" class="secondary" type="button">忘记连接</button></div></div>
+    <p id="storage-note" class="hint"></p><p id="observer-note" hidden>当前为观察者：可以查看任务与输出，不能创建、停止、继续或审批。</p>
+    <div class="grid">
+      <section aria-labelledby="tasks-heading">
+        <h2 id="tasks-heading">任务</h2><p id="task-count" class="hint"></p>
+        <ul id="task-list" class="task-list"></ul><p id="no-tasks" class="empty" hidden>还没有任务。桌面与此处共享同一用户的任务。</p>
+        <details id="new-task"><summary>发起新任务</summary>
+          <form id="task-form"><fieldset id="task-fields">
+            <label for="profile">允许远程执行的 Agent</label><select id="profile" required></select><p id="profile-note" class="hint"></p>
+            <label for="title">标题</label><input id="title" maxlength="160" required>
+            <label for="prompt">任务内容</label><textarea id="prompt" maxlength="32000" required></textarea>
+            <label id="cwd-label" for="cwd">工作目录</label><input id="cwd" maxlength="4096" autocomplete="off">
+            <p class="hint">远程执行在桌面电脑上进行，可能读写文件或调用收费模型。只运行你了解的任务。</p>
+            <button id="task-submit" type="submit">创建任务</button>
+          </fieldset></form>
+        </details>
+      </section>
+      <section class="detail" aria-labelledby="detail-heading">
+        <h2 id="detail-heading">任务详情</h2><p id="no-selection" class="empty">选择一个任务，查看输出与操作。</p>
+        <div id="task-detail" hidden><h3 id="task-title"></h3><p id="task-meta" class="muted"></p><p id="task-cwd" class="muted"></p>
+          <h3>任务内容</h3><pre id="task-prompt"></pre><h3>输出</h3><pre id="output" tabindex="0" aria-label="任务输出"></pre>
+          <div class="row"><button id="stop" class="danger" type="button">停止任务</button></div>
+          <section id="approval" hidden aria-label="待审批操作"><h3>需要你确认</h3><pre id="approval-command"></pre><p id="approval-expiry" class="hint"></p><div class="row"><button id="approve" type="button">允许执行</button><button id="reject" class="secondary" type="button">拒绝</button></div></section>
+          <details id="resume-panel"><summary>继续 / 重试此任务</summary><form id="resume-form"><label for="resume-prompt">继续指令</label><textarea id="resume-prompt" maxlength="32000" required></textarea><p class="hint">仅能使用桌面端仍允许远程执行的原 Agent。运行中的任务请先停止。</p><button id="resume" type="submit">继续任务</button></form></details>
+        </div>
+      </section>
+    </div>
+  </section>
+  <p id="message" class="message" role="alert" aria-live="polite"></p>
+  <footer>仅提供任务协作，不开放配置、文件浏览、MCP、终端代理或普通聊天接口。设备授权可随时在桌面端撤销。</footer>
+</main>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const labels = { queued: '排队中', running: '运行中', waiting_approval: '待审批', completed: '已完成', failed: '失败', cancelled: '已停止', interrupted: '已中断' };
+const storageKey = 'amadeus.lan.device-token';
+let token = '';
+let device = null;
+let profiles = [];
+let tasks = [];
+let selectedId = '';
+let selected = null;
+let cursor = 0;
+let generation = 0;
+let streamAbort = null;
+let refreshTimer = null;
+let refreshing = null;
+let refreshingGeneration = -1;
+let refreshAgain = false;
+let busy = false;
+let launchRequestId = '';
+let resumeRequestId = '';
+let lastFrameAt = 0;
+
+function message(text = '') { $('message').textContent = text; }
+function connection(text, state = '') { $('connection').textContent = text; $('connection').dataset.state = state; }
+function isController() { return device?.role === 'controller'; }
+function date(value) { return new Date(value).toLocaleString(); }
+function node(tag, text, className) { const el = document.createElement(tag); if (text !== undefined) el.textContent = text; if (className) el.className = className; return el; }
+function forget(reason = '') {
+  // 主动退出或收到 401 时回到未配对态，旧重连、快照与令牌一起作废。
+  generation += 1;
+  streamAbort?.abort(); streamAbort = null;
+  clearTimeout(refreshTimer); refreshTimer = null;
+  token = ''; device = null; tasks = []; profiles = []; selected = null; selectedId = ''; cursor = 0;
+  launchRequestId = ''; resumeRequestId = '';
+  try { sessionStorage.removeItem(storageKey); } catch { /* 隐私模式可能禁用存储。 */ }
+  $('pair-panel').hidden = false; $('workspace').hidden = true;
+  connection('尚未配对'); message(reason);
+}
+async function api(path, options = {}) {
+  const response = await fetch(path, { ...options, credentials: 'omit', cache: 'no-store', headers: { 'Authorization': `Bearer ${token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } });
+  if (response.status === 401) { forget('设备未授权或已被桌面端撤销，请重新配对。'); throw new Error('请重新配对'); }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `请求失败 (${response.status})`);
+  return data;
+}
+function idempotencyId() {
+  // HTTP LAN 不是 secure context，不能依赖只在安全上下文提供的 randomUUID。
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+}
+function renderCwd() {
+  const profile = profiles.find((item) => item.id === $('profile').value);
+  $('cwd').required = Boolean(profile && profile.runtime !== 'brain');
+  $('cwd').placeholder = profile?.runtime === 'brain' ? '留空使用桌面端默认目录' : '桌面电脑上的绝对目录路径';
+  $('cwd-label').textContent = profile?.runtime === 'brain' ? '工作目录（可留空）' : '工作目录（外部 CLI 必填）';
+}
+function renderProfiles() {
+  const select = $('profile'); const previous = select.value;
+  select.replaceChildren();
+  const allowed = profiles.filter((profile) => profile.enabled && profile.allowRemote);
+  for (const profile of allowed) { const option = node('option', `${profile.name} · ${profile.runtime}`); option.value = profile.id; select.append(option); }
+  if (allowed.some((profile) => profile.id === previous)) select.value = previous;
+  renderCwd();
+  $('profile-note').textContent = allowed.length ? '远程执行权限只可在桌面端修改。' : '没有允许远程执行的 Agent，请在桌面端启用。';
+  $('task-fields').disabled = !isController() || !allowed.length || busy;
+}
+function renderTasks() {
+  const list = $('task-list'); const focused = document.activeElement?.dataset?.taskId;
+  list.replaceChildren();
+  $('task-count').textContent = `${tasks.length} 个任务 · 用户范围由配对授权固定`;
+  $('no-tasks').hidden = tasks.length > 0;
+  for (const task of tasks) {
+    const li = node('li'); const button = node('button');
+    button.type = 'button'; button.dataset.taskId = task.id; button.setAttribute('aria-pressed', String(task.id === selectedId));
+    button.append(node('span', task.title, 'task-title'), node('span', `${labels[task.status] || task.status} · ${task.agentName}`, 'task-meta'));
+    button.addEventListener('click', () => {
+      if (selectedId !== task.id) { resumeRequestId = ''; $('resume-prompt').value = ''; }
+      selectedId = task.id; selected = task; renderTasks(); renderDetail(); void readDetail(task.id);
+    });
+    li.append(button); list.append(li);
+    if (focused === task.id) button.focus({ preventScroll: true });
+  }
+}
+function renderDetail() {
+  const task = selected;
+  $('no-selection').hidden = Boolean(task); $('task-detail').hidden = !task;
+  if (!task) return;
+  $('task-title').textContent = task.title;
+  $('task-meta').textContent = `${labels[task.status] || task.status} · ${task.agentName} · 更新 ${date(task.updatedAt)}`;
+  $('task-cwd').textContent = task.cwd ? `工作目录：${task.cwd}` : '';
+  $('task-prompt').textContent = task.prompt;
+  const output = $('output'); const follow = output.scrollHeight - output.scrollTop - output.clientHeight < 70;
+  const text = task.output + (task.error ? `\n\n错误：${task.error}` : '');
+  if (output.textContent !== text) { output.textContent = text || '等待输出…'; if (follow) output.scrollTop = output.scrollHeight; }
+  const active = ['queued', 'running', 'waiting_approval'].includes(task.status);
+  $('stop').disabled = !isController() || !active || busy;
+  const approval = task.pendingApproval;
+  $('approval').hidden = !approval;
+  if (approval) {
+    $('approval-command').textContent = approval.command;
+    $('approval-expiry').textContent = `授权有效至 ${date(approval.expiresAt)}；允许前请仔细检查操作。`;
+    $('approve').disabled = $('reject').disabled = !isController() || busy || approval.expiresAt <= Date.now();
+  }
+  const allowed = profiles.some((profile) => profile.id === task.agentId && profile.enabled && profile.allowRemote);
+  $('resume').disabled = $('resume-prompt').disabled = !isController() || active || !allowed || busy;
+}
+async function readDetail(id) {
+  const ownGeneration = generation;
+  try {
+    const task = await api(`/api/agents/tasks/${encodeURIComponent(id)}`);
+    if (generation === ownGeneration && selectedId === id && (!selected || task.revision >= selected.revision)) { selected = task; renderDetail(); }
+  }
+  catch (error) { if (generation === ownGeneration) message(error.message); }
+}
+async function snapshot() {
+  if (!token) return;
+  if (refreshing && refreshingGeneration === generation) { refreshAgain = true; return refreshing; }
+  const ownGeneration = generation;
+  refreshingGeneration = ownGeneration;
+  const pending = (async () => {
+    do {
+      refreshAgain = false;
+      const overview = await api('/api/agents');
+      if (generation !== ownGeneration) return;
+      profiles = overview.profiles; tasks = overview.tasks;
+      if (!selectedId && tasks.length) selectedId = tasks[0].id;
+      selected = tasks.find((task) => task.id === selectedId) || null;
+      renderProfiles(); renderTasks(); renderDetail();
+    } while (refreshAgain && token && generation === ownGeneration);
+  })();
+  refreshing = pending;
+  try { await pending; } finally { if (refreshing === pending) refreshing = null; }
+}
+function scheduleSnapshot() {
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => { refreshTimer = null; void snapshot().catch((error) => message(error.message)); }, 250);
+}
+function processFrame(frame) {
+  let event = 'message'; let data = []; let id = '';
+  for (const line of frame.split('\n')) {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+    if (line.startsWith('id:')) id = line.slice(3).trim();
+  }
+  if (event !== 'task' || !data.length) return;
+  const parsed = JSON.parse(data.join('\n'));
+  if (!Number.isSafeInteger(parsed.seq) || parsed.seq < 0 || id !== String(parsed.seq)) throw new Error('实时事件格式无效');
+  if (parsed.seq <= cursor) return;
+  cursor = parsed.seq;
+  scheduleSnapshot();
+}
+function delay(ms, signal) {
+  return new Promise((resolve) => {
+    const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); };
+    const timer = setTimeout(done, ms); signal.addEventListener('abort', done, { once: true });
+    if (signal.aborted) done();
+  });
+}
+async function live(ownGeneration) {
+  let failures = 0;
+  const lifecycle = new AbortController(); streamAbort = lifecycle;
+  while (token && ownGeneration === generation && !lifecycle.signal.aborted) {
+    const abort = new AbortController();
+    const cancelAttempt = () => abort.abort();
+    lifecycle.signal.addEventListener('abort', cancelAttempt, { once: true });
+    let reader;
+    let watchdog;
+    try {
+      connection(failures ? '正在重连并同步…' : '正在同步…');
+      // 每次重连先取快照；保留游标再重放 durable 事件，弥补断线窗口。
+      await snapshot();
+      if (ownGeneration !== generation) return;
+      lastFrameAt = Date.now();
+      watchdog = setInterval(() => { if (Date.now() - lastFrameAt > 45_000) abort.abort(); }, 5000);
+      const response = await fetch('/api/agents/events', { credentials: 'omit', cache: 'no-store', signal: abort.signal, headers: { 'Authorization': `Bearer ${token}`, 'Last-Event-ID': String(cursor), 'Accept': 'text/event-stream' } });
+      if (response.status === 401) { forget('授权已失效，请在桌面端重新配对。'); return; }
+      if (!response.ok || !response.body) throw new Error(`实时连接失败 (${response.status})`);
+      reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+      connection('实时连接中', 'live');
+      for (;;) {
+        const chunk = await reader.read(); if (chunk.done) throw new Error('实时连接已断开');
+        if (ownGeneration !== generation) return;
+        lastFrameAt = Date.now(); failures = 0;
+        buffer += decoder.decode(chunk.value, { stream: true }).replace(/\r\n/g, '\n');
+        if (buffer.length > 4 * 1024 * 1024) throw new Error('实时事件过大，重新同步');
+        let boundary;
+        while ((boundary = buffer.indexOf('\n\n')) !== -1) { const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2); processFrame(frame); }
+      }
+    } catch (error) {
+      if (!token || ownGeneration !== generation) return;
+      failures += 1;
+      connection(`连接中断 · ${Math.min(30, 2 ** Math.min(failures - 1, 5))} 秒后重连`, 'error');
+    } finally {
+      clearInterval(watchdog); abort.abort();
+      lifecycle.signal.removeEventListener('abort', cancelAttempt);
+      if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+    }
+    await delay(Math.min(30_000, 1000 * 2 ** Math.min(failures - 1, 5)), lifecycle.signal);
+  }
+}
+async function enter() {
+  const ownGeneration = ++generation;
+  try {
+    const result = await api('/api/device');
+    if (ownGeneration !== generation) return;
+    device = result.device;
+    $('pair-panel').hidden = true; $('workspace').hidden = false;
+    $('identity').textContent = `${device.name} / ${isController() ? '控制者' : '观察者'} / 用户 ${device.userId}`;
+    $('observer-note').hidden = isController();
+    let remembered = false; try { remembered = sessionStorage.getItem(storageKey) === token; } catch { /* 忽略禁用存储。 */ }
+    $('storage-note').textContent = remembered ? '令牌临时保存在此标签页 sessionStorage。离开共享设备前点「忘记连接」；彻底撤销请到桌面端。' : '令牌仅在内存中；刷新后需要重新配对。忘记连接不等于在桌面端撤销设备。';
+    message();
+    void live(ownGeneration);
+  } catch (error) { if (ownGeneration === generation) forget(error.message); }
+}
+async function action(operation) {
+  if (busy) return;
+  busy = true; message(); renderProfiles(); renderDetail();
+  try { await operation(); await snapshot(); } catch (error) { message(error.message); }
+  finally { busy = false; renderProfiles(); renderDetail(); }
+}
+$('pair-form').addEventListener('submit', async (event) => {
+  event.preventDefault(); $('pair-submit').disabled = true; message();
+  try {
+    const response = await fetch('/pair', { method: 'POST', credentials: 'omit', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: $('pair-code').value.trim(), name: $('device-name').value.trim() }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || '配对失败');
+    token = result.token; cursor = 0; $('pair-code').value = '';
+    if ($('remember').checked) { try { sessionStorage.setItem(storageKey, token); } catch { message('浏览器不允许临时保存；本次连接仍可使用，刷新需重新配对。'); } }
+    await enter();
+  } catch (error) { message(error.message); }
+  finally { $('pair-submit').disabled = false; }
+});
+$('forget').addEventListener('click', () => forget('已清除此标签页的连接。若需要彻底撤销设备，请在桌面端操作。'));
+$('refresh').addEventListener('click', () => { message(); void snapshot().catch((error) => message(error.message)); });
+$('profile').addEventListener('change', () => { launchRequestId = ''; renderCwd(); });
+$('task-form').addEventListener('input', () => { launchRequestId = ''; });
+$('task-form').addEventListener('submit', (event) => {
+  event.preventDefault(); if (!isController()) return;
+  // 网络结果未知时重用 requestId；用户修改输入才代表新任务，避免收费任务重复启动。
+  launchRequestId ||= idempotencyId();
+  void action(async () => {
+    const task = await api('/api/agents/tasks', { method: 'POST', body: JSON.stringify({ agentId: $('profile').value, title: $('title').value, prompt: $('prompt').value, cwd: $('cwd').value, requestId: launchRequestId }) });
+    selectedId = task.id; launchRequestId = ''; $('title').value = ''; $('prompt').value = ''; $('new-task').open = false;
+  });
+});
+$('stop').addEventListener('click', () => { if (selected && isController()) void action(() => api(`/api/agents/tasks/${encodeURIComponent(selected.id)}/stop`, { method: 'POST' })); });
+for (const [button, approved] of [['approve', true], ['reject', false]]) {
+  $(button).addEventListener('click', () => {
+    const pending = selected?.pendingApproval;
+    if (!selected || !pending || !isController()) return;
+    // 把界面看到的确认身份一并回传；任务在两次点击间换了命令时，服务端必须拒绝旧按钮。
+    void action(() => api(`/api/agents/tasks/${encodeURIComponent(selected.id)}/approve`, {
+      method: 'POST', body: JSON.stringify({ approved, turnId: pending.turnId, toolCallId: pending.toolCallId })
+    }));
+  });
+}
+$('resume-form').addEventListener('input', () => { resumeRequestId = ''; });
+$('resume-form').addEventListener('submit', (event) => {
+  event.preventDefault(); if (!selected || !isController()) return;
+  resumeRequestId ||= idempotencyId();
+  void action(async () => {
+    const task = await api(`/api/agents/tasks/${encodeURIComponent(selected.id)}/resume`, { method: 'POST', body: JSON.stringify({ prompt: $('resume-prompt').value, requestId: resumeRequestId }) });
+    selectedId = task.id; resumeRequestId = ''; $('resume-prompt').value = ''; $('resume-panel').open = false;
+  });
+});
+try { token = sessionStorage.getItem(storageKey) || ''; } catch { /* 默认只用内存，不要求存储权限。 */ }
+if (token) void enter();
+window.addEventListener('pagehide', () => { generation += 1; streamAbort?.abort(); clearTimeout(refreshTimer); });
+</script>
+</body>
+</html>

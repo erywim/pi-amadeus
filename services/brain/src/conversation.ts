@@ -216,6 +216,8 @@ export interface TurnContext {
   appendUserMessage?: boolean
   /** 重新生成时要排除的历史消息 id（旧助手回答不进入当前上下文） */
   omitMessageId?: string
+  /** 后台任务不读取陪伴人格、长期记忆与好感度，避免把私人上下文带给编码任务。 */
+  isolated?: boolean
   /**
    * 从哪条消息之后分叉（编辑用户消息时传原消息的 parentId）：
    * 历史只读到这个父节点，新用户消息成为它的子节点，旧分支保留。
@@ -259,7 +261,6 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
 
   // 先读历史再落库本次用户消息：避免当前消息在 LLM 上下文里出现两次
   // （一次纯文本历史、一次带视觉帧）
-  // 记忆召回与好感度摘要都来自真实数据；没有记录时返回空，不会凭空生成
   // 编辑分支：历史只读到分叉父节点；parentId 为 null 时是根分支，没有历史
   const historyPromise =
     ctx.branchParentId !== undefined
@@ -269,9 +270,9 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
       : db.listMessages(sessionId, 40)
   const [allHistoryRows, recalledMemories, affinity, knowledgePrompt] = await Promise.all([
     historyPromise,
-    recallMemories(db, userId, content),
-    summarizeAffinity(db, userId),
-    knowledgeSystemPrompt(db, userId)
+    ctx.isolated ? Promise.resolve([]) : recallMemories(db, userId, content),
+    ctx.isolated ? Promise.resolve(null) : summarizeAffinity(db, userId),
+    ctx.isolated ? Promise.resolve('') : knowledgeSystemPrompt(db, userId)
   ])
   const prepared =
     ctx.branchParentId !== undefined
@@ -320,10 +321,11 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
 
   const hasImageAttachment = attachments.some((item) => item.kind === 'image')
   const requestTarget = await resolveTarget(cfg, db, userId, hasImageAttachment ? 'vision' : 'chat')
-  const systemPrompt =
-    buildSystemPrompt(storedConfig?.systemPrompt, mode) +
-    memorySystemPrompt(recalledMemories, affinity) +
-    knowledgePrompt
+  const systemPrompt = ctx.isolated
+    ? '你是 Amadeus 工作台的任务执行 Agent。只处理本任务，不假定能访问其它会话。工具执行必须遵守审批与安全策略；报告实际完成的结果与未验证的边界。'
+    : buildSystemPrompt(storedConfig?.systemPrompt, mode) +
+      memorySystemPrompt(recalledMemories, affinity) +
+      knowledgePrompt
   if (!appendUserMessage && historyRows.at(-1)?.role !== 'user') {
     throw new Error('重新生成失败：会话末尾没有用户消息')
   }

@@ -84,7 +84,8 @@ function runCommand(
             cwd: opts.cwd,
             windowsHide: true
           })
-        : spawn('/bin/bash', ['-c', command], { cwd: opts.cwd })
+        // 独占进程组：取消本工具时只终止自己的整棵命令树，不误伤其它 Agent。
+        : spawn('/bin/bash', ['-c', command], { cwd: opts.cwd, detached: true })
 
     let stdout = ''
     let stderr = ''
@@ -133,17 +134,19 @@ function runCommand(
       finish(() => resolve({ exitCode: code, output: snapshot() }))
     })
     opts.signal?.addEventListener('abort', onAbort, { once: true })
+    // 审批放行到 spawn 之间也可能取消；已经 aborted 的 signal 不会再触发监听。
+    if (opts.signal?.aborted) onAbort()
   })
 }
 
-/** 杀进程树：win32 用 taskkill /T /F；posix 直接 SIGKILL（v1 简化） */
+/** 只杀本工具创建的命令树；POSIX 负 PID 指向 spawn 时新建的独占进程组。 */
 function killTree(pid: number | undefined): void {
   if (!pid) return
   try {
     if (process.platform === 'win32') {
       spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true })
     } else {
-      process.kill(pid, 'SIGKILL')
+      process.kill(-pid, 'SIGKILL')
     }
   } catch {
     // 进程可能已退出

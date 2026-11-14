@@ -8,15 +8,19 @@ import { compactionLevelOf, prepareTurn } from './conversation.ts'
 import { estimateAgentMessagesTokens, microCompactMessages } from './context/micro.ts'
 import { INPUT_BUDGET_TOKENS, policyOf } from './context/limits.ts'
 import type { Db } from './db.ts'
-import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
+import { createAgentStreamFn, getLlm, OUTPUT_LIMIT_ERROR, shouldCooldownProvider, type LlmTarget } from './llm.ts'
+import { createKnowledgeTool } from './knowledge/index.ts'
+import type { SavedAttachment } from './media.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { disabledSkillNames } from './plugins/registry.ts'
+import { markProviderFailure, markProviderSuccess } from './providers/failover.ts'
 import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/index.ts'
 import {
   deniedMessage,
   rejectAllForTurn,
   requestBashConfirm,
   requestToolConfirm,
+  ToolDeniedError,
   type ToolConfirmRequest
 } from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
@@ -50,9 +54,14 @@ export interface AgentTurnOptions {
   appendUserMessage?: boolean
   /** 重新生成时要排除的历史消息 id（旧助手回答） */
   omitMessageId?: string
-  /** 本次用户消息的附件（文件已落盘） */
+  /** 后台工作台任务隔离人格/记忆；普通聊天保持原路径。 */
+  isolated?: boolean
+  instructions?: string
+  model?: string
+  cwd?: string
+  /** 本次用户消息的附件（图片 / 语音 / 文件） */
   attachments?: import('./media.ts').SavedAttachment[]
-  /** 从指定父消息之后分叉 */
+  /** 从指定父消息之后分叉（编辑后重发用；null = 根分支） */
   branchParentId?: string | null
 }
 
@@ -110,8 +119,14 @@ export async function* runAgentTurn(
     content: opts.content,
     signal: opts.signal,
     appendUserMessage: opts.appendUserMessage,
-    omitMessageId: opts.omitMessageId
+    omitMessageId: opts.omitMessageId,
+    isolated: opts.isolated,
+    attachments: opts.attachments,
+    branchParentId: opts.branchParentId
   })
+  // 任务级覆盖只作用于本次执行，不回写用户模型或工作目录配置。
+  if (opts.model) prepared.target = { ...prepared.target, model: opts.model }
+  if (opts.instructions) prepared.systemPrompt += `\n\n任务角色说明：\n${opts.instructions}`
   if (opts.signal?.aborted) {
     return { full: '', target: prepared.target, usage: { input: 0, output: 0, total: 0 }, toolCalls: 0, toolNames: [] }
   }
@@ -135,6 +150,10 @@ export async function* runAgentTurn(
 
   // bash 确认握手：登记 pending → tool_confirm 事件上屏 → execute 内 await 放行
   const confirmRequest = async (toolCallId: string, command: string): Promise<boolean> => {
+    // 审批必须显示完整可执行内容；过大命令直接拒绝，不能截断后让用户批准隐藏前缀。
+    if (Buffer.byteLength(command, 'utf8') > 16 * 1024) {
+      throw new ToolDeniedError('blocked', blockReason('命令超过 16 KiB，请拆分为可完整审阅的命令'))
+    }
     const { promise, expiresAt } = requestBashConfirm({
       turnId,
       toolCallId,
@@ -200,7 +219,7 @@ export async function* runAgentTurn(
       : undefined
   const tools = toolsEnabled
     ? buildToolRegistry({
-        cfg: opts.cfg,
+        cfg: opts.cwd ? { ...opts.cfg, tools: { ...opts.cfg.tools, bashCwd: opts.cwd } } : opts.cfg,
         channel: opts.channel,
         target: prepared.target,
         confirmRequest,
