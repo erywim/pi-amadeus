@@ -11,6 +11,7 @@ import { useAgentStore } from '@renderer/stores/agentStore'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { DeleteProfileDialog, ProfileDialog, TaskDialog, type TaskDialogMode } from './AgentDialogs'
 import { DevicesPanel } from './DevicesPanel'
+import { RelayPanel } from './RelayPanel'
 import { TaskBoard } from './TaskBoard'
 import { TaskTranscript } from './TaskTranscript'
 import { useAgentText } from './translations'
@@ -112,7 +113,7 @@ export default function AgentsPage(): React.JSX.Element {
           <div className="min-h-0 min-w-0 md:col-start-2 xl:col-start-3 xl:flex xl:flex-col [&>aside]:xl:flex-1"><TaskTranscript key={selected?.id ?? 'none'} task={selected} userId={userId} onFollowup={setTaskDialog} /></div>
         </div>
       </TabsContent>
-      <TabsContent value="devices" className="mt-0 min-h-0 flex-1 overflow-y-auto"><DevicesPanel key={userId} userId={userId} /></TabsContent>
+      <TabsContent value="devices" className="mt-0 min-h-0 flex-1 overflow-y-auto"><DevicesPanel key={userId} userId={userId} /><RelayPanel userId={userId} /></TabsContent>
     </Tabs>
     {profileDialog && <ProfileDialog key={profileDialog.profile?.id ?? 'new'} profile={profileDialog.profile} onClose={() => setProfileDialog(null)} />}
     {deleteProfile && <DeleteProfileDialog profile={deleteProfile} onClose={() => setDeleteProfile(null)} />}

@@ -39,6 +39,16 @@ export interface BrainConfig {
   skills: { dir: string }
   /** 消息附件（图片/语音/文件）落盘目录 */
   media: { dir: string }
+  /** 可选的 Alma-compatible outbound Relay client；默认关闭。 */
+  relay: {
+    enabled: boolean
+    serverUrl: string
+    connectCode: string
+    registrationKey: string
+    e2eEncryption: boolean
+    userId: string
+    deviceName: string
+  }
 }
 
 export function loadConfig(): BrainConfig {
@@ -129,6 +139,15 @@ export function loadConfig(): BrainConfig {
     },
     media: {
       dir: env('MEDIA_DIR') ? resolve(env('MEDIA_DIR')) : resolve(import.meta.dirname, '../data/media')
+    },
+    relay: {
+      enabled: env('RELAY_ENABLED', 'false') === 'true',
+      serverUrl: env('RELAY_URL').trim(),
+      connectCode: env('RELAY_CONNECT_CODE').trim(),
+      registrationKey: env('RELAY_REGISTRATION_KEY'),
+      e2eEncryption: env('RELAY_E2E_ENCRYPTION', 'true') !== 'false',
+      userId: env('RELAY_USER_ID').trim(),
+      deviceName: env('RELAY_NAME', 'pi-amadeus').trim() || 'pi-amadeus'
     }
   }
 }

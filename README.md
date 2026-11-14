@@ -7,6 +7,8 @@
 
 配置、兼容性、安全边界与验证命令见 [Agent 工作台与多端协同](docs/agents-and-collaboration.md)。
 
+自托管 Relay、Docker + Caddy、Cloudflare Workers 和生产部署说明见 [Relay 与部署](docs/relay-and-deployment.md)。
+
 ### 隐私与权限
 
 任务和设备记录保存在本机 SQLite；内置任务使用既有模型服务，外部 CLI 使用其自身登录与数据策略。提示词、选定的交接上下文以及工具结果会发送给所选模型/CLI；不会自动收集或上传电脑上其它 Agent 的历史会话。后台任务不召回陪伴记忆，也不把编码结果自动写成长期记忆。

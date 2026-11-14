@@ -1,0 +1,66 @@
+# One-command deploy with automatic HTTPS:
+#
+#   cp .env.example .env    # set RELAY_DOMAIN (its DNS must point at this server)
+#   docker compose up -d
+#
+# Add `--profile turn` to also run coturn for the phone's live browser view.
+
+services:
+  relay:
+    image: pi-amadeus-relay:latest
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "8787"
+      HOST: "0.0.0.0"
+    expose:
+      - "8787"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [relay]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      RELAY_DOMAIN: ${RELAY_DOMAIN:?set RELAY_DOMAIN in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  coturn:
+    profiles: [turn]
+    image: coturn/coturn:4.6
+    restart: unless-stopped
+    network_mode: host
+    # The turn profile is optional, so TURN_SECRET must not be required while
+    # Compose parses the whole file — `${VAR:?}` would make a plain
+    # `docker compose up` fail even without the profile. Read it from .env in
+    # the container and fail clearly only when the profile actually starts.
+    env_file: .env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -z "$${TURN_SECRET:-}" ]; then
+          echo "TURN_SECRET is required when the turn profile is enabled; set it in .env" >&2
+          exit 1
+        fi
+        exec turnserver -n \
+          --listening-port=3478 \
+          --fingerprint \
+          --use-auth-secret \
+          --static-auth-secret="$${TURN_SECRET}" \
+          --realm="$${RELAY_DOMAIN}" \
+          --min-port=49160 \
+          --max-port=49200 \
+          --no-cli \
+          --no-tls \
+          --no-dtls
+
+volumes:
+  caddy_data:
+  caddy_config:

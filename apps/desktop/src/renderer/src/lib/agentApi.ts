@@ -6,7 +6,8 @@ import type {
   AgentTaskEvent,
   AgentTaskInput,
   CollaborationPairing,
-  CollaborationStatus
+  CollaborationStatus,
+  RelayStatus
 } from '@pi-amadeus/shared'
 import { BRAIN_URL } from './api'
 
@@ -183,4 +184,30 @@ export function createCollaborationPairing(
 
 export async function revokeCollaborationDevice(id: string, userId: string): Promise<void> {
   await request(`/api/collaboration/devices/${encodeURIComponent(id)}?${userQuery(userId)}`, 'DELETE')
+}
+
+/** 只在当前请求里提交的 Relay 连接参数；响应状态永远不含连接码或注册密钥。 */
+export interface RelayEnableInput {
+  serverUrl?: string
+  connectCode?: string
+  registrationKey?: string
+  e2eEncryption?: boolean
+  deviceName?: string
+  userId?: string
+}
+
+export function fetchRelayStatus(): Promise<RelayStatus> {
+  return request('/api/relay/status')
+}
+
+export function enableRelay(input: RelayEnableInput = {}): Promise<RelayStatus> {
+  return request('/api/relay/enable', 'POST', input)
+}
+
+export async function disableRelay(): Promise<void> {
+  await request('/api/relay/disable', 'POST', {})
+}
+
+export function reconnectRelay(): Promise<RelayStatus> {
+  return request('/api/relay/reconnect', 'POST', {})
 }

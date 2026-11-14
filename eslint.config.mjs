@@ -43,6 +43,38 @@ export default tseslint.config(
     }
   },
   {
+    // Node Relay 服务运行于 Node 22+；Cloudflare worker/APNs/FCM 也提供 Web API 全局。
+    files: ['services/relay/index.mjs', 'services/relay/shared.mjs', 'services/relay/apns.mjs', 'services/relay/fcm.mjs', 'services/relay/cloudflare/worker.mjs', 'services/relay/scripts/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        Request: 'readonly',
+        Response: 'readonly',
+        Headers: 'readonly',
+        ReadableStream: 'readonly',
+        WebSocketPair: 'readonly',
+        crypto: 'readonly',
+        btoa: 'readonly',
+        atob: 'readonly',
+        fetch: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly'
+      }
+    },
+    rules: {
+      '@typescript-eslint/no-this-alias': 'off',
+      'no-empty': ['error', { allowEmptyCatch: true }]
+    }
+  },
+  {
     // E2E/调试脚本运行于 Node（fetch/WebSocket 为 Node 22+ 全局）
     files: ['scripts/**/*.mjs'],
     languageOptions: {

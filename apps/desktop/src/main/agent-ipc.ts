@@ -16,13 +16,16 @@ function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   }
 }
 
+/** Relay 控制面只开放桌面端实际使用的端点，别让通用桥变成任意 API 代理。 */
+const relayPath = /^\/api\/relay\/(?:status|enable|disable|reconnect)$/
+
 function brainUrl(path: string): URL {
   const base = new URL(process.env['BRAIN_URL'] || process.env['VITE_BRAIN_URL'] || 'http://127.0.0.1:3002')
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname) || base.protocol !== 'http:') {
     throw new Error('Agent 管理桥只允许本机 Brain')
   }
   const url = new URL(path, base.origin)
-  if (url.origin !== base.origin || !/^\/api\/(agents|collaboration)(?:\/|$)/.test(url.pathname)) {
+  if (url.origin !== base.origin || !(/^\/api\/(?:agents|collaboration)(?:\/|$)/.test(url.pathname) || relayPath.test(url.pathname))) {
     throw new Error('Agent 管理桥拒绝此路径')
   }
   return url

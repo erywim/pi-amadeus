@@ -6,8 +6,10 @@ import { createHttpApp } from './http/access.ts'
 import { AgentStore } from './agents/store.ts'
 import { AgentManager } from './agents/manager.ts'
 import { CollaborationManager } from './collaboration/manager.ts'
+import { RelayManager } from './relay/manager.ts'
 import { agentRoutes } from './routes/agents.ts'
 import { collaborationRoutes } from './routes/collaboration.ts'
+import { relayRoutes } from './routes/relay.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { platformManager } from './platforms/manager.ts'
 import { proactiveScheduler } from './proactive/index.ts'
@@ -42,6 +44,7 @@ const agentStore = new AgentStore(cfg.db.path)
 const agents = new AgentManager(cfg, db, agentStore)
 await agents.init()
 const collaboration = new CollaborationManager(cfg, agents, agentStore)
+const relay = new RelayManager(cfg)
 
 // 拉起已启用的 MCP 插件：npx 首次下载可能较慢，放后台，不阻塞 HTTP 服务可用
 void syncMcpPlugins(db)
@@ -62,6 +65,7 @@ app.get('/api/health', (c) =>
 
 app.route('/api', agentRoutes(agents, agentStore))
 app.route('/api', collaborationRoutes(collaboration))
+app.route('/api', relayRoutes(relay))
 app.route('/api', chatRoutes(cfg, db))
 app.route('/api', voiceRoutes(cfg, db))
 app.route('/api', sessionRoutes(db))
@@ -92,6 +96,9 @@ const server = serve({ fetch: app.fetch, hostname: cfg.host, port: cfg.port }, (
   console.log(`[brain] LLM: ${cfg.llm.model} @ ${cfg.llm.baseUrl}`)
   console.log(`[brain] SQLite: ${cfg.db.path}`)
   console.log(`[brain] 飞书: ${cfg.feishu.enabled ? '启用' : '停用'}`)
+  console.log(`[brain] Relay: ${cfg.relay.enabled ? '启用' : '停用'}`)
+  // 必须等 HTTP 服务真正监听后再拨号 Relay：客户端会把手机请求转发回本机端口。
+  void relay.startIfEnabled()
 })
 
 // 优雅退出：先停止接受任务与远程订阅，再等待自己启动的执行器退出，最后关库。
@@ -102,6 +109,8 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     shuttingDown = true
     server.close()
     void (async () => {
+      // 先断开 Relay 隧道，再关闭数据库与存储，避免退出期间仍有转发请求落库。
+      await relay.shutdown()
       await collaboration.shutdown()
       await agents.shutdown()
       // 先断开 MCP 子进程与平台连接，再关数据库：退出后不留孤儿连接
