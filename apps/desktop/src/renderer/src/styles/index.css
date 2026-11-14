@@ -474,7 +474,7 @@ body.theme-amadeus .stage-edge[data-status='speaking']::after {
   }
 }
 
-@keyframes agent-task-arrival-reduced {
+@keyframes motion-fade-in {
   from {
     opacity: 0;
   }
@@ -483,20 +483,21 @@ body.theme-amadeus .stage-edge[data-status='speaking']::after {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .anim-msg {
-    animation: msg-in 180ms var(--ease-out);
-  }
-
+  .anim-msg,
   .anim-view {
-    animation: view-in 180ms var(--ease-out);
+    animation: motion-fade-in 180ms var(--ease-out);
   }
 
   .ui-pressable {
     transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out), border-color 150ms var(--ease-out);
   }
 
+  .ui-pressable:active {
+    transform: none;
+  }
+
   .agent-task-arriving {
-    animation: agent-task-arrival-reduced 180ms var(--ease-out) both;
+    animation: motion-fade-in 180ms var(--ease-out) both;
   }
 
   .agent-arrival-trail-path {
