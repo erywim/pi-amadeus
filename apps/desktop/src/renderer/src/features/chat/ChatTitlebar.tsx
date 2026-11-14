@@ -10,6 +10,7 @@ import { exportSessionMarkdown } from '@renderer/lib/exportSession'
 import { cn } from '@renderer/lib/utils'
 import { useSessionStore } from '@renderer/stores/sessionStore'
 import { useUiStore } from '@renderer/stores/uiStore'
+import { WorldlineBadge } from './WorldlineBadge'
 
 /** 文本模式的标题栏：侧栏开关 + 标题（可重命名） + 渠道徽标 + 轮次统计 + 删除 */
 export function ChatTitlebar({
@@ -199,6 +200,7 @@ export function ChatTitlebar({
       >
         {t(`channels.${session.channel}`)}
       </Badge>
+      <WorldlineBadge />
       <span className="flex-1" />
       {usage && usage.totalTokens > 0 && (
         <span

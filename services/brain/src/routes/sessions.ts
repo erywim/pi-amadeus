@@ -1,8 +1,17 @@
 import { unlinkSync } from 'node:fs'
 import { Hono } from 'hono'
-import type { BranchTreeNode, BranchTreeResponse, MessageSearchHit, Session } from '@pi-amadeus/shared'
+import type {
+  BranchTreeNode,
+  BranchTreeResponse,
+  Message,
+  MessageSearchHit,
+  Session,
+  SessionMessages,
+  WorldlineSummary
+} from '@pi-amadeus/shared'
 import type { Db } from '../db.ts'
 import { toPublicMessage } from '../media.ts'
+import { latestLeafUnder, siblingIdsOf, worldlineStateOf, worldlinesOf } from '../worldline.ts'
 
 /** 会话与消息读取：列表 / 详情 / 删除 / 搜索 / 用量（创建是懒的——首条消息时由 chat/voice 落行） */
 export function sessionRoutes(db: Db): Hono {
@@ -45,9 +54,49 @@ export function sessionRoutes(db: Db): Hono {
     return c.json({ hits })
   })
 
+  /** 活动世界线（一条从根到活动叶的路径）+ 世界线元信息 */
   app.get('/sessions/:id/messages', async (c) => {
-    const rows = await db.listMessages(c.req.param('id'))
-    return c.json({ messages: rows.map(toPublicMessage) })
+    return c.json(await messagePage(db, c.req.param('id')))
+  })
+
+  /**
+   * 世界线跳跃 / 回退：toLeaf=true 跳到目标分支最新叶；false 精确回退到节点。
+   */
+  app.post('/sessions/:id/head', async (c) => {
+    const sessionId = c.req.param('id')
+    const body = (await c.req.json().catch(() => null)) as { messageId?: unknown; toLeaf?: unknown } | null
+    const messageId = typeof body?.messageId === 'string' ? body.messageId : ''
+    if (!messageId) return c.json({ error: 'messageId 必填' }, 400)
+    const tree = await db.listAllMessages(sessionId)
+    const node = tree.find((item) => item.id === messageId)
+    if (!node) return c.json({ error: '消息不属于该会话' }, 404)
+    const target = body?.toLeaf === true ? latestLeafUnder(tree, messageId) : node
+    if (!target) return c.json({ error: '目标世界线不存在' }, 404)
+    await db.setActiveLeaf(sessionId, target.id)
+    await db.clearCompaction(sessionId)
+    return c.json(await messagePage(db, sessionId))
+  })
+
+  /** 世界线列表（跳转面板用） */
+  app.get('/sessions/:id/worldlines', async (c) => {
+    const sessionId = c.req.param('id')
+    const [tree, head, rows] = await Promise.all([
+      db.listAllMessages(sessionId),
+      db.getActiveLeafId(sessionId),
+      db.listMessages(sessionId)
+    ])
+    const entries = worldlinesOf(tree, head ?? rows.at(-1)?.id ?? null)
+    const leaves = await db.listAllMessages(sessionId)
+    const byId = new Map(leaves.map((row) => [row.id, row]))
+    const worldlines: WorldlineSummary[] = entries.map((entry) => ({
+      leafId: entry.leafId,
+      index: entry.index,
+      divergence: entry.divergence,
+      updatedAt: entry.updatedAt,
+      active: entry.active,
+      preview: previewOf(byId.get(entry.leafId)?.content ?? '')
+    }))
+    return c.json({ worldlines })
   })
 
   /**
@@ -221,6 +270,31 @@ function previewOf(content: string): string {
     .replace(/\s+/g, ' ')
     .trim()
   return flat.length > 100 ? `${flat.slice(0, 100)}…` : flat
+}
+
+/** 活动世界线消息页，附带兄弟列表和世界线状态。 */
+async function messagePage(db: Db, sessionId: string): Promise<SessionMessages> {
+  const [rows, tree, head] = await Promise.all([
+    db.listMessages(sessionId),
+    db.listAllMessages(sessionId),
+    db.getActiveLeafId(sessionId)
+  ])
+  const effectiveHead = head ?? rows.at(-1)?.id ?? null
+  const messages: Message[] = rows.map((row) => ({
+    ...toPublicMessage(row),
+    ...(siblingIdsOf(tree, row.id).length > 1 ? { siblingIds: siblingIdsOf(tree, row.id) } : {})
+  }))
+  const state = worldlineStateOf(tree, effectiveHead)
+  return {
+    messages,
+    worldline: {
+      headId: state.headId,
+      index: state.index,
+      total: state.total,
+      divergence: state.divergence,
+      rewound: state.rewound
+    }
+  }
 }
 
 /** 命中位置前后各 40 字（不区分大小写；找不到时取开头） */

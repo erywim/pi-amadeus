@@ -159,7 +159,9 @@
       "search": "ウェブ検索",
       "fetch_url": "ページ読取",
       "bash": "ターミナル",
-      "use_skill": "スキル読込"
+      "use_skill": "スキル読込",
+      "workflow": "動的ワークフロー",
+      "compact": "コンテキスト圧縮"
     },
     "toolStatus": {
       "running": "実行中",

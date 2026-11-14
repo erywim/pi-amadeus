@@ -159,7 +159,9 @@
       "search": "联网搜索",
       "fetch_url": "读取网页",
       "bash": "终端命令",
-      "use_skill": "读取技能"
+      "use_skill": "读取技能",
+      "workflow": "动态工作流",
+      "compact": "上下文压缩"
     },
     "toolStatus": {
       "running": "执行中",

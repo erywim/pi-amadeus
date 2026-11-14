@@ -45,8 +45,6 @@ export interface Message {
   ttsText?: string | null
   /** 回合发起时的模式 */
   mode: TurnMode
-  /** 分支树父节点；根消息为 null */
-  parentId?: string | null
   /** 同一父节点下的第几条 / 总数（分支切换器） */
   branchIndex?: number
   branchCount?: number
@@ -60,6 +58,52 @@ export interface Message {
    */
   thinking?: string
   createdAt: number
+  /** 父消息 id（会话是一棵树；根消息为 null） */
+  parentId?: string | null
+  /**
+   * 同一父节点下的兄弟（按创建时间排序，含自己）。只有"活动世界线"上的
+   * 消息会带；siblingCount > 1 表示这里发生过世界线分叉。
+   */
+  siblingIds?: string[]
+}
+
+/**
+ * 世界线：会话树里从根到某个叶子的一条路径。
+ * 同一会话的所有世界线共享前缀，分叉点是某条消息有了第二个子节点。
+ */
+export interface WorldlineInfo {
+  /** 当前活动末端（叶子，或回退到中途的节点）；空会话为 null */
+  headId: string | null
+  /** 当前世界线序号（1-based，按叶子最早创建时间排序） */
+  index: number
+  /** 本会话的世界线总数（叶子数） */
+  total: number
+  /** 世界线变动率：由当前末端 id 稳定推导，1.000000 ~ 1.999999（主题展示值） */
+  divergence: number
+  /** 是否停在世界线中途（回退状态）：从这里继续会分叉出一条新世界线 */
+  rewound: boolean
+}
+
+/** 会话消息页：活动世界线的完整路径 + 世界线元信息 */
+export interface SessionMessages {
+  messages: Message[]
+  worldline: WorldlineInfo
+}
+
+/** 世界线跳转结果（服务端返回跳转后的消息页，省一次往返） */
+export type JumpResult = SessionMessages
+
+/** 世界线列表项（跳转面板用） */
+export interface WorldlineSummary {
+  leafId: string
+  index: number
+  divergence: number
+  /** 这条世界线最后一句话的摘要（用户消息优先） */
+  preview: string
+  /** 世界线末端时间 */
+  updatedAt: number
+  /** 是否当前活动世界线 */
+  active: boolean
 }
 
 export interface Session {

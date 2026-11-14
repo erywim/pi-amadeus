@@ -2,13 +2,16 @@ import { randomUUID } from 'node:crypto'
 import {
   ATTACHMENT_LIMITS,
   type Channel,
+  type CompactionLevel,
   type SseEvent,
   type TurnMode,
   type UserConfig
 } from '@pi-amadeus/shared'
 import type { BrainConfig } from './config.ts'
+import { buildHistory, type CompactionReport } from './context/compact.ts'
 import type { Db, MessageMediaRow } from './db.ts'
 import { streamText, supportsVision, toContextMessages, type LlmTarget } from './llm.ts'
+import { summaryMessageContent } from './context/prompt.ts'
 import { knowledgeSystemPrompt } from './knowledge/index.ts'
 import { readAttachment, type SavedAttachment } from './media.ts'
 import { isProviderCoolingDown } from './providers/failover.ts'
@@ -142,7 +145,11 @@ export function defaultUserConfig(cfg: BrainConfig): UserConfig {
     outputLanguage: 'zh',
     systemPrompt: '',
     temperature: 0.8,
-    tools: { enabled: true }
+    tools: { enabled: true },
+    // 缺省 balanced：只在接近上下文上限时才摘要，普通会话无额外开销
+    compaction: { level: 'balanced' },
+    // 缺省 off：动态工作流会并发调用多个子代理，必须由用户显式开启档位
+    workflow: { level: 'off' }
   }
 }
 
@@ -195,13 +202,15 @@ export interface TurnContext {
   channel: Channel
   mode: TurnMode
   content: string
+  /** 回合取消信号：中断上下文压缩的摘要请求（不写边界） */
+  signal?: AbortSignal
   /** 语音模式附加的视觉帧（仅本次 LLM 请求，不落库） */
   frames?: string[]
   /** 本次用户消息的附件（文件已落盘；图片进视觉输入，文本进上下文） */
   attachments?: SavedAttachment[]
   /**
    * 是否把本次用户消息写入会话。缺省 true（普通回合）；
-   * 重新生成时传 false——历史里已经有那条用户消息，再写一遍会重复两问一答。
+   * 重新生成时传 false——活动世界线末端已经有那条用户消息，再写一遍会重复两问一答。
    */
   appendUserMessage?: boolean
   /** 重新生成时要排除的历史消息 id（旧助手回答不进入当前上下文） */
@@ -221,8 +230,16 @@ export interface PreparedTurn {
   messages: ReturnType<typeof toContextMessages>
   /** prepareTurn 已读取的用户配置（工具开关等，避免调用方二次 DB 读） */
   userConfig: UserConfig | null
+  /** 本回合新做的上下文压缩（未压缩时为 undefined） */
+  compaction?: CompactionReport
   /** 本次落库的用户消息 id（重新生成/编辑重发等不写用户消息时为 undefined） */
   userMessageId?: string
+}
+
+/** 压缩档位：配置缺省按 balanced（与 UI 默认一致）；非法值回落缺省 */
+export function compactionLevelOf(config: UserConfig | null): CompactionLevel {
+  const level = config?.compaction?.level
+  return level === 'off' || level === 'aggressive' || level === 'balanced' ? level : 'balanced'
 }
 
 /** 会话上下文准备：懒建会话行、保存用户消息、组装 LLM 上下文 */
@@ -232,6 +249,12 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   // 编辑回合先只准备输入，模型成功后才由路由提交新分支，失败不切走旧路径
   const deferUserMessage = appendUserMessage && ctx.branchParentId !== undefined
   await db.touchSession({ id: sessionId, userId, channel })
+
+  // 用户配置与目标模型先解析：压缩档位来自配置，摘要请求需要 target
+  const storedConfig = await db.getUserConfig(userId)
+  const target = await resolveTarget(cfg, db, userId)
+  const compactionLevel = compactionLevelOf(storedConfig)
+  const headId = await db.getActiveLeafId(sessionId)
 
   // 先读历史再落库本次用户消息：避免当前消息在 LLM 上下文里出现两次
   // （一次纯文本历史、一次带视觉帧）
@@ -243,26 +266,32 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
         ? db.listMessages(sessionId, 40, ctx.branchParentId)
         : Promise.resolve([])
       : db.listMessages(sessionId, 40)
-  const [storedConfig, allHistoryRows, recalledMemories, affinity, knowledgePrompt] =
-    await Promise.all([
-      db.getUserConfig(userId),
-      historyPromise,
-      recallMemories(db, userId, content),
-      summarizeAffinity(db, userId),
-      knowledgeSystemPrompt(db, userId)
-    ])
+  const [allHistoryRows, recalledMemories, affinity, knowledgePrompt] = await Promise.all([
+    historyPromise,
+    recallMemories(db, userId, content),
+    summarizeAffinity(db, userId),
+    knowledgeSystemPrompt(db, userId)
+  ])
+  const prepared =
+    ctx.branchParentId !== undefined
+      ? { rows: allHistoryRows, summary: null }
+      : await buildHistory({
+          db,
+          target,
+          sessionId,
+          level: compactionLevel,
+          signal: ctx.signal
+        })
 
-  // 重新生成：旧助手回答既不进上下文、也不删——等新回答成功落库时再替换，
-  // 生成失败时旧回答仍在，用户不会因为一次失败丢掉上一版回复。
+  const baseHistoryRows = ctx.branchParentId !== undefined ? allHistoryRows : prepared.rows
   const historyRows = ctx.omitMessageId
-    ? allHistoryRows.filter((row) => row.id !== ctx.omitMessageId)
-    : allHistoryRows
+    ? baseHistoryRows.filter((row) => row.id !== ctx.omitMessageId)
+    : baseHistoryRows
 
   const attachments = ctx.attachments ?? []
   const userMessageId = appendUserMessage ? randomUUID() : undefined
   if (userMessageId && !deferUserMessage) {
-    const parentId =
-      ctx.branchParentId !== undefined ? ctx.branchParentId : (historyRows.at(-1)?.id ?? null)
+    const parentId = ctx.branchParentId !== undefined ? ctx.branchParentId : headId
     await db.appendMessage({
       id: userMessageId,
       sessionId,
@@ -289,7 +318,7 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   }
 
   const hasImageAttachment = attachments.some((item) => item.kind === 'image')
-  const target = await resolveTarget(cfg, db, userId, hasImageAttachment ? 'vision' : 'chat')
+  const requestTarget = await resolveTarget(cfg, db, userId, hasImageAttachment ? 'vision' : 'chat')
   const systemPrompt =
     buildSystemPrompt(storedConfig?.systemPrompt, mode) +
     memorySystemPrompt(recalledMemories, affinity) +
@@ -306,18 +335,22 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
       createdAt: m.createdAt
     }))
   )
+  // 摘要放在历史最前面：它是背景，不是本轮用户请求
+  if (prepared.summary) {
+    messages.unshift({ role: 'user', content: summaryMessageContent(prepared.summary), timestamp: 0 })
+  }
 
   // 语音模式：本次用户消息附加最近 2 帧视觉输入（image content 块）。
   // 纯文本模型（如 deepseek-v4-pro）收到 image 块会直接 400——按模型能力门控
   const hasFrames = mode === 'voice' && frames !== undefined && frames.length > 0
-  if (hasFrames && !target.vision) {
-    console.warn(`[voice] 模型 ${target.model} 不支持图像输入，跳过 ${frames.length} 帧视觉输入`)
+  if (hasFrames && !requestTarget.vision) {
+    console.warn(`[voice] 模型 ${requestTarget.model} 不支持图像输入，跳过 ${frames.length} 帧视觉输入`)
   }
-  const attachFrames = hasFrames && target.vision
+  const attachFrames = hasFrames && requestTarget.vision
 
   const imageAttachments = attachments.filter((item) => item.kind === 'image')
   const visionNote =
-    imageAttachments.length > 0 && !target.vision
+    imageAttachments.length > 0 && !requestTarget.vision
       ? `\n\n[用户发送了 ${imageAttachments.length} 张图片，但当前模型不支持图像输入]`
       : ''
   const userText = content + savedMediaContext(attachments) + visionNote
@@ -325,7 +358,7 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     ...(attachFrames
       ? frames.map((f) => ({ type: 'image' as const, data: f, mimeType: 'image/jpeg' as const }))
       : []),
-    ...(target.vision
+    ...(requestTarget.vision
       ? imageAttachments.map((item) => ({
           type: 'image' as const,
           data: readAttachment(item.path).toString('base64'),
@@ -343,7 +376,14 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
       : { role: 'user' as const, content: userText, timestamp: Date.now() }
   messages.push(userMessage)
 
-  return { target, systemPrompt, messages, userConfig: storedConfig, userMessageId }
+  return {
+    target: requestTarget,
+    systemPrompt,
+    messages,
+    userConfig: storedConfig,
+    compaction: prepared.report,
+    userMessageId
+  }
 }
 
 /** 保存助手消息 + 首轮触发异步标题生成 */
@@ -358,6 +398,8 @@ export async function finishTurn(
     ttsText: string | null
     target: LlmTarget
     userText: string
+    /** 本回合用户消息 id（助手回复以它为父节点；重新生成时复用原用户消息） */
+    userMessageId?: string
     /** 助手回复挂在哪条用户消息之后（分支树父节点）；缺省接当前活跃叶 */
     parentMessageId?: string
     /** 本回合工具调用次数（好感度事件用） */
@@ -370,20 +412,22 @@ export async function finishTurn(
 ): Promise<string> {
   const assistantId = randomUUID()
   const countBefore = await db.countMessages(input.sessionId)
+  const parentId = input.parentMessageId ?? input.userMessageId ?? null
   // 旧回复不删除：它留在原分支，新回复作为子节点追加并成为活跃叶
   await db.appendMessage({
     id: assistantId,
     sessionId: input.sessionId,
+    parentId,
     role: 'assistant',
     content: input.content,
     ttsText: input.ttsText,
     mode: input.mode,
-    ...(input.parentMessageId ? { parentId: input.parentMessageId } : {}),
     ...(input.changedFiles && input.changedFiles.length > 0
       ? { changedFiles: input.changedFiles }
       : {}),
     ...(input.thinking ? { thinking: input.thinking } : {})
   })
+  await db.setActiveLeaf(input.sessionId, assistantId)
   await db.touchSession({ id: input.sessionId, userId: input.userId, channel: input.channel })
 
   // 首轮问答（此前只有 1 条用户消息）→ 异步生成标题，不阻塞 done
@@ -431,8 +475,9 @@ export async function* runVoiceTurn(
   signal: AbortSignal,
   ttsConfig: TtsConfig,
   onUsage?: (usage: { input: number; output: number; total: number }) => void
-): AsyncGenerator<SseEvent, { cn: string; jp: string }> {
-  const { target, systemPrompt, messages } = await prepareTurn(ctx)
+): AsyncGenerator<SseEvent, { cn: string; jp: string; userMessageId: string }> {
+  // 语音回合同样走压缩（长会话的语音对话也会撞上限）；signal 用于中断摘要请求
+  const { target, systemPrompt, messages, userMessageId } = await prepareTurn({ ...ctx, signal })
 
   const parser = new BilingualParser()
   const jpQueue = new AsyncQueue<string>()
@@ -489,5 +534,5 @@ export async function* runVoiceTurn(
     yield { type: 'audio', data: audio.data, sampleRate: audio.sampleRate }
   }
 
-  return { cn: parser.cn, jp: parser.jp }
+  return { cn: parser.cn, jp: parser.jp, userMessageId: userMessageId ?? '' }
 }

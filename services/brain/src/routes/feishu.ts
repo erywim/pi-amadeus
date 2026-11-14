@@ -121,6 +121,7 @@ export function feishuRoutes(cfg: BrainConfig, db: Db): Hono {
       ttsText: null,
       target,
       userText: text,
+      userMessageId: result.userMessageId,
       toolCalls: result.toolCalls,
       ...(result.thinking ? { thinking: result.thinking } : {})
     })

@@ -4,8 +4,10 @@ import type {
   Message,
   MessageAttachment,
   Session,
+  SessionMessages,
   SseEvent,
   StreamState,
+  WorldlineInfo,
   ToolActivityItem,
   ToolStatus
 } from '@pi-amadeus/shared'
@@ -15,6 +17,7 @@ import {
   fetchCurrentUser,
   fetchMessages,
   fetchSessions,
+  jumpWorldline,
   renameSessionApi,
   setSessionArchivedApi,
   setSessionPinnedApi,
@@ -85,6 +88,8 @@ interface SessionStreamState extends StreamState {
 interface SessionState {
   sessions: Session[]
   messages: Record<string, Message[]>
+  /** sessionId → 当前活动世界线（序号 / 总数 / 变动率 / 是否回退中） */
+  worldlines: Record<string, WorldlineInfo>
   activeSessionId: string | null
   stream: SessionStreamState
   userId: string | null
@@ -122,6 +127,12 @@ interface SessionState {
   toggleArchive: (id: string) => Promise<void>
   /** 消息分支切换：-1 上一个分支 / 1 下一个分支 */
   switchBranch: (messageId: string, direction: -1 | 1) => Promise<void>
+  /** 世界线跳跃：切到目标消息所在分支的最新叶子 */
+  switchSibling: (messageId: string, direction: -1 | 1) => void
+  /** 回退到某条消息，下一条消息将从这里分叉 */
+  rewindTo: (messageId: string) => void
+  /** 从世界线面板跳到某个叶子 */
+  jumpToWorldline: (leafId: string) => void
   stopStreaming: () => void
   /** bash 确认卡应答（允许/拒绝） */
   respondToolConfirm: (approved: boolean) => void
@@ -263,7 +274,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     if (ownerSessionId) {
       const sessionId = ownerSessionId
       void fetchMessages(sessionId)
-        .then((serverMessages) => {
+        .then((page) => {
+          const serverMessages = page.messages
           set((s) => {
             // 新一轮已经开始：这次回读的旧快照不能碰当前消息列
             if (s.stream.streaming && s.stream.sessionId === sessionId) return {}
@@ -434,6 +446,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         void get().refreshSession(sessionId)
         // 标题是服务端首轮后异步生成的：静默刷新列表拿标题/消息数
         void get().refreshSessions()
+        // 拉一次服务端权威页面：本地追加的消息没有 parentId / siblingIds，
+        // 只有服务端的活动世界线才知道这次回复是不是分叉（标题栏与箭头要用）
+        void get().refreshSession(sessionId)
         // 回合结束后好感度会变：刷新侧栏的关系读数（服务端按真实事件累计）
         const { userId } = get()
         if (userId) void useMemoryStore.getState().refreshAffinity(userId)
@@ -451,9 +466,35 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     }
   }
 
+  /** 把服务端返回的世界线页面写进缓存（消息 + 世界线元信息） */
+  function applyPage(sessionId: string, page: SessionMessages): void {
+    set((s) => ({
+      messages: { ...s.messages, [sessionId]: page.messages },
+      worldlines: { ...s.worldlines, [sessionId]: page.worldline }
+    }))
+  }
+
+  /**
+   * 世界线跳跃（异步）：成功后整体替换页面。
+   * 跳线后旧世界线的错误卡与停止快照不再适用，一并清掉——否则用户会在
+   * 另一条世界线上看到上一段分支的报错，误以为是当前这段出了问题。
+   */
+  async function jump(sessionId: string, messageId: string, toLeaf: boolean): Promise<void> {
+    const page = await jumpWorldline(sessionId, messageId, toLeaf)
+    applyPage(sessionId, page)
+    set((s) => {
+      const turnErrors = { ...s.turnErrors }
+      delete turnErrors[sessionId]
+      const stoppedLogs = { ...s.stoppedLogs }
+      delete stoppedLogs[sessionId]
+      return { turnErrors, stoppedLogs }
+    })
+  }
+
   return {
     sessions: [],
     messages: {},
+    worldlines: {},
     activeSessionId: null,
     stream: { streaming: false, tools: [] },
     userId: null,
@@ -505,11 +546,11 @@ export const useSessionStore = create<SessionState>()((set, get) => {
 
     refreshSession: async (sessionId) => {
       try {
-        const messages = await fetchMessages(sessionId)
+        const page = await fetchMessages(sessionId)
         // 回读期间用户已经发了新回合：旧快照不能覆盖正在流式的消息列
         const stream = get().stream
         if (stream.streaming && stream.sessionId === sessionId) return
-        set((s) => ({ messages: { ...s.messages, [sessionId]: messages } }))
+        applyPage(sessionId, page)
         void get().refreshSessions()
       } catch (error) {
         console.warn('[session] 会话消息刷新失败：', error)
@@ -541,6 +582,10 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       set((s) => ({
         sessions: [session, ...s.sessions],
         messages: { ...s.messages, [id]: [] },
+        worldlines: {
+          ...s.worldlines,
+          [id]: { headId: null, index: 0, total: 0, divergence: 1, rewound: false }
+        },
         activeSessionId: id
       }))
       return id
@@ -570,9 +615,12 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         }
         const queued = { ...s.queued }
         delete queued[id]
+        const worldlines = { ...s.worldlines }
+        delete worldlines[id]
         return {
           sessions,
           messages,
+          worldlines,
           stoppedLogs,
           workLogs,
           turnErrors,
@@ -724,6 +772,29 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         console.warn('[session] 切换分支失败：', error)
         throw error
       }
+    },
+
+    switchSibling: (messageId, direction) => {
+      const { activeSessionId, stream, messages } = get()
+      if (!activeSessionId || stream.streaming) return
+      const message = (messages[activeSessionId] ?? []).find((item) => item.id === messageId)
+      const siblings = message?.siblingIds ?? []
+      const index = siblings.indexOf(messageId)
+      const next = index >= 0 ? siblings[index + direction] : undefined
+      if (!next) return
+      void jump(activeSessionId, next, true).catch((error) => console.warn('[session] 世界线跳转失败：', error))
+    },
+
+    rewindTo: (messageId) => {
+      const { activeSessionId, stream } = get()
+      if (!activeSessionId || stream.streaming) return
+      void jump(activeSessionId, messageId, false).catch((error) => console.warn('[session] 回退失败：', error))
+    },
+
+    jumpToWorldline: (leafId) => {
+      const { activeSessionId, stream } = get()
+      if (!activeSessionId || stream.streaming) return
+      void jump(activeSessionId, leafId, true).catch((error) => console.warn('[session] 世界线跳转失败：', error))
     },
 
     stopStreaming: () => {
