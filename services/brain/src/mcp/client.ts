@@ -14,6 +14,8 @@ export interface McpServerSpec {
   command: string
   args: string[]
   env?: Record<string, string>
+  /** 由内置插件声明的能力；自定义 MCP 不会获得高风险标记。 */
+  capabilities?: readonly string[]
 }
 
 export interface McpTool {
@@ -50,6 +52,7 @@ const STDERR_TAIL = 4000
 
 export class McpStdioClient {
   readonly spec: McpServerSpec
+  private readonly onExit?: (error: Error) => void
   private proc: ChildProcessWithoutNullStreams | null = null
   private nextId = 1
   private pending = new Map<number, PendingRequest>()
@@ -58,8 +61,9 @@ export class McpStdioClient {
   private closed = false
   private initialized = false
 
-  constructor(spec: McpServerSpec) {
+  constructor(spec: McpServerSpec, onExit?: (error: Error) => void) {
     this.spec = spec
+    this.onExit = onExit
   }
 
   get isReady(): boolean {
@@ -82,18 +86,20 @@ export class McpStdioClient {
       this.stderrTail = (this.stderrTail + chunk).slice(-STDERR_TAIL)
     })
     proc.on('error', (error) => {
-      this.failAll(new Error(`MCP 服务启动失败（${this.spec.command}）：${error.message}`))
+      const failure = new Error(`MCP 服务启动失败（${this.spec.command}）：${error.message}`)
+      this.failAll(failure)
+      this.onExit?.(failure)
     })
     proc.on('exit', (code, signal) => {
       this.closed = true
       const tail = this.stderrTail.trim()
-      this.failAll(
-        new Error(
-          `MCP 服务已退出（code=${code ?? 'null'}${signal ? `, signal=${signal}` : ''}）${
-            tail ? `：${tail.slice(-400)}` : ''
-          }`
-        )
+      const error = new Error(
+        `MCP 服务已退出（code=${code ?? 'null'}${signal ? `, signal=${signal}` : ''}）${
+          tail ? `：${tail.slice(-400)}` : ''
+        }`
       )
+      this.failAll(error)
+      this.onExit?.(error)
     })
 
     await this.request(

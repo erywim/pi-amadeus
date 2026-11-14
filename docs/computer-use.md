@@ -15,7 +15,8 @@
          → image content 回到下一次模型请求
 ```
 
-- `services/brain/src/tools/computer.ts`：校验并执行单个动作，截图作为 pi 原生 image block 返回。
+- `services/brain/src/tools/computer.ts`：校验并执行内置 Electron fallback 的单个动作，截图作为 pi 原生 image block 返回。
+- `services/brain/src/plugins/catalog.ts`：提供显式安装的 Open Computer Use MCP 目录项；真实跨应用动作由外部 runtime 执行。
 - `services/brain/src/tools/desktop-bridge.ts`：一次性 pending 请求、串行、超时和 Abort 清理。
 - `services/brain/src/routes/desktop-result.ts`：只接受匹配 `turnId/toolCallId/requestId` 的回执。
 - `apps/desktop/src/main/computer-control.ts`：只接受已登记的 Electron `WebContents`，不执行 shell/脚本，不控制其它应用。
@@ -31,7 +32,8 @@
 - 文本最多 2000 字符，按键最多 4 个且必须在白名单，拖拽最多 64 个点，截图结果最多约 8 MB。
 - 截图不落库、不写普通日志、不进入会话历史；只作为当前 Agent 上下文的 image block 传给模型。
 - SSE 断开、用户停止、窗口销毁或超时会清除 pending；迟到回执返回 404。
-- 这是窗口级能力，不是 Codex Sky/native 全桌面能力；macOS Accessibility、其它应用、锁屏桌面和系统级快捷键不在范围内。
+- 这是内置 fallback 的窗口级能力，不是 Codex Sky/native 全桌面能力；macOS Accessibility、其它应用、锁屏桌面和系统级快捷键不在 fallback 范围内。
+- 安装并启用 `Open Computer Use` MCP 插件后，真实跨应用 Computer Use 由外部 `open-computer-use mcp` runtime 提供；它只在 desktop + vision + 用户显式开关下进入模型上下文，并且每个 MCP 动作都需要确认。插件未安装、未连接或权限不足时，fallback 仍可用。
 
 ## 官方协议依据
 

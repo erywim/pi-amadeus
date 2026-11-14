@@ -170,7 +170,7 @@
     "toolConfirmExpires": "{{seconds}} 秒後に自動拒否",
     "toolConfirmExpired": "タイムアウトしました。コマンドは実行されていません",
     "computerConfirmTitle": "コンピューター操作の確認",
-    "computerConfirmDesc": "アシスタントが Amadeus のウィンドウを操作しようとしています。実行前に確認してください。スクリーンショットはモデルに送信されます。"
+    "computerConfirmDesc": "アシスタントが Open Computer Use を通じてデスクトップアプリを操作しようとしています。対象と引数を確認してください。スクリーンショットや UI 状態がモデルに送信される場合があります。"
   },
   "companion": {
     "charName": "牧瀬紅莉栖",

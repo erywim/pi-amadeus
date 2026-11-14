@@ -170,7 +170,7 @@
     "toolConfirmExpires": "{{seconds}} 秒后自动拒绝",
     "toolConfirmExpired": "已超时，命令未执行",
     "computerConfirmTitle": "电脑操作确认",
-    "computerConfirmDesc": "助手请求操作当前 Amadeus 窗口，请确认动作和目标后放行。屏幕截图会发送给模型。"
+    "computerConfirmDesc": "助手请求通过 Open Computer Use 操作桌面应用，请确认目标和参数后放行。截图或界面状态可能会发送给模型。"
   },
   "companion": {
     "charName": "牧濑红莉栖",

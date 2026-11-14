@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import type { CatalogEntry, InstalledPlugin } from '@pi-amadeus/shared'
+import type { CatalogEntry, InstalledPlugin, McpCapability } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
 import type { Db, PluginRow } from '../db.ts'
 import { mcpManager } from '../mcp/manager.ts'
@@ -76,7 +76,10 @@ export async function mcpSpecsOf(db: Db): Promise<McpServerSpec[]> {
             )
           )
         : undefined
-    specs.push({ id: row.id, name: row.name, command, args, env })
+    const capabilities = Array.isArray(row.config.capabilities)
+      ? row.config.capabilities.filter((value): value is McpCapability => value === 'computer-use')
+      : undefined
+    specs.push({ id: row.id, name: row.name, command, args, env, capabilities })
   }
   return specs
 }
@@ -171,6 +174,7 @@ export async function installPlugin(
   if (!preset) return { ok: false, code: 'badRequest', message: '插件缺少 MCP 启动配置' }
   const args = [...preset.args]
   const env: Record<string, string> = { ...(preset.env ?? {}) }
+  const capabilities = preset.capabilities?.filter((capability): capability is McpCapability => capability === 'computer-use')
   for (const field of preset.fields ?? []) {
     const raw = (fields[field.key] ?? field.default ?? '').trim()
     if (!raw) {
@@ -187,10 +191,17 @@ export async function installPlugin(
     kind: 'mcp',
     name: entry.name,
     enabled: true,
-    config: { transport: 'stdio', command: preset.command, args, env }
+    config: { transport: 'stdio', command: preset.command, args, env, capabilities }
   })
   // 安装即尝试连接：连不上不算安装失败（用户可能还需要装 npx/uv 或改配置）
-  const spec: McpServerSpec = { id, name: entry.name, command: preset.command, args, env }
+  const spec: McpServerSpec = {
+    id,
+    name: entry.name,
+    command: preset.command,
+    args,
+    env,
+    capabilities
+  }
   await mcpManager.connect(spec)
   return { ok: true, plugin: toInstalled((await db.getPlugin(id))!) }
 }
@@ -217,6 +228,7 @@ export async function addCustomMcp(
     enabled: true,
     config: { transport: 'stdio', command, args, env }
   })
+  // 自定义 MCP 永远不获得 computer-use 能力标记，避免绕过内置安全门。
   await mcpManager.connect({ id, name, command, args, env })
   return { ok: true, plugin: toInstalled((await db.getPlugin(id))!) }
 }

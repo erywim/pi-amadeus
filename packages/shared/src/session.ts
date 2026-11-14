@@ -69,10 +69,15 @@ export interface ToolActivityItem {
   details?: Record<string, unknown>
 }
 
-/** 待用户确认的 bash 命令（同时最多一个） */
+/** 待用户确认的本机工具调用（同时最多一个）。 */
+export type ToolConfirmKind = 'bash' | 'computer'
+
 export interface PendingToolConfirm {
   toolCallId: string
   toolName: string
+  /** 面向用户的服务/动作标签；旧 bash 确认没有该字段时用 toolName 兜底。 */
+  label?: string
+  kind: ToolConfirmKind
   args: Record<string, unknown>
   expiresAt: number
 }

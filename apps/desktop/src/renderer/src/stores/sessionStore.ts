@@ -208,6 +208,8 @@ export const useSessionStore = create<SessionState>()((set, get) => {
             pendingConfirm: {
               toolCallId: event.toolCallId,
               toolName: event.toolName,
+              label: event.label,
+              kind: event.kind,
               args: event.args,
               expiresAt: event.expiresAt
             }

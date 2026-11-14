@@ -170,7 +170,7 @@
     "toolConfirmExpires": "Auto-rejected in {{seconds}}s",
     "toolConfirmExpired": "Timed out — command was not executed",
     "computerConfirmTitle": "Computer action confirmation",
-    "computerConfirmDesc": "The assistant wants to operate the current Amadeus window. Review the action first; screenshots are sent to the model."
+    "computerConfirmDesc": "The assistant wants to operate a desktop app through Open Computer Use. Review the target and arguments first; screenshots or UI state may be sent to the model."
   },
   "companion": {
     "charName": "Kurisu Makise",

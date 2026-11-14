@@ -1,5 +1,6 @@
 import type { ComputerRequest } from './computer.ts'
 import type { Emotion, Gesture } from './emotion.ts'
+import type { ToolConfirmKind } from './session.ts'
 
 /**
  * SSE 事件词汇（沿用原版跨端契约）：delta / done / error。
@@ -114,6 +115,7 @@ export interface SseToolConfirmEvent extends SseEventBase {
   toolCallId: string
   toolName: string
   label: string
+  kind: ToolConfirmKind
   args: Record<string, unknown>
   /** 确认截止时间（epoch ms），渲染端倒计时；到时服务端自动拒绝 */
   expiresAt: number

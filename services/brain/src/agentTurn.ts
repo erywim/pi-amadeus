@@ -10,7 +10,13 @@ import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { disabledSkillNames } from './plugins/registry.ts'
 import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/index.ts'
-import { deniedMessage, rejectAllForTurn, requestBashConfirm } from './tools/confirm.ts'
+import {
+  deniedMessage,
+  rejectAllForTurn,
+  requestBashConfirm,
+  requestToolConfirm,
+  type ToolConfirmRequest
+} from './tools/confirm.ts'
 import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
 import { buildToolRegistry } from './tools/index.ts'
 import { DesktopBridge, registerDesktopBridge, unregisterDesktopBridge } from './tools/desktop-bridge.ts'
@@ -118,7 +124,42 @@ export async function* runAgentTurn(
       toolCallId,
       toolName: 'bash',
       label: '执行命令',
+      kind: 'bash',
       args: { command },
+      expiresAt
+    })
+    return promise
+  }
+
+  const confirmMcpRequest = async (
+    request: {
+      toolCallId: string
+      serverId: string
+      serverName: string
+      toolName: string
+      args: Record<string, unknown>
+    },
+    signal?: AbortSignal
+  ): Promise<boolean> => {
+    const input: ToolConfirmRequest = {
+      turnId,
+      toolCallId: request.toolCallId,
+      toolName: request.toolName,
+      label: `${request.serverName} · ${request.toolName}`,
+      kind: 'computer',
+      args: request.args,
+      timeoutMs: opts.cfg.tools.confirmTimeoutMs,
+      signal: signal ?? opts.signal
+    }
+    const { promise, expiresAt } = requestToolConfirm(input)
+    queue.push({
+      type: 'tool_confirm',
+      turnId,
+      toolCallId: request.toolCallId,
+      toolName: request.toolName,
+      label: input.label,
+      kind: input.kind,
+      args: request.args,
       expiresAt
     })
     return promise
@@ -150,8 +191,18 @@ export async function* runAgentTurn(
   if (skillBundle.skills.length > 0) {
     tools.push(createUseSkillTool(skillBundle.skills))
   }
-  // MCP 插件工具：只取当前已连接的服务，连接失败不阻塞本回合
-  if (toolsEnabled) tools.push(...mcpManager.listAgentTools())
+  // MCP 插件工具：Computer Use 仅在桌面、视觉模型和用户显式开关同时满足时暴露。
+  if (toolsEnabled) {
+    tools.push(
+      ...mcpManager.listAgentTools({
+        allowComputerUse:
+          opts.channel === 'desktop' &&
+          prepared.target.vision &&
+          prepared.userConfig?.computerUse?.enabled === true,
+        requestConfirm: confirmMcpRequest
+      })
+    )
+  }
   if (desktopBridge) registerDesktopBridge(desktopBridge)
   const labelOf = new Map(tools.map((t) => [t.name, t.label]))
 
