@@ -8,12 +8,9 @@ import { compactionLevelOf, prepareTurn } from './conversation.ts'
 import { estimateAgentMessagesTokens, microCompactMessages } from './context/micro.ts'
 import { INPUT_BUDGET_TOKENS, policyOf } from './context/limits.ts'
 import type { Db } from './db.ts'
-import { createAgentStreamFn, getLlm, OUTPUT_LIMIT_ERROR, shouldCooldownProvider, type LlmTarget } from './llm.ts'
-import { createKnowledgeTool } from './knowledge/index.ts'
-import type { SavedAttachment } from './media.ts'
+import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
 import { mcpManager } from './mcp/manager.ts'
 import { disabledSkillNames } from './plugins/registry.ts'
-import { markProviderFailure, markProviderSuccess } from './providers/failover.ts'
 import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/index.ts'
 import {
   deniedMessage,
@@ -28,7 +25,6 @@ import { buildToolRegistry } from './tools/index.ts'
 import { workflowPrompt } from './workflow/prompt.ts'
 import { createWorkflowTool } from './workflow/tool.ts'
 import { workflowLevelOf } from './workflow/types.ts'
-import { diffSnapshots, gitSnapshot } from './workspace.ts'
 import { DesktopBridge, registerDesktopBridge, unregisterDesktopBridge } from './tools/desktop-bridge.ts'
 
 /**

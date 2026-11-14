@@ -25,7 +25,7 @@ export const router = createBrowserRouter([
       { path: 'plugins', element: <PluginsPage /> },
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'conversion', element: <ConversionPage /> },
-      { path: 'agents', element: <AgentsPage /> }
+      { path: 'agents', element: <AgentsPage /> },
       { path: 'settings', element: <SettingsPage /> }
     ]
   }
