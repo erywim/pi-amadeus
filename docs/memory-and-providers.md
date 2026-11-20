@@ -59,7 +59,7 @@
 
 ### 解析顺序
 
-`resolveTarget`（`conversation.ts`）按以下顺序取模型：
+`resolveTarget`（`runtime/model-dispatcher.ts`，`conversation.ts` 保留兼容导出）按以下顺序取模型：
 
 1. 按回合用途（`chat` / `vision`）筛出**标签匹配 + enabled + 有密钥 + 未冷却 + 未超每日配额**的服务
 2. 激活服务符合条件 → 用它
@@ -69,6 +69,8 @@
 
 带图片附件的回合按 `vision` 组路由：标签里有 `vision` 的服务优先；
 没有专门视觉服务时，`chat` 标签且模型名支持视觉的服务也可以接。
+
+每回合在压缩/图片准备前只选一次目标；任务模型覆盖重算视觉能力且不写回配置。语音落库和指标复用实际执行目标，不再二次调度。模型、状态机与工具链边界见 [turn-runtime.md](turn-runtime.md)。
 
 开发环境的 `.env.example` 默认示例使用 `https://api.deepseek.com/v1` + `deepseek-v4-flash`；
 真实密钥不写入仓库，复制为 `.env` 后再填写 `LLM_API_KEY`。
@@ -146,7 +148,8 @@
 | `services/brain/src/routes/memories.ts` | `/api/memories*`、`/api/affinity` |
 | `services/brain/src/routes/providers.ts` | `/api/providers*` |
 | `services/brain/src/metrics.ts` | 回合指标落库（含 provider 名） |
-| `services/brain/src/conversation.ts` | 记忆注入、按用途/配额/冷却解析目标、finishTurn 副作用 |
+| `services/brain/src/conversation.ts` | 记忆注入、会话准备、finishTurn 副作用 |
+| `services/brain/src/runtime/model-dispatcher.ts` | 按用途/配额/冷却解析唯一回合目标 |
 | `services/brain/src/providers/registry.ts` | 标签解析、今日用量、配额状态 |
 | `services/brain/src/providers/failover.ts` | 10 分钟冷却状态 |
 | `apps/desktop/src/renderer/src/features/memory/` | 记忆与关系页 |

@@ -1,5 +1,5 @@
 import { Agent, fetch as undiciFetch } from 'undici'
-import { proxyFetch } from '../llm.ts'
+import { proxyFetch } from '../http/proxy.ts'
 import { assertPublicHttpUrl, resolvePublicUrl, withAbort } from './publicUrl.ts'
 
 /** 工具 HTTP 客户端：可信搜索端点保留代理能力，任意网页使用 publicOnly 的逐跳校验与 DNS 绑定。 */

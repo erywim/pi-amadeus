@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { Agent } from '@earendil-works/pi-agent-core'
-import type { AgentEvent, AgentMessage, BeforeToolCallContext } from '@earendil-works/pi-agent-core'
+import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { Channel, SseEvent, TurnMode } from '@pi-amadeus/shared'
 import { AsyncQueue } from './bilingual.ts'
 import type { BrainConfig } from './config.ts'
@@ -8,32 +7,20 @@ import { compactionLevelOf, prepareTurn } from './conversation.ts'
 import { estimateAgentMessagesTokens, microCompactMessages } from './context/micro.ts'
 import { INPUT_BUDGET_TOKENS, policyOf } from './context/limits.ts'
 import type { Db } from './db.ts'
-import { createAgentStreamFn, getLlm, type LlmTarget } from './llm.ts'
-import { mcpManager } from './mcp/manager.ts'
+import { createModelRuntime } from './llm.ts'
+import type { LlmTarget } from './runtime/contracts.ts'
 import { disabledSkillNames } from './plugins/registry.ts'
-import { createUseSkillTool, loadSkillBundle, skillsPrompt } from './skills/index.ts'
-import {
-  deniedMessage,
-  rejectAllForTurn,
-  requestBashConfirm,
-  requestToolConfirm,
-  ToolDeniedError,
-  type ToolConfirmRequest
-} from './tools/confirm.ts'
-import { BLOCK_PREFIX, blockReason, checkBashSafety } from './tools/safety.ts'
-import { buildToolRegistry } from './tools/index.ts'
+import { loadSkillBundle } from './skills/index.ts'
+import { executeAgent } from './turn/agent-executor.ts'
+import type { AgentExecutionResult, TurnEvent, TurnUsage } from './turn/contracts.ts'
+import { createToolChain, type ToolChain } from './turn/tool-chain.ts'
+import { initialTurnState, isTurnFinal, transitionTurn } from './turn/state-machine.ts'
+import { toSseEvent } from './turn/sse-adapter.ts'
 import { workflowPrompt } from './workflow/prompt.ts'
 import { createWorkflowTool } from './workflow/tool.ts'
 import { workflowLevelOf } from './workflow/types.ts'
-import { DesktopBridge, registerDesktopBridge, unregisterDesktopBridge } from './tools/desktop-bridge.ts'
 
-/**
- * 工具版回合核心（chat 与 feishu 共用）：prepareTurn 复用 →
- * pi-agent-core Agent 跑完整工具循环（LLM 流 → 工具提取/执行 →
- * 结果回流再提示，直到纯文本收尾）→ AgentEvent 映射为 SSE 工具事件。
- * 语音回合不走此路径（runVoiceTurn 保持无工具）。
- */
-
+/** 兼容入口/组合根：准备上下文、连接模型/工具/状态，最终映射为既有 SSE。 */
 export interface AgentTurnOptions {
   cfg: BrainConfig
   db: Db
@@ -43,36 +30,26 @@ export interface AgentTurnOptions {
   mode: TurnMode
   content: string
   signal?: AbortSignal
-  /** LLM 采样参数（缺省不传 = 供应商默认） */
   temperature?: number
   maxTokens?: number
-  /** 是否把本次用户消息写入会话（重新生成传 false，活动世界线末端已有那条消息） */
+  /** 重新生成已有用户消息，不再追加。 */
   appendUserMessage?: boolean
-  /** 重新生成时要排除的历史消息 id（旧助手回答） */
   omitMessageId?: string
-  /** 后台工作台任务隔离人格/记忆；普通聊天保持原路径。 */
+  /** 后台任务隔离人格/记忆，不回写用户模型与工作目录。 */
   isolated?: boolean
   instructions?: string
   model?: string
   cwd?: string
-  /** 本次用户消息的附件（图片 / 语音 / 文件） */
   attachments?: import('./media.ts').SavedAttachment[]
-  /** 从指定父消息之后分叉（编辑后重发用；null = 根分支） */
   branchParentId?: string | null
 }
 
-export interface AgentTurnUsage {
-  input: number
-  output: number
-  total: number
-}
+export type AgentTurnUsage = TurnUsage
 
 export interface AgentTurnResult {
   full: string
   target: LlmTarget
-  /** 本回合所有 LLM 调用的 token 用量（工具循环会多次调用，逐次累加） */
   usage: AgentTurnUsage
-  /** 本回合实际执行的工具次数与工具名（看板统计用） */
   toolCalls: number
   toolNames: string[]
   userMessageId?: string
@@ -80,316 +57,96 @@ export interface AgentTurnResult {
   thinking?: string
 }
 
-/** 工具结果文本的 UI 上限（超出截断） */
-const RESULT_LIMIT = 4000
-
-/** content 块拼文本（ImageContent 忽略——工具结果 v1 只出文本） */
-function textOf(content: unknown): string {
-  if (!Array.isArray(content)) return ''
-  return content
-    .map((block) => {
-      if (typeof block !== 'object' || block === null) return ''
-      const b = block as { type?: string; text?: unknown }
-      return b.type === 'text' ? String(b.text ?? '') : ''
-    })
-    .join('')
-}
-
-function truncate(text: string, limit: number): string {
-  if (text.length <= limit) return text
-  return `${text.slice(0, limit)}…（已截断）`
-}
-
-export async function* runAgentTurn(
-  opts: AgentTurnOptions
-): AsyncGenerator<SseEvent, AgentTurnResult> {
+export async function* runAgentTurn(opts: AgentTurnOptions): AsyncGenerator<SseEvent, AgentTurnResult> {
   const turnId = randomUUID()
-
-  const prepared = await prepareTurn({
-    cfg: opts.cfg,
-    db: opts.db,
-    userId: opts.userId,
-    sessionId: opts.sessionId,
-    channel: opts.channel,
-    mode: opts.mode,
-    content: opts.content,
-    signal: opts.signal,
-    appendUserMessage: opts.appendUserMessage,
-    omitMessageId: opts.omitMessageId,
-    isolated: opts.isolated,
-    attachments: opts.attachments,
-    branchParentId: opts.branchParentId
-  })
-  // 任务级覆盖只作用于本次执行，不回写用户模型或工作目录配置。
-  if (opts.model) prepared.target = { ...prepared.target, model: opts.model }
-  if (opts.instructions) prepared.systemPrompt += `\n\n任务角色说明：\n${opts.instructions}`
-  if (opts.signal?.aborted) {
-    return { full: '', target: prepared.target, usage: { input: 0, output: 0, total: 0 }, toolCalls: 0, toolNames: [] }
-  }
-
-  const toolsEnabled = prepared.userConfig?.tools?.enabled !== false
+  const controller = new AbortController()
+  const signal = opts.signal ? AbortSignal.any([opts.signal, controller.signal]) : controller.signal
+  let state = initialTurnState()
   const queue = new AsyncQueue<SseEvent>()
-  // 本回合开始前发生了上下文压缩：先上屏一条提示（在正文 delta 之前）
-  if (prepared.compaction) {
-    queue.push({
-      type: 'compact',
-      turnId,
-      summarizedMessages: prepared.compaction.summarizedMessages,
-      tokensBefore: prepared.compaction.tokensBefore,
-      tokensAfter: prepared.compaction.tokensAfter
-    })
+  let chain: ToolChain | undefined
+  let run: Promise<void> | undefined
+  let result: AgentExecutionResult | undefined
+  let failure: unknown
+  const labels = new Map<string, string>()
+  const onAbort = (): void => {
+    // 准备/执行/等待审批 → cancelled；先固定终态，再让工具清理拒绝等待项。
+    state = transitionTurn(state, { type: 'cancel' })
+    chain?.dispose()
   }
-  let full = ''
-  // 指标：工具循环里每次 LLM 调用都会带 usage，逐次累加才是本回合真实消耗
-  const usage: AgentTurnUsage = { input: 0, output: 0, total: 0 }
-  const toolNames: string[] = []
-
-  // bash 确认握手：登记 pending → tool_confirm 事件上屏 → execute 内 await 放行
-  const confirmRequest = async (toolCallId: string, command: string): Promise<boolean> => {
-    // 审批必须显示完整可执行内容；过大命令直接拒绝，不能截断后让用户批准隐藏前缀。
-    if (Buffer.byteLength(command, 'utf8') > 16 * 1024) {
-      throw new ToolDeniedError('blocked', blockReason('命令超过 16 KiB，请拆分为可完整审阅的命令'))
+  signal.addEventListener('abort', onAbort, { once: true })
+  const emit = (event: TurnEvent): void => {
+    if (signal.aborted || isTurnFinal(state)) return
+    if (event.type === 'tool_confirm' || event.type === 'computer_request') {
+      state = transitionTurn(state, { type: 'approval_requested', toolCallId: event.toolCallId })
     }
-    const { promise, expiresAt } = requestBashConfirm({
-      turnId,
-      toolCallId,
-      command,
-      timeoutMs: opts.cfg.tools.confirmTimeoutMs,
-      signal: opts.signal
-    })
-    queue.push({
-      type: 'tool_confirm',
-      turnId,
-      toolCallId,
-      toolName: 'bash',
-      label: '执行命令',
-      kind: 'bash',
-      args: { command },
-      expiresAt
-    })
-    return promise
-  }
-
-  const confirmMcpRequest = async (
-    request: {
-      toolCallId: string
-      serverId: string
-      serverName: string
-      toolName: string
-      args: Record<string, unknown>
-    },
-    signal?: AbortSignal
-  ): Promise<boolean> => {
-    const input: ToolConfirmRequest = {
-      turnId,
-      toolCallId: request.toolCallId,
-      toolName: request.toolName,
-      label: `${request.serverName} · ${request.toolName}`,
-      kind: 'computer',
-      args: request.args,
-      timeoutMs: opts.cfg.tools.confirmTimeoutMs,
-      signal: signal ?? opts.signal
+    if (event.type === 'approval_settled' || event.type === 'tool_end') {
+      state = transitionTurn(state, { type: 'approval_settled', toolCallId: event.toolCallId })
     }
-    const { promise, expiresAt } = requestToolConfirm(input)
-    queue.push({
-      type: 'tool_confirm',
-      turnId,
-      toolCallId: request.toolCallId,
-      toolName: request.toolName,
-      label: input.label,
-      kind: input.kind,
-      args: request.args,
-      expiresAt
-    })
-    return promise
+    const outgoing = toSseEvent(chain?.decorateEvent(event) ?? event, turnId, labels)
+    if (outgoing) queue.push(outgoing)
   }
-
-  const desktopBridge =
-    toolsEnabled && prepared.userConfig?.computerUse?.enabled === true && opts.channel === 'desktop' && prepared.target.vision
-      ? new DesktopBridge({
-          turnId,
-          signal: opts.signal,
-          timeoutMs: opts.cfg.tools.computerTimeoutMs,
-          push: (event) => queue.push(event)
-        })
-      : undefined
-  const tools = toolsEnabled
-    ? buildToolRegistry({
-        cfg: opts.cwd ? { ...opts.cfg, tools: { ...opts.cfg.tools, bashCwd: opts.cwd } } : opts.cfg,
-        channel: opts.channel,
-        target: prepared.target,
-        confirmRequest,
-        desktopBridge
-      })
-    : []
-
-  // skill：文件形式、每回合热加载；启用列表注入 systemPrompt + use_skill 工具。
-  // 插件中心关掉的 skill 与文件状态表里的停用取并集，两处入口效果一致
-  const disabledSkills = toolsEnabled ? await disabledSkillNames(opts.db) : new Set<string>()
-  const skillBundle = toolsEnabled ? await loadSkillBundle(opts.cfg, disabledSkills) : { skills: [] }
-  if (skillBundle.skills.length > 0) {
-    tools.push(createUseSkillTool(skillBundle.skills))
-  }
-  // MCP 插件工具：Computer Use 仅在桌面、视觉模型和用户显式开关同时满足时暴露。
-  if (toolsEnabled) {
-    tools.push(
-      ...mcpManager.listAgentTools({
-        allowComputerUse:
-          opts.channel === 'desktop' &&
-          prepared.target.vision &&
-          prepared.userConfig?.computerUse?.enabled === true,
-        requestConfirm: confirmMcpRequest
-      })
-    )
-  }
-  // 动态工作流：档位开启才注册工具（关=LLM 完全看不到这个工具）；随档位注入编排手册
-  const workflowLevel = workflowLevelOf(prepared.userConfig)
-  if (toolsEnabled && workflowLevel !== 'off') {
-    tools.push(createWorkflowTool({ cfg: opts.cfg, target: prepared.target, level: workflowLevel }))
-  }
-  if (desktopBridge) registerDesktopBridge(desktopBridge)
-  const labelOf = new Map(tools.map((t) => [t.name, t.label]))
-
-  // 安全第一道：pi 原生 beforeToolCall 权限钩子——高危 bash 命令直接拦截
-  // （不弹确认卡），isError 结果回流 LLM
-  const beforeToolCall = async (
-    context: BeforeToolCallContext
-  ): Promise<{ block: boolean; reason?: string } | undefined> => {
-    if (context.toolCall.name !== 'bash') return undefined
-    const command = String((context.toolCall.arguments as Record<string, unknown>)?.command ?? '')
-    const check = checkBashSafety(command)
-    if (!check.allowed) return { block: true, reason: blockReason(check.reason) }
-    return undefined
-  }
-
-  // 回合内微压缩（对应 Claude Code 的 microCompact）：工具循环把上下文撑大时，
-  // 只把较早的工具结果换成占位说明，不动用户消息与助手回复。
-  // 契约要求 transformContext 绝不抛错——任何异常都原样返回，宁可 context 大一点。
-  const microPolicy = policyOf(compactionLevelOf(prepared.userConfig))
-  const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
-    if (!microPolicy) return messages
-    try {
-      const tokens = estimateAgentMessagesTokens(messages)
-      if (tokens <= INPUT_BUDGET_TOKENS * microPolicy.microTriggerRatio) return messages
-      return microCompactMessages(messages, {
-        keepRecentToolResults: microPolicy.keepRecentToolResults
-      })
-    } catch (error) {
-      console.warn('[compact] 回合内微压缩失败，保留原上下文：', error instanceof Error ? error.message : error)
-      return messages
-    }
-  }
-
-  const agent = new Agent({
-    initialState: {
-      // 工具总开关关闭时工作流也不可用：手册一并省略，避免模型调用不存在的工具
-      systemPrompt:
-        prepared.systemPrompt +
-        skillsPrompt(skillBundle.skills) +
-        workflowPrompt(toolsEnabled ? workflowLevel : 'off'),
-      model: getLlm(prepared.target).model,
-      // 历史不含当前用户消息——prompt() 会自行 append，否则上下文里出现两次
-      messages: prepared.messages.slice(0, -1),
-      tools
-    },
-    streamFn: createAgentStreamFn(prepared.target, {
-      temperature: opts.temperature,
-      maxTokens: opts.maxTokens
-    }),
-    beforeToolCall,
-    transformContext
-  })
-
-  const unsubscribe = agent.subscribe((event: AgentEvent): void => {
-    switch (event.type) {
-      case 'message_update':
-        if (event.assistantMessageEvent.type === 'text_delta') {
-          const delta = event.assistantMessageEvent.delta
-          full += delta
-          queue.push({ type: 'delta', delta })
-        }
-        return
-      case 'message_end':
-        // 每条助手消息结束都带 usage；工具循环里的每次调用都要计入本回合
-        if (event.message.role === 'assistant' && event.message.usage) {
-          usage.input += event.message.usage.input ?? 0
-          usage.output += event.message.usage.output ?? 0
-          usage.total += event.message.usage.totalTokens ?? 0
-        }
-        return
-      case 'tool_execution_start':
-        queue.push({
-          type: 'tool_start',
-          turnId,
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          label: labelOf.get(event.toolName) ?? event.toolName,
-          args: (event.args ?? {}) as Record<string, unknown>
-        })
-        return
-      case 'tool_execution_update':
-        queue.push({
-          type: 'tool_update',
-          turnId,
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          partial: truncate(textOf(event.partialResult?.content), RESULT_LIMIT)
-        })
-        return
-      case 'tool_execution_end': {
-        toolNames.push(event.toolName)
-        const resultText = textOf(event.result?.content)
-        const details: Record<string, unknown> = { ...(event.result?.details ?? {}) }
-        // bash 拒绝/拦截：execute 抛出的消息是唯一定位来源，回推 deniedReason
-        if (event.isError && event.toolName === 'bash') {
-          if (resultText.startsWith(BLOCK_PREFIX)) details.deniedReason = 'blocked'
-          else if (resultText.includes(deniedMessage('user_denied'))) details.deniedReason = 'user_denied'
-          else if (resultText.includes(deniedMessage('timeout'))) details.deniedReason = 'timeout'
-          else if (resultText.includes(deniedMessage('aborted'))) details.deniedReason = 'aborted'
-        }
-        queue.push({
-          type: 'tool_end',
-          turnId,
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          isError: event.isError,
-          result: truncate(resultText, RESULT_LIMIT),
-          details
-        })
-        return
-      }
-      // agent_start / turn_start / message_* / turn_end / agent_end：内部事件，不上屏
-    }
-  })
-
-  const onAbort = (): void => agent.abort()
-  opts.signal?.addEventListener('abort', onAbort, { once: true })
-
-  const lastUser = prepared.messages[prepared.messages.length - 1]
-  if (!lastUser) throw new Error('LLM 上下文为空')
-
   try {
-    // Agent 契约不抛（失败编码进事件流），防御性兜底；close 保证
-    // done/error 之前队列事件全部排空
-    const run = agent.prompt(lastUser).catch(() => {})
-    void run.finally(() => queue.close())
-    for await (const ev of queue) yield ev
-    await run
-  } finally {
-    unsubscribe()
-    opts.signal?.removeEventListener('abort', onAbort)
-    rejectAllForTurn(turnId)
-    if (desktopBridge) {
-      unregisterDesktopBridge(turnId)
+    const prepared = await prepareTurn({ ...opts, signal })
+    const empty = (): AgentTurnResult => ({ full: '', target: prepared.target,
+      usage: { input: 0, output: 0, total: 0 }, toolCalls: 0, toolNames: [], userMessageId: prepared.userMessageId })
+    if (signal.aborted) return empty()
+    if (opts.instructions) prepared.systemPrompt += `\n\n任务角色说明：\n${opts.instructions}`
+    // 压缩提示先于正文和工具事件，保留原 SSE 顺序。
+    if (prepared.compaction) queue.push({ type: 'compact', turnId,
+      summarizedMessages: prepared.compaction.summarizedMessages,
+      tokensBefore: prepared.compaction.tokensBefore, tokensAfter: prepared.compaction.tokensAfter })
+    const enabled = prepared.userConfig?.tools?.enabled !== false
+    const disabled = enabled ? await disabledSkillNames(opts.db) : new Set<string>()
+    const bundle = enabled ? await loadSkillBundle(opts.cfg, disabled) : { skills: [] }
+    if (signal.aborted) return empty()
+    const workflowLevel = enabled ? workflowLevelOf(prepared.userConfig) : 'off'
+    chain = createToolChain({
+      cfg: { tools: opts.cwd ? { ...opts.cfg.tools, bashCwd: opts.cwd } : opts.cfg.tools },
+      turnId, channel: opts.channel, capabilities: { vision: prepared.target.vision, proxy: prepared.target.proxy },
+      enabled, computerEnabled: prepared.userConfig?.computerUse?.enabled, signal, skills: bundle.skills,
+      extraTools: workflowLevel === 'off' ? [] : [createWorkflowTool({ cfg: opts.cfg, target: prepared.target, level: workflowLevel })],
+      promptAdditions: workflowPrompt(workflowLevel), onEvent: emit
+    })
+    for (const tool of chain.tools) labels.set(tool.name, tool.label)
+    const microPolicy = policyOf(compactionLevelOf(prepared.userConfig))
+    const transformContext = async (messages: AgentMessage[]): Promise<AgentMessage[]> => {
+      if (!microPolicy) return messages
+      try {
+        if (estimateAgentMessagesTokens(messages) <= INPUT_BUDGET_TOKENS * microPolicy.microTriggerRatio) return messages
+        return microCompactMessages(messages, { keepRecentToolResults: microPolicy.keepRecentToolResults })
+      } catch (error) {
+        console.warn('[compact] 回合内微压缩失败，保留原上下文：', error instanceof Error ? error.message : error)
+        return messages
+      }
     }
+    // 准备完成 → running；执行器只拿选定模型/工具，不再调度或加载配置。
+    state = transitionTurn(state, { type: 'start' })
+    run = executeAgent({ runtime: createModelRuntime(prepared.target, { temperature: opts.temperature, maxTokens: opts.maxTokens }),
+      systemPrompt: prepared.systemPrompt + chain.systemPromptAdditions, messages: prepared.messages,
+      tools: chain.tools, beforeToolCall: chain.beforeToolCall, transformContext, signal, onEvent: emit
+    }).then((value) => { result = value }, (error: unknown) => { failure = error }).finally(() => queue.close())
+    for await (const event of queue) {
+      if (!signal.aborted) yield event
+    }
+    await run
+    if (signal.aborted) return { ...empty(), usage: result?.usage ?? empty().usage,
+      toolCalls: result?.toolNames.length ?? 0, toolNames: result?.toolNames ?? [] }
+    if (failure) throw failure
+    if (!result?.full) throw new Error('LLM 返回为空')
+    state = transitionTurn(state, { type: 'complete' })
+    if (state.status !== 'completed') throw new Error('回合结束时仍有未决审批')
+    return { full: result.full, target: prepared.target, usage: result.usage,
+      toolCalls: result.toolNames.length, toolNames: result.toolNames, userMessageId: prepared.userMessageId }
+  } catch (error) {
+    // 任意活动态 → failed；异常不伪装成空成功，交原路由输出 error。
+    state = transitionTurn(state, { type: 'fail' })
+    throw error
+  } finally {
+    // 消费者提前 return/取消/失败 → 停止 owned 执行并等待收尾，不能遗留模型请求或审批。
+    controller.abort()
+    chain?.dispose()
+    await run
+    signal.removeEventListener('abort', onAbort)
+    queue.close()
   }
-
-  if (opts.signal?.aborted) {
-    return { full: '', target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
-  }
-  if (agent.state.errorMessage) throw new Error(agent.state.errorMessage)
-  if (!full) throw new Error('LLM 返回为空')
-  // totalTokens 缺失时用输入+输出兜底（部分兼容端点不返回 total）
-  if (usage.total === 0) usage.total = usage.input + usage.output
-  return { full, target: prepared.target, usage, toolCalls: toolNames.length, toolNames }
 }

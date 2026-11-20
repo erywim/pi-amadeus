@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { ComputerAction, ComputerRequest, ComputerResult } from '@pi-amadeus/shared'
-import type { SseEvent } from '@pi-amadeus/shared'
 
 export interface DesktopBridgeOptions {
   turnId: string
   signal?: AbortSignal
   timeoutMs: number
-  push: (event: SseEvent) => void
+  push: (event: ComputerRequest) => void
 }
 
 interface Pending {
@@ -58,7 +57,7 @@ export class DesktopBridge {
       const timer = setTimeout(() => this.settle(request.requestId, new Error('computer 动作等待超时')), this.opts.timeoutMs)
       this.pending.set(request.requestId, { request, timer, settled: false, resolve: (result) => resolve({ result, request }), reject, onAbort })
       this.opts.signal?.addEventListener('abort', onAbort, { once: true })
-      this.opts.push(request as unknown as SseEvent)
+      this.opts.push(request)
     })
   }
 

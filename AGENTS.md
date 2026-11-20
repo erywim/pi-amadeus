@@ -24,6 +24,7 @@
 - `npm run e2e` — 全部 `scripts/e2e-*.mjs` 的回归套件（前置同上；前置不满足会直接报错，不会伪装成全过）
 - `node scripts/e2e-agents.mjs` / `node scripts/e2e-collaboration.mjs` — 自建隔离 Brain/SQLite/本地模拟模型，验证 Agent 任务与设备网关，不依赖用户真实凭证或已启动 dev
 - `node scripts/e2e-tool-approval-abort.mjs` / `node scripts/e2e-agent-process-stop.mjs` — 等待审批取消与内置命令树停止回归
+- `node scripts/e2e-model-dispatch.mjs` / `node scripts/e2e-turn-runtime.mjs` / `node scripts/e2e-turn-boundaries.mjs` — 模型调度、可替换执行器/工具链与取消收尾契约（无真实凭证/桌面前置）；边界见 `docs/turn-runtime.md`
 - 其它专项 e2e 见 `scripts/e2e-*.mjs`（config / vision / tools / feishu / mic / skills …）
 
 ## 规则

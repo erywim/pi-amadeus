@@ -1,10 +1,16 @@
 import { createModels, createProvider } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
-import { ProxyAgent, fetch as undiciFetch } from 'undici'
-import type { Context, Model, MutableModels, ThinkingLevel } from '@earendil-works/pi-ai'
+import { proxyFetch } from './http/proxy.ts'
+import type { Context, Model, MutableModels } from '@earendil-works/pi-ai'
 import type { StreamFn } from '@earendil-works/pi-agent-core'
 import { validateModelRuntimeOptions } from '@pi-amadeus/shared'
 import { assertContextBudget, CONTEXT_TOO_LONG_PREFIX } from './contextBudget.ts'
+import type { LlmTarget, ModelRuntime, StreamOptions } from './runtime/contracts.ts'
+
+// 契约从 runtime/contracts.ts 移入；继续 re-export，保持既有 import 路径可用。
+export type { LlmTarget, ModelRuntime, StreamOptions } from './runtime/contracts.ts'
+export { supportsVision } from './runtime/model-capabilities.ts'
+export { proxyFetch } from './http/proxy.ts'
 
 export const OUTPUT_LIMIT_ERROR = '回复被输出上限截断了。请调高「输出上限」、降低/关闭思考模式，或核对「上下文窗口」是否填得太小。'
 
@@ -20,57 +26,13 @@ export function shouldCooldownProvider(error: unknown): boolean {
  * 按 (baseUrl, model, vision, 窗口/上限) 缓存入口；apiKey/proxy 逐请求传入
  * （支持每用户独立密钥与独立代理）。
  */
-export interface LlmTarget {
-  baseUrl: string
-  apiKey: string
-  model: string
-  /** 模型是否支持图像输入（决定语音回合是否附加视觉帧） */
-  vision: boolean
-  /** LLM 请求的本地 HTTP 代理（空 = 直连） */
-  proxy?: string
-  /** 来源模型服务（多服务列表激活时）；回落内置配置时为空 */
-  providerId?: string
-  providerName?: string
-  /** 思考级别；off/未设 = 不请求思考（旧行为） */
-  thinkingLevel?: ThinkingLevel
-  /** 上下文窗口（token）；缺省 128k。pi 用它裁剪输出上限，避免输入+输出超窗 */
-  contextWindow?: number
-  /** 单次回复输出上限（token）；缺省 8192 */
-  maxTokens?: number
-}
-
 /** 缺省上下文窗口与输出上限（保持与旧行为一致） */
 export const DEFAULT_CONTEXT_WINDOW = 128_000
 export const DEFAULT_MAX_TOKENS = 8192
 
-export interface StreamOptions {
-  signal?: AbortSignal
-  temperature?: number
-  maxTokens?: number
-  /** 思考级别；不传时用 target 上的配置 */
-  thinkingLevel?: ThinkingLevel | 'off'
-}
-
 interface LlmEntry {
   models: MutableModels
   model: Model<'openai-completions'>
-}
-
-/**
- * 已知视觉模型判定：OpenAI 兼容生态常见视觉模型 id 特征。
- * 自定义模型无从查询能力清单，按生态惯例保守匹配；未知按纯文本处理
- * （纯文本模型收到 image 块会直接报 400，宁缺毋滥）。
- */
-export function supportsVision(modelId: string): boolean {
-  const m = modelId.toLowerCase()
-  return (
-    m.includes('vision') ||
-    m.includes('-vl') ||
-    m.includes('vl-') ||
-    /gpt-4o|gpt-5|claude|gemini|minicpm|internvl|qwen2?[._]?vl|glm-4v|step-1o/.test(m) ||
-    m.startsWith('o4-') ||
-    m.startsWith('o3')
-  )
 }
 
 const cache = new Map<string, LlmEntry>()
@@ -138,14 +100,6 @@ export function getLlm(target: LlmTarget): LlmEntry {
   const entry: LlmEntry = { models, model }
   cache.set(key, entry)
   return entry
-}
-
-/** proxy 配置下的 fetch（undici ProxyAgent；Node 内置 fetch 与 npm undici 不配对） */
-export function proxyFetch(proxy: string): typeof globalThis.fetch {
-  const agent = new ProxyAgent(proxy)
-  const f = (input: Parameters<typeof undiciFetch>[0], init?: Parameters<typeof undiciFetch>[1]) =>
-    undiciFetch(input, { ...(init ?? {}), dispatcher: agent })
-  return f as unknown as typeof globalThis.fetch
 }
 
 /**
@@ -237,6 +191,16 @@ export function createAgentStreamFn(target: LlmTarget, opts?: StreamOptions): St
       reasoning: reasoning === 'off' ? undefined : reasoning
     })
   }
+}
+
+/**
+ * 把「本回合选定的目标」封装成执行入口：模型元数据 + 绑定该目标的 streamFn。
+ * 协议映射、鉴权校验、上下文预算与错误语义全部沿用 getLlm /
+ * createAgentStreamFn 的既有行为，createModelRuntime 只做组合。
+ */
+export function createModelRuntime(target: LlmTarget, opts?: StreamOptions): ModelRuntime {
+  const { model } = getLlm(target)
+  return { model, streamFn: createAgentStreamFn(target, opts) }
 }
 
 /** 把中文消息历史转成 pi-ai Context 消息（v1：内容只拼中文，不进日文 tts_text） */
