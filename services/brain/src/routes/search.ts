@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { SearchDiagnostics, SearchEngineName } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
-import { resolveTarget } from '../conversation.ts'
+import { resolveTarget } from '../runtime/model-dispatcher.ts'
 import type { Db } from '../db.ts'
 import { assertPublicHttpUrl, readPublicPage } from '../tools/fetchUrl.ts'
 import { runSearch, SEARCH_ENGINES, type SearchOptions } from '../tools/search.ts'
