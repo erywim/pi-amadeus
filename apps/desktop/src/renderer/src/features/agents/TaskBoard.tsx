@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { memo, useRef } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, Check, Circle, Grip, Pause, Square } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { AgentTask, AgentTaskStatus } from '@pi-amadeus/shared'
@@ -16,6 +16,8 @@ const colors: Record<AgentTaskStatus, string> = {
   completed: 'text-mint', failed: 'text-destructive', cancelled: 'text-muted-foreground', interrupted: 'text-destructive'
 }
 
+type TaskArrival = { origin: AgentTask['position'] }
+
 export function TaskStatus({ status, text }: { status: AgentTaskStatus; text: AgentText }): React.JSX.Element {
   const Icon = status === 'completed' ? Check : status === 'waiting_approval' ? Pause : status === 'cancelled' ? Square : Circle
   return <span className={cn('inline-flex items-center gap-1.5 text-[11px] font-medium', colors[status])} data-testid="agent-task-status" data-status={status}>
@@ -23,12 +25,18 @@ export function TaskStatus({ status, text }: { status: AgentTaskStatus; text: Ag
   </span>
 }
 
-const TaskCard = memo(function TaskCard({ task, selected, canvas, text }: {
-  task: AgentTask; selected: boolean; canvas: boolean; text: AgentText
+const TaskCard = memo(function TaskCard({ task, selected, canvas, text, arriving, arrivalOrigin }: {
+  task: AgentTask
+  selected: boolean
+  canvas: boolean
+  text: AgentText
+  arriving?: boolean
+  arrivalOrigin?: AgentTask['position']
 }): React.JSX.Element {
   const selectTask = useAgentStore((state) => state.selectTask)
   const moveTask = useAgentStore((state) => state.moveTask)
   const busy = useAgentStore((state) => state.busyTasks[task.id] ?? false)
+  const [arrivalCancelled, setArrivalCancelled] = useState(false)
   const button = useRef<HTMLButtonElement>(null)
   const drag = useRef<{ pointerId: number; x: number; y: number; task: AgentTask; moved: boolean } | null>(null)
   const suppressClick = useRef(false)
@@ -37,6 +45,10 @@ const TaskCard = memo(function TaskCard({ task, selected, canvas, text }: {
   function restorePosition(): void {
     const current = useAgentStore.getState().tasks.find((item) => item.id === task.id) ?? task
     if (button.current) button.current.style.transform = `translate(${current.position.x}px, ${current.position.y}px)`
+  }
+
+  function beginInteraction(): void {
+    if (!arrivalCancelled) setArrivalCancelled(true)
   }
 
   async function persist(original: AgentTask, position: AgentTask['position']): Promise<void> {
@@ -74,15 +86,25 @@ const TaskCard = memo(function TaskCard({ task, selected, canvas, text }: {
       'group block overflow-hidden rounded-lg border bg-surface p-3.5 text-left motion-safe:transition-[box-shadow,border-color] motion-safe:duration-150', focusClass,
       selected ? 'z-10 border-primary shadow-sm ring-1 ring-primary/20' : 'border-border hover:border-primary/40 hover:shadow-sm',
       canvas ? 'absolute left-0 top-0 touch-none select-none' : 'w-full',
-      canvas && !busy && 'cursor-grab active:cursor-grabbing', busy && 'cursor-progress'
+      canvas && !busy && 'cursor-grab active:cursor-grabbing', busy && 'cursor-progress',
+      canvas && arriving && !arrivalCancelled && 'agent-task-arriving'
     )}
-    style={canvas ? { width: CARD_WIDTH, height: CARD_HEIGHT, transform: `translate(${task.position.x}px, ${task.position.y}px)` } : undefined}
+    style={canvas ? {
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+      '--task-x': `${task.position.x}px`,
+      '--task-y': `${task.position.y}px`,
+      '--task-origin-x': `${arrivalOrigin?.x ?? task.position.x}px`,
+      '--task-origin-y': `${arrivalOrigin?.y ?? task.position.y}px`,
+      transform: `translate(${task.position.x}px, ${task.position.y}px)`
+    } as React.CSSProperties : undefined}
     onClick={() => {
       if (suppressClick.current) { suppressClick.current = false; return }
       selectTask(task.id)
     }}
     onPointerDown={canvas ? (event) => {
       if (event.button !== 0 || !event.isPrimary || busy || saving.current) return
+      beginInteraction()
       suppressClick.current = false
       // 指针捕获保证拖出卡片仍收到释放；移动期间只改 DOM，不触发网络或 React 渲染。
       drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, task, moved: false }
@@ -111,6 +133,7 @@ const TaskCard = memo(function TaskCard({ task, selected, canvas, text }: {
     onPointerCancel={canvas ? () => { drag.current = null; restorePosition() } : undefined}
     onLostPointerCapture={canvas ? () => { if (drag.current) { drag.current = null; restorePosition() } } : undefined}
     onKeyDown={canvas ? (event) => {
+      beginInteraction()
       const directions: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }
       const delta = directions[event.key]
       if (!delta) return
@@ -136,10 +159,15 @@ const TaskCard = memo(function TaskCard({ task, selected, canvas, text }: {
   </button>
 })
 
-/** HTML 折线仅投影已存在的依赖/续接关系，不创建新的执行顺序。 */
-function TaskLinks({ tasks }: { tasks: AgentTask[] }): React.JSX.Element {
+/** SVG 折线仅投影已存在的依赖/续接关系，不创建新的执行顺序。 */
+function TaskLinks({ tasks, width, height, arrivingIds }: {
+  tasks: AgentTask[]
+  width: number
+  height: number
+  arrivingIds: Set<string>
+}): React.JSX.Element {
   const index = new Map(tasks.map((task) => [task.id, task]))
-  return <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+  return <svg aria-hidden="true" className="pointer-events-none absolute left-0 top-0 overflow-visible" width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
     {tasks.flatMap((target) => {
       const sources = [...new Set([...target.dependsOn, ...(target.resumeOf ? [target.resumeOf] : []), ...(target.parentTaskId ? [target.parentTaskId] : [])])]
       return sources.map((id) => {
@@ -150,26 +178,57 @@ function TaskLinks({ tasks }: { tasks: AgentTask[] }): React.JSX.Element {
         const x2 = target.position.x
         const y2 = target.position.y + CARD_HEIGHT / 2
         const middle = (x1 + x2) / 2
+        const path = `M ${x1} ${y1} H ${middle} V ${y2} H ${x2}`
         return <React.Fragment key={`${id}-${target.id}`}>
-          <span className="absolute border-t border-primary/30" style={{ left: Math.min(x1, middle), top: y1, width: Math.abs(middle - x1) }} />
-          <span className="absolute border-l border-primary/30" style={{ left: middle, top: Math.min(y1, y2), height: Math.abs(y2 - y1) }} />
-          <span className="absolute border-t border-primary/30" style={{ left: Math.min(middle, x2), top: y2, width: Math.abs(x2 - middle) }} />
-          <span className="absolute size-1.5 rounded-full bg-primary/50" style={{ left: x2 - 3, top: y2 - 3 }} />
+          <path className="agent-task-link" d={path} />
+          <circle className="agent-task-link-end" cx={x2} cy={y2} r="3" />
+          {arrivingIds.has(target.id) && <path className="agent-arrival-trail-path" d={path} />}
         </React.Fragment>
       })
     })}
-  </div>
+  </svg>
 }
 
 export function TaskBoard({ tasks, selectedId, view }: { tasks: AgentTask[]; selectedId: string | null; view: 'canvas' | 'list' }): React.JSX.Element {
   const text = useAgentText()
+  const arrivals = useRef<Map<string, TaskArrival>>(new Map())
+  // 过滤器改变时任务会暂时离开数组；用持久 seen 集合避免它们重新出现时被误判为新任务。
+  const seenTaskIds = useRef(new Set(tasks.map((task) => task.id)))
+  const [arrivingIds, setArrivingIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const taskById = new Map(tasks.map((task) => [task.id, task]))
+    const freshTasks = tasks.filter((task) => !seenTaskIds.current.has(task.id))
+    if (freshTasks.length === 0) return
+    freshTasks.forEach((task) => {
+      seenTaskIds.current.add(task.id)
+      const parent = task.parentTaskId ? taskById.get(task.parentTaskId) : undefined
+      arrivals.current.set(task.id, {
+        origin: parent?.position ?? { x: Math.max(0, task.position.x - 160), y: task.position.y }
+      })
+    })
+    const freshIds = freshTasks.map((task) => task.id)
+    setArrivingIds((ids) => new Set([...ids, ...freshIds]))
+  }, [tasks])
+
+  useEffect(() => {
+    if (arrivingIds.size === 0) return
+    const timer = window.setTimeout(() => {
+      setArrivingIds(new Set())
+    }, 420)
+    return () => window.clearTimeout(timer)
+  }, [arrivingIds])
+
   if (view === 'list') return <div data-testid="agent-task-list" className="grid content-start gap-2 overflow-y-auto p-4 sm:grid-cols-2 xl:grid-cols-1">{tasks.map((task) => <TaskCard key={task.id} task={task} selected={task.id === selectedId} canvas={false} text={text} />)}</div>
   const width = Math.max(680, ...tasks.map((task) => task.position.x + CARD_WIDTH + 48))
   const height = Math.max(460, ...tasks.map((task) => task.position.y + CARD_HEIGHT + 48))
   return <div data-testid="agent-task-canvas" className="min-h-[350px] flex-1 overflow-auto overscroll-contain bg-stage/40">
     <div className="relative m-6 bg-[radial-gradient(var(--line-strong)_1px,transparent_1px)] bg-[size:20px_20px]" style={{ width, height }}>
-      <TaskLinks tasks={tasks} />
-      {tasks.map((task) => <TaskCard key={task.id} task={task} selected={task.id === selectedId} canvas text={text} />)}
+      <TaskLinks tasks={tasks} width={width} height={height} arrivingIds={arrivingIds} />
+      {tasks.map((task) => {
+        const arrival = arrivals.current.get(task.id)
+        return <TaskCard key={task.id} task={task} selected={task.id === selectedId} canvas text={text} arriving={arrivingIds.has(task.id)} arrivalOrigin={arrival?.origin} />
+      })}
     </div>
   </div>
 }

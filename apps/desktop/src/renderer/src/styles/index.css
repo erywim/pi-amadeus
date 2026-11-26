@@ -87,6 +87,7 @@
   --sidebar: #fbfbfa;
   --radius: 0.5rem;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
   --surface: #ffffff;
   --surface-soft: #f5f5f3;
@@ -395,10 +396,10 @@ body.theme-amadeus .stage-edge[data-status='speaking']::after {
   }
 }
 .anim-msg {
-  animation: msg-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  animation: msg-in 240ms var(--ease-out);
 }
 
-/* 视图切换进入 */
+/* 视图切换进入：页面本身只轻微上浮，避免导航时内容追着用户跑 */
 @keyframes view-in {
   from {
     opacity: 0;
@@ -410,7 +411,98 @@ body.theme-amadeus .stage-edge[data-status='speaking']::after {
   }
 }
 .anim-view {
-  animation: view-in 240ms cubic-bezier(0.2, 0.7, 0.3, 1);
+  animation: view-in 240ms var(--ease-out);
+}
+
+/* 共享按钮的按下反馈：只在真实指针设备上缩短 2%，键盘焦点不被移动。 */
+.ui-pressable {
+  transition:
+    color 150ms var(--ease-out),
+    background-color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out),
+    box-shadow 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ui-pressable:active {
+    transform: scale(0.98);
+  }
+}
+
+/* Agent 任务从依赖节点进入画布：卡片沿空间关系滑入，光线在同一方向掠过。 */
+@keyframes agent-task-arrival {
+  from {
+    opacity: 0;
+    transform: translate(var(--task-origin-x), var(--task-origin-y));
+  }
+  to {
+    opacity: 1;
+    transform: translate(var(--task-x), var(--task-y));
+  }
+}
+.agent-task-arriving {
+  animation: agent-task-arrival 280ms var(--ease-out) both;
+}
+.agent-task-link {
+  fill: none;
+  stroke: color-mix(in srgb, var(--primary) 30%, transparent);
+  stroke-width: 1;
+}
+.agent-task-link-end {
+  fill: color-mix(in srgb, var(--primary) 50%, transparent);
+}
+.agent-arrival-trail-path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--primary) 72%, white);
+  stroke-width: 2;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--primary) 60%, transparent));
+  stroke-dasharray: 10 14;
+  animation: agent-arrival-trail 280ms linear both;
+}
+@keyframes agent-arrival-trail {
+  from {
+    opacity: 0;
+    stroke-dashoffset: 24;
+  }
+  24% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    stroke-dashoffset: -48;
+  }
+}
+
+@keyframes motion-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-msg,
+  .anim-view {
+    animation: motion-fade-in 180ms var(--ease-out);
+  }
+
+  .ui-pressable {
+    transition: color 150ms var(--ease-out), background-color 150ms var(--ease-out), border-color 150ms var(--ease-out);
+  }
+
+  .ui-pressable:active {
+    transform: none;
+  }
+
+  .agent-task-arriving {
+    animation: motion-fade-in 180ms var(--ease-out) both;
+  }
+
+  .agent-arrival-trail-path {
+    display: none;
+  }
 }
 
 /* 呼吸点（typing 三点 / 会话运行态圆点） */

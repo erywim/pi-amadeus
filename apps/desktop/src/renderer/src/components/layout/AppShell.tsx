@@ -164,7 +164,7 @@ export default function AppShell(): React.JSX.Element {
                 aria-selected={selected}
                 onClick={() => navigate(path)}
                 className={cn(
-                  'flex items-center gap-2 whitespace-nowrap rounded-[9px] px-3.5 py-1.5 text-[15px] text-muted-foreground transition-colors hover:text-ink-2',
+                  'ui-pressable flex items-center gap-2 whitespace-nowrap rounded-[9px] px-3.5 py-1.5 text-[15px] text-muted-foreground hover:text-ink-2',
                   selected &&
                     'bg-surface font-semibold text-foreground shadow-[0_1px_3px_rgba(26,29,33,0.10)]'
                 )}
@@ -184,7 +184,7 @@ export default function AppShell(): React.JSX.Element {
             title={t('nav.settings')}
             onClick={toggleSettings}
             className={cn(
-              'grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 transition-colors hover:bg-surface-soft',
+              'ui-pressable grid size-9.5 place-items-center rounded-[10px] border border-border bg-surface text-ink-2 hover:bg-surface-soft',
               isSettings && 'bg-surface-soft text-foreground'
             )}
           >
