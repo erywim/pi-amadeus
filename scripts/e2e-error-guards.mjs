@@ -68,7 +68,6 @@ try {
     let calls = 0
     mock.setHandler((body) => {
       if (!(body.tools ?? []).some((tool) => tool.function?.name === 'calculate')) return { text: '辅助任务完成。' }
-      const toolMessages = (body.messages ?? []).filter((message) => message.role === 'tool')
       calls += 1
       if (calls <= 8) {
         return { text: '', toolCalls: [{ id: `vary-${calls}`, name: 'calculate', arguments: { expression: `${calls}+1` } }] }
@@ -95,7 +94,7 @@ try {
   })
 } finally {
   await mock.close()
-  await brain.close()
+  await brain.stop()
 }
 
 const failed = results.filter((result) => !result.ok)
