@@ -146,6 +146,14 @@ export function defaultUserConfig(cfg: BrainConfig): UserConfig {
     systemPrompt: '',
     temperature: 0.8,
     tools: { enabled: true },
+    // 错误检查默认开启：预算负责硬停止，重复/阻断检查负责避免模型自旋；用户可显式关闭后两项。
+    responseGuard: {
+      errorChecks: true,
+      maxTurns: 32,
+      maxToolCalls: 96,
+      maxRepeatedToolCalls: 8,
+      maxConsecutiveBlocked: 3
+    },
     // 缺省 balanced：只在接近上下文上限时才摘要，普通会话无额外开销
     compaction: { level: 'balanced' },
     // 缺省 off：动态工作流会并发调用多个子代理，必须由用户显式开启档位

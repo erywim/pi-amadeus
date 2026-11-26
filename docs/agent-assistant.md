@@ -40,6 +40,7 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
 | 重新生成 | ✅ | 只对最后一条助手回复；活动路径切到同一用户消息下的新回复，旧回复作为兄弟节点保留，可从世界线切回；失败时旧分支保留 |
 | 编辑后重发 | ✅ | 用户消息可内联编辑；服务端把新正文写成原消息的兄弟分支并跑回合，旧分支保留，可在消息 meta 的 `‹ 1/2 ›` 间切换 |
 | 失败可见 + 重试 | ✅ | SSE `error` 落到会话级错误卡（含重试/关闭），不再只打 console |
+| 错误检查与循环保护 | ✅ | brain 默认启用工具调用预算、重复调用检测与连续阻断熔断；AI 设置可关闭重复/阻断检查，硬预算仍生效 |
 | 滚动跟随 | ✅ | 用户上滚后暂停自动跟随，出现「回到底部」；自己发消息时强制跟到底部 |
 | 快捷键 | ✅ | `⌘/Ctrl+N` 新会话、`Esc` 停止生成 |
 | 附件 / 图片输入 | ✅ | 输入区可选择/拖拽/粘贴图片、语音、文件；落盘 + 文本抽取/语音转写；图片按模型视觉能力门控 |
@@ -56,7 +57,7 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
 | `.../features/chat/MessageList.tsx` | 流式区块、错误卡、滚动跟随与「回到底部」 |
 | `.../features/chat/MessageBubble.tsx` | 消息复制、编辑后重发、最后一条助手回复的重新生成入口 |
 | `.../features/chat/ArtifactPanel.tsx` | HTML / SVG / Mermaid 沙箱预览面板 |
-| `.../features/chat/TurnErrorCard.tsx` | 回合失败卡（错误信息 + 重试 + 关闭） |
+| `.../features/chat/TurnErrorCard.tsx` | 回合失败卡（错误信息 + 分类码 + 重试 + 关闭） |
 | `.../features/chat/Markdown.tsx` | Markdown 渲染、代码块复制与「预览」入口 |
 | `.../stores/sessionStore.ts` | 回合事件消费（发送 / 重新生成 / 编辑重发共用）、`turnErrors`、`renameSession`、`togglePin`、`editMessage` |
 | `apps/desktop/src/renderer/src/lib/api.ts` | `startRegenerate`、`startEditTurn`、`renameSessionApi`、`setSessionPinnedApi`、`searchMessagesApi`、`fetchSessionUsage` |
@@ -72,7 +73,9 @@ Amadeus 有两种形态：Live2D 陪伴形态（陪伴页 / 桌宠）和文本�
 - **不重复用户消息**：重新生成传 `appendUserMessage: false`，活动世界线末端必须仍是那条用户消息，
   否则 `prepareTurn` 直接抛错（宁可失败，也不要给模型一个重复提问的上下文）。
 - **流全局唯一**：`stream` 只有一个，展示与归档只认 `stream.sessionId`；切会话不串台。
-- **错误按会话归档**：`turnErrors[sessionId]`，切走再回来仍在；发起新回合时清掉。
+- **错误按会话归档**：`turnErrors[sessionId]` 与 `turnErrorInfo[sessionId]`，切走再回来仍在；发起新回合时清掉。
+- **错误检查分层**：`responseGuard` 默认开启；每回合最多 32 个工具轮次 / 96 次工具调用；同一完整工具调用+结果连续 8 次触发 `repeated_blocked_action`；同一阻断原因连续 3 次触发用户介入；关闭 `errorChecks` 只关闭重复/阻断检查，硬预算仍保护回合。
+- **错误契约**：SSE `error` 携带稳定 `code`、`recoverability` 和不含敏感值的诊断 details；未知 provider 错误不伪装成空回复。
 - **滚动跟随**：`atBottom` 由滚动位置驱动；程序触发的平滑滚动期间忽略「离开底部」判定，
   否则「回到底部」按钮会在滚动途中重新弹出。
 - **重命名排序**：`renameSession` 只改 `title`；自动标题 `setSessionTitle` 仍会刷新 `updated_at`
@@ -97,6 +100,9 @@ npx --prefix apps/desktop electron-vite dev --remoteDebuggingPort 9333
 
 # 终端 3：本轮新增的 E2E（失败路径与成功路径都会跑，按本机 LLM 可用性自动切换）
 CDP_HTTP=http://127.0.0.1:9333 node scripts/e2e-chat-assistant.mjs
+
+# 错误检查专项（隔离 brain + 临时 SQLite + mock LLM）
+node scripts/e2e-error-guards.mjs
 
 # 全量回归
 npm run verify

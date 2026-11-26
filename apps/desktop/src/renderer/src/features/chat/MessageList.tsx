@@ -27,6 +27,9 @@ export function MessageList(): React.JSX.Element {
   const turnError = useSessionStore((s) =>
     s.activeSessionId ? s.turnErrors[s.activeSessionId] : undefined
   )
+  const turnErrorInfo = useSessionStore((s) =>
+    s.activeSessionId ? s.turnErrorInfo[s.activeSessionId] : undefined
+  )
   const respondToolConfirm = useSessionStore((s) => s.respondToolConfirm)
   const respondComputer = useSessionStore((s) => s.respondComputer)
   const regenerate = useSessionStore((s) => s.regenerate)
@@ -185,6 +188,7 @@ export function MessageList(): React.JSX.Element {
           {turnError && !stream.streaming && (
             <TurnErrorCard
               message={turnError}
+              code={turnErrorInfo?.code}
               onRetry={regenerate}
               onDismiss={() => {
                 if (activeSessionId) dismissTurnError(activeSessionId)

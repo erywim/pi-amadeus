@@ -88,6 +88,37 @@ export interface ToolConfig {
 }
 
 /**
+ * Agent 回合错误检查与循环保护。
+ * 缺省值由 brain 的 defaultUserConfig 提供；数值字段可选以兼容存量配置。
+ */
+export interface ResponseGuardConfig {
+  /** 是否启用重复动作与连续阻断检查（硬预算始终生效）。 */
+  errorChecks?: boolean
+  /** 单回合最多允许的工具循环轮数。 */
+  maxTurns?: number
+  /** 单回合最多允许的工具调用数。 */
+  maxToolCalls?: number
+  /** 完整相同的工具调用与结果连续出现多少次后停止。 */
+  maxRepeatedToolCalls?: number
+  /** 同一阻断原因连续出现多少次后要求用户介入。 */
+  maxConsecutiveBlocked?: number
+}
+
+/** 配置入口共用校验：错误检查数值必须是明确的正整数，不能静默降级。 */
+export function validateResponseGuardConfig(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '错误检查配置必须是对象'
+  const input = value as Record<string, unknown>
+  if (input.errorChecks !== undefined && typeof input.errorChecks !== 'boolean') return 'errorChecks 必须是布尔值'
+  for (const key of ['maxTurns', 'maxToolCalls', 'maxRepeatedToolCalls', 'maxConsecutiveBlocked'] as const) {
+    const n = input[key]
+    if (n !== undefined && (typeof n !== 'number' || !Number.isSafeInteger(n) || n <= 0)) {
+      return `${key} 必须是正安全整数`
+    }
+  }
+  return undefined
+}
+
+/**
  * 上下文压缩档位（参考 Claude Code 的分层压缩策略，见 docs/context-compaction.md）：
  * - off：只按消息条数截断（旧行为，不额外调用 LLM）
  * - balanced：接近上下文窗口上限时把旧历史摘要成一段结构化摘要（缺省）
@@ -115,6 +146,8 @@ export interface UserConfig {
   temperature?: number
   /** 工具调用开关（缺省视为 enabled=true，兼容存量配置） */
   tools?: ToolConfig
+  /** Agent 回合错误检查与循环预算（缺省按 brain 默认值处理） */
+  responseGuard?: ResponseGuardConfig
   /** 上下文压缩配置（缺省按 balanced 处理） */
   compaction?: CompactionConfig
   /** 动态工作流配置（缺省按 off 处理：不注册 workflow 工具） */

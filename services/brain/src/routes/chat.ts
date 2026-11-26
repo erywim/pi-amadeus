@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { AttachmentPayload } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
-import { runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
+import { agentTurnErrorInfo, runAgentTurn, type AgentTurnResult } from '../agentTurn.ts'
 import { finishTurn } from '../conversation.ts'
 import { copyAttachments, prepareAttachments, removeAttachmentCopies, type SavedAttachment } from '../media.ts'
 import { recordTurnMetric } from '../metrics.ts'
@@ -78,12 +78,13 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
         } catch (error) {
           if (signal.aborted) return
           const message = error instanceof Error ? error.message : String(error)
-          console.error('[chat] 工具回合失败：', message)
-          yield { type: 'error', message }
+          const info = agentTurnErrorInfo(error)
+          console.error('[chat] 工具回合失败：', message, info)
+          yield { type: 'error', message, code: info.code, recoverability: info.recoverability, ...(info.details ? { details: info.details } : {}) }
           return
         }
         if (signal.aborted || !full || !target || !result) {
-          if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空' }
+          if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空', code: 'provider_error', recoverability: 'retry' }
           return
         }
         const messageId = await finishTurn(db, {
@@ -195,12 +196,13 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
         } catch (error) {
           if (signal.aborted) return
           const message = error instanceof Error ? error.message : String(error)
-          console.error('[chat] 重新生成失败：', message)
-          yield { type: 'error', message }
+          const info = agentTurnErrorInfo(error)
+          console.error('[chat] 重新生成失败：', message, info)
+          yield { type: 'error', message, code: info.code, recoverability: info.recoverability, ...(info.details ? { details: info.details } : {}) }
           return
         }
         if (signal.aborted || !full || !target || !result) {
-          if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空' }
+          if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空', code: 'provider_error', recoverability: 'retry' }
           return
         }
         const messageId = await finishTurn(db, {
@@ -294,7 +296,7 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
           full = result.full
           target2 = result.target
           if (signal.aborted || !full || !target2 || !result.userMessageId) {
-            if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空' }
+            if (!signal.aborted && !full) yield { type: 'error', message: 'LLM 返回为空', code: 'provider_error', recoverability: 'retry' }
             return
           }
           const userMessageId = result.userMessageId
@@ -330,8 +332,9 @@ export function chatRoutes(cfg: BrainConfig, db: Db): Hono {
         } catch (error) {
           if (signal.aborted) return
           const message = error instanceof Error ? error.message : String(error)
-          console.error('[chat] 编辑重发失败：', message)
-          yield { type: 'error', message }
+          const info = agentTurnErrorInfo(error)
+          console.error('[chat] 编辑重发失败：', message, info)
+          yield { type: 'error', message, code: info.code, recoverability: info.recoverability, ...(info.details ? { details: info.details } : {}) }
           return
         } finally {
           // 失败/取消尚未提交的编辑只清副本；旧分支、原附件始终不动

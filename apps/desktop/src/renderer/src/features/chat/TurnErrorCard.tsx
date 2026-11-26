@@ -8,10 +8,12 @@ import { useTranslation } from 'react-i18next'
  */
 export function TurnErrorCard({
   message,
+  code,
   onRetry,
   onDismiss
 }: {
   message: string
+  code?: string
   onRetry: () => void
   onDismiss: () => void
 }): React.JSX.Element {
@@ -31,6 +33,7 @@ export function TurnErrorCard({
           <div className="min-w-0 flex-1">
             <b className="block text-[13.5px] font-semibold text-destructive">{t('chat.turnFailed')}</b>
             <p className="mt-0.5 break-words text-[12.5px] leading-relaxed text-ink-2">{message}</p>
+            {code && <p className="mt-1 font-mono text-[10.5px] text-muted-foreground">{code}</p>}
           </div>
           <button
             type="button"

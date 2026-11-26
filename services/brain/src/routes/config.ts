@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { validateModelRuntimeOptions, type ResolvedModelRuntime, type UserConfig } from '@pi-amadeus/shared'
+import { validateModelRuntimeOptions, validateResponseGuardConfig, type ResolvedModelRuntime, type UserConfig } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import { defaultUserConfig, resolveTarget } from '../conversation.ts'
@@ -59,7 +59,8 @@ export function configRoutes(cfg: BrainConfig, db: Db): Hono {
     }
     const config = body.config as Partial<UserConfig>
     const error = validateModelRuntimeOptions(config) ||
-      (config.provider !== undefined ? validateModelRuntimeOptions(config.provider) : undefined)
+      (config.provider !== undefined ? validateModelRuntimeOptions(config.provider) : undefined) ||
+      (config.responseGuard !== undefined ? validateResponseGuardConfig(config.responseGuard) : undefined)
     if (error) return c.json({ error }, 400)
     const stored = await db.getUserConfig(c.req.param('userId'))
     const merged: UserConfig = {
@@ -72,6 +73,11 @@ export function configRoutes(cfg: BrainConfig, db: Db): Hono {
         ...(config.provider ?? {}),
         // apiKey 留空 = 不修改（表单不回填密钥，防止被掩码值覆盖）
         apiKey: config.provider?.apiKey?.trim() ? (config.provider.apiKey as string) : (stored?.provider?.apiKey ?? '')
+      },
+      responseGuard: {
+        ...defaultUserConfig(cfg).responseGuard,
+        ...(stored?.responseGuard ?? {}),
+        ...(config.responseGuard ?? {})
       }
     }
     await db.setUserConfig(c.req.param('userId'), merged)

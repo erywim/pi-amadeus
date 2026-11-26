@@ -160,7 +160,7 @@ export async function chatTurn(brainUrl, { userId, sessionId, content, timeoutMs
       }
     }
     const error = events.find((event) => event.type === 'error')
-    return { events, full, error: error?.message }
+    return { events, full, error }
   } finally {
     clearTimeout(timer)
   }

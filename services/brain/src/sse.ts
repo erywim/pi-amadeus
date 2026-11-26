@@ -26,7 +26,7 @@ export function sseResponse(
         if (!controller.signal.aborted) {
           const message = error instanceof Error ? error.message : String(error)
           streamController.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: 'error', message } satisfies SseEvent)}\n\n`)
+            encoder.encode(`data: ${JSON.stringify({ type: 'error', message, code: 'provider_error', recoverability: 'retry' } satisfies SseEvent)}\n\n`)
           )
         }
       } finally {
