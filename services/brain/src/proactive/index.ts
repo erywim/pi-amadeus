@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { ProactiveGreeting, ProactiveSettings } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
-import { resolveTarget } from '../conversation.ts'
+import { resolveTarget } from '../runtime/model-dispatcher.ts'
 import type { Db } from '../db.ts'
 import { completeText } from '../llm.ts'
 import { memorySystemPrompt, recallMemories, summarizeAffinity } from '../memory/index.ts'

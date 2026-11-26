@@ -108,7 +108,7 @@ const hook = registerHooks({
   resolve(specifier, context, nextResolve) {
     if (context.parentURL?.endsWith('/tools/net.ts')) {
       if (specifier === 'undici') return { url: mockUndici, shortCircuit: true }
-      if (specifier === '../llm.ts') return { url: mockLlm, shortCircuit: true }
+      if (specifier === '../http/proxy.ts') return { url: mockLlm, shortCircuit: true }
     }
     return nextResolve(specifier, context)
   }

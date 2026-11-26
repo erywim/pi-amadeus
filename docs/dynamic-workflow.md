@@ -28,7 +28,7 @@
 | `services/brain/src/workflow/script.ts` | 解析 `export const meta`（纯字面量校验）、静态禁用项、在主线程侧驱动 worker 沙箱 |
 | `services/brain/src/workflow/sandbox.ts` | **沙箱本体**（worker 线程入口）：vm 上下文 + 字符串桥 + 脚本内 `agent/parallel/pipeline/phase/log` 实现 |
 | `services/brain/src/workflow/engine.ts` | `runWorkflow()`：信号量、预算、重试、统计 |
-| `services/brain/src/workflow/agent.ts` | 子代理：只读工具、回合上限、结构化输出抽取与校验 |
+| `services/brain/src/workflow/agent.ts` | 子代理策略：只读工具、回合上限、结构化输出抽取与校验；复用 `turn/agent-executor.ts` 与 `turn/tool-chain.ts` |
 | `services/brain/src/workflow/tool.ts` | `workflow` 工具定义：参数、进度节流、结果文本 |
 | `services/brain/src/workflow/prompt.ts` | 档位开启时注入 system prompt 的编排手册 |
 | `services/brain/src/agentTurn.ts` | 按档位注册工具、注入手册 |

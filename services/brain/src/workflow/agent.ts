@@ -1,10 +1,11 @@
-import { Agent } from '@earendil-works/pi-agent-core'
-import type { AgentEvent } from '@earendil-works/pi-agent-core'
+import { randomUUID } from 'node:crypto'
 import { Value } from 'typebox/value'
 import type { TSchema } from 'typebox'
 import type { BrainConfig } from '../config.ts'
-import { createAgentStreamFn, getLlm, type LlmTarget } from '../llm.ts'
-import { buildToolRegistry } from '../tools/index.ts'
+import { createModelRuntime } from '../llm.ts'
+import type { LlmTarget } from '../runtime/contracts.ts'
+import { executeAgent } from '../turn/agent-executor.ts'
+import { createToolChain } from '../turn/tool-chain.ts'
 import type { AgentRunResult } from './types.ts'
 
 /**
@@ -49,56 +50,30 @@ export interface WorkflowAgentOptions {
 
 /** 执行一次子代理；失败抛错由上层转成 dead 并决定是否重试 */
 export async function runWorkflowAgent(options: WorkflowAgentOptions): Promise<AgentRunResult> {
-  const tools = buildToolRegistry({
-    cfg: options.cfg,
-    // 用 feishu 渠道的注册表：它不含 bash（工作流没有确认通道）
-    channel: 'feishu',
-    target: options.target,
-    confirmRequest: async () => false
-  }).filter((tool) => !options.allowedTools || options.allowedTools.includes(tool.name))
-
+  const chain = createToolChain({
+    cfg: { tools: options.cfg.tools }, turnId: randomUUID(), channel: 'feishu',
+    capabilities: { vision: options.target.vision, proxy: options.target.proxy },
+    enabled: true, includeMcp: false, signal: options.signal, onEvent: () => {}
+  })
   const schemaInstruction =
     options.schema !== undefined ? `${SCHEMA_INSTRUCTION}${JSON.stringify(options.schema, null, 2)}` : ''
-  const agent = new Agent({
-    initialState: {
-      systemPrompt: WORKER_SYSTEM_PROMPT + schemaInstruction,
-      model: getLlm(options.target).model,
-      messages: [],
-      tools
-    },
-    streamFn: createAgentStreamFn(options.target, { maxTokens: options.maxTokens }),
-    // 回合上限：到点后正常收尾，不让子代理无限调用工具
-    shouldStopAfterTurn: (() => {
-      let turns = 0
-      return () => {
-        turns += 1
-        return turns >= MAX_TURNS
-      }
-    })()
-  })
-
   let lastText = ''
   let outputTokens = 0
-  const unsubscribe = agent.subscribe((event: AgentEvent) => {
-    if (event.type === 'message_end' && event.message.role === 'assistant') {
-      outputTokens += event.message.usage?.output ?? 0
-      const text = textOfContent(event.message.content)
-      // 只认最后一条助手消息的正文：工具调用前的过程性发言不算答案
-      if (text.trim()) lastText = text
-    }
-  })
-
-  const onAbort = (): void => agent.abort()
-  options.signal.addEventListener('abort', onAbort, { once: true })
   try {
-    await agent.prompt(options.prompt)
+    const result = await executeAgent({
+      runtime: createModelRuntime(options.target, { maxTokens: options.maxTokens }),
+      systemPrompt: WORKER_SYSTEM_PROMPT + schemaInstruction,
+      messages: [{ role: 'user', content: options.prompt, timestamp: Date.now() }],
+      // 工作流没有确认通道，沿用非桌面只读工具且不注入 skill/MCP/workflow。
+      tools: chain.tools.filter((tool) => !options.allowedTools || options.allowedTools.includes(tool.name)),
+      beforeToolCall: chain.beforeToolCall, maxTurns: MAX_TURNS, signal: options.signal, onEvent: () => {}
+    })
+    if (result.aborted) throw new Error('工作流已取消')
+    lastText = result.lastText
+    outputTokens = result.usage.output
   } finally {
-    unsubscribe()
-    options.signal.removeEventListener('abort', onAbort)
+    chain.dispose()
   }
-
-  if (options.signal.aborted) throw new Error('工作流已取消')
-  if (agent.state.errorMessage) throw new Error(agent.state.errorMessage)
 
   if (options.schema === undefined) {
     if (!lastText.trim()) return { kind: 'dead', reason: 'empty-output' }
@@ -122,14 +97,6 @@ export async function runWorkflowAgent(options: WorkflowAgentOptions): Promise<A
     }
   }
   return { kind: 'ok', output: parsed, outputTokens }
-}
-
-function textOfContent(content: readonly { type: string; text?: string }[]): string {
-  let text = ''
-  for (const block of content) {
-    if (block.type === 'text' && typeof block.text === 'string') text += block.text
-  }
-  return text
 }
 
 /**

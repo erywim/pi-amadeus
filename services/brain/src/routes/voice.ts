@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
-import { finishTurn, framesOf, resolveTarget, runVoiceTurn } from '../conversation.ts'
+import { finishTurn, framesOf, runVoiceTurn } from '../conversation.ts'
+import type { LlmTarget } from '../runtime/contracts.ts'
 import { recordTurnMetric } from '../metrics.ts'
 import { sseResponse } from '../sse.ts'
 
@@ -40,6 +41,9 @@ export function voiceRoutes(cfg: BrainConfig, db: Db): Hono {
         let cnFull = ''
         let jpFull = ''
         let userMessageId = ''
+        // 语音回合实际使用的 target：由 prepareTurn 唯一选定，落库与指标复用它，
+        // 不能在这里重新调度（否则模型/指标可能与真正执行请求的不一致）。
+        let target: LlmTarget | null = null
         const usage = { input: 0, output: 0, total: 0 }
         try {
           const stream = runVoiceTurn(
@@ -59,6 +63,7 @@ export function voiceRoutes(cfg: BrainConfig, db: Db): Hono {
               cnFull = r.value.cn
               jpFull = r.value.jp
               userMessageId = r.value.userMessageId
+              target = r.value.target
               break
             }
             yield r.value
@@ -70,11 +75,10 @@ export function voiceRoutes(cfg: BrainConfig, db: Db): Hono {
           yield { type: 'error', message }
           return
         }
-        if (!cnFull) {
+        if (!cnFull || !target) {
           yield { type: 'error', message: 'LLM 未产出有效回复' }
           return
         }
-        const target = await resolveTarget(cfg, db, userId)
         const messageId = await finishTurn(db, {
           sessionId,
           userId,

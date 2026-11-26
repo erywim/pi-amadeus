@@ -2,7 +2,8 @@ import { Hono } from 'hono'
 import { validateModelRuntimeOptions, validateResponseGuardConfig, type ResolvedModelRuntime, type UserConfig } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
 import type { Db } from '../db.ts'
-import { defaultUserConfig, resolveTarget } from '../conversation.ts'
+import { defaultUserConfig } from '../conversation.ts'
+import { resolveTarget } from '../runtime/model-dispatcher.ts'
 import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS } from '../llm.ts'
 
 /** 用户级 AI 配置：SQLite user_configs 单一来源；未配置时回落 .env 默认 */

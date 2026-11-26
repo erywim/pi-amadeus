@@ -1,7 +1,6 @@
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { Channel } from '@pi-amadeus/shared'
 import type { BrainConfig } from '../config.ts'
-import type { LlmTarget } from '../llm.ts'
 import { createBashTool } from './bash.ts'
 import { createComputerTool } from './computer.ts'
 import type { DesktopBridge } from './desktop-bridge.ts'
@@ -20,9 +19,9 @@ import { createWeatherTool } from './weather.ts'
  */
 
 export interface ToolRegistryOptions {
-  cfg: BrainConfig
+  cfg: Pick<BrainConfig, 'tools'>
   channel: Channel
-  target: LlmTarget
+  target: { proxy?: string; vision: boolean }
   /** 由 agentTurn 提供：请求 bash 确认并把 tool_confirm 事件推入 SSE 队列 */
   confirmRequest: (toolCallId: string, command: string) => Promise<boolean>
   /** 回合取消信号：联网工具随之结束，不让用户点停止后请求还挂着 */

@@ -83,7 +83,9 @@ const mocks = {
 globalThis[mockKey] = mocks
 const mockedModules = new Map([
   ['agentTurn.ts', ['runAgentTurn']],
-  ['conversation.ts', ['finishTurn', 'resolveTarget']],
+  ['conversation.ts', ['finishTurn']],
+  // resolveTarget 已移入 runtime/model-dispatcher.ts；主动问候直接从这里取目标
+  ['runtime/model-dispatcher.ts', ['resolveTarget']],
   ['llm.ts', ['completeText']],
   ['memory/index.ts', ['recallMemories', 'summarizeAffinity', 'memorySystemPrompt']],
   ['persona.ts', ['buildSystemPrompt']]

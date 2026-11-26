@@ -10,13 +10,14 @@ import {
 import type { BrainConfig } from './config.ts'
 import { buildHistory, type CompactionReport } from './context/compact.ts'
 import type { Db, MessageMediaRow } from './db.ts'
-import { streamText, supportsVision, toContextMessages, type LlmTarget } from './llm.ts'
+import { streamText, toContextMessages } from './llm.ts'
 import { summaryMessageContent } from './context/prompt.ts'
 import { knowledgeSystemPrompt } from './knowledge/index.ts'
 import { readAttachment, type SavedAttachment } from './media.ts'
-import { isProviderCoolingDown } from './providers/failover.ts'
 import { memorySystemPrompt, onTurnFinished, recallMemories, summarizeAffinity } from './memory/index.ts'
 import { buildSystemPrompt } from './persona.ts'
+import type { LlmTarget } from './runtime/contracts.ts'
+import { resolveTarget } from './runtime/model-dispatcher.ts'
 import { generateTitle } from './title.ts'
 import { AsyncQueue, BilingualParser } from './bilingual.ts'
 import { ttsPcmStream } from './tts.ts'
@@ -35,109 +36,9 @@ export function framesOf(userId: string): string[] {
   return frameStore.get(userId) ?? []
 }
 
-/**
- * 用户 LLM 目标：激活的模型服务优先；没有服务（或服务没配密钥）时回落到
- * 设置页的单条内置配置，再回落到 .env 默认。
- */
-export type RoutePurpose = 'chat' | 'vision' | 'summary' | 'memory'
-
-function startOfToday(): number {
-  const date = new Date()
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
-}
-
-/** 路由组：标签匹配 + 未冷却 + 未超每日配额 */
-async function providerEligible(
-  db: Db,
-  provider: { id: string; tags: string; model: string; dailyTokenQuota: number },
-  purpose: RoutePurpose
-): Promise<boolean> {
-  const tags = provider.tags.split(',').map((tag) => tag.trim())
-  const tagMatch =
-    tags.includes(purpose) ||
-    (purpose === 'vision' && tags.includes('chat') && supportsVision(provider.model))
-  if (!tagMatch) return false
-  if (provider.dailyTokenQuota > 0) {
-    const used = await db.providerUsageToday(provider.id, startOfToday())
-    if (used >= provider.dailyTokenQuota) return false
-  }
-  return true
-}
-
-export async function resolveTarget(
-  cfg: BrainConfig,
-  db: Db,
-  userId: string,
-  purpose: RoutePurpose = 'chat'
-): Promise<LlmTarget> {
-  const providers = await db.listProviders()
-  const active = providers.find((provider) => provider.active && provider.enabled)
-  if (active && active.apiKey.trim()) {
-    // 激活服务健康且符合路由组 → 用它；冷却/超配额/tag 不匹配 → 按 priority 换下一个
-    if (
-      !isProviderCoolingDown(active.id) &&
-      (await providerEligible(db, active, purpose))
-    ) {
-      return targetOfProvider(active)
-    }
-    for (const provider of providers) {
-      if (
-        provider.id === active.id ||
-        !provider.enabled ||
-        !provider.apiKey.trim() ||
-        isProviderCoolingDown(provider.id)
-      ) {
-        continue
-      }
-      if (await providerEligible(db, provider, purpose)) return targetOfProvider(provider)
-    }
-    // 所有服务都不可用（冷却/超配额）：回到内置配置，避免继续超额消耗
-    console.warn(`[provider] 路由组 ${purpose} 没有可用服务，回落到内置配置`)
-  }
-  const stored = await db.getUserConfig(userId)
-  const provider = stored?.provider
-  const model = provider?.model || cfg.llm.model
-  return targetOfProvider({
-    id: '',
-    name: '',
-    baseUrl: provider?.baseUrl || cfg.llm.baseUrl,
-    apiKey: provider?.apiKey || cfg.llm.apiKey,
-    model,
-    proxy: provider?.proxy || '',
-    ...(provider?.thinkingLevel ? { thinkingLevel: provider.thinkingLevel } : {}),
-    ...(provider?.contextWindow ? { contextWindow: provider.contextWindow } : {}),
-    ...(provider?.maxTokens ? { maxTokens: provider.maxTokens } : {})
-  })
-}
-
-function targetOfProvider(provider: {
-  id: string
-  name: string
-  baseUrl: string
-  apiKey: string
-  model: string
-  proxy: string
-  thinkingLevel?: string
-  contextWindow?: number
-  maxTokens?: number
-}): LlmTarget {
-  return {
-    baseUrl: provider.baseUrl,
-    apiKey: provider.apiKey,
-    model: provider.model,
-    vision: supportsVision(provider.model),
-    proxy: provider.proxy,
-    providerId: provider.id,
-    providerName: provider.name,
-    ...(provider.thinkingLevel && provider.thinkingLevel !== 'off'
-      ? { thinkingLevel: provider.thinkingLevel as LlmTarget['thinkingLevel'] }
-      : {}),
-    ...(provider.contextWindow && provider.contextWindow > 0
-      ? { contextWindow: provider.contextWindow }
-      : {}),
-    ...(provider.maxTokens && provider.maxTokens > 0 ? { maxTokens: provider.maxTokens } : {})
-  }
-}
+// resolveTarget / RoutePurpose 已移入 runtime；这里继续 re-export 兼容旧 import。
+export { resolveTarget } from './runtime/model-dispatcher.ts'
+export type { RoutePurpose } from './runtime/contracts.ts'
 
 export function defaultUserConfig(cfg: BrainConfig): UserConfig {
   return {
@@ -215,6 +116,8 @@ export interface TurnContext {
   signal?: AbortSignal
   /** 语音模式附加的视觉帧（仅本次 LLM 请求，不落库） */
   frames?: string[]
+  /** 本回合指定模型 id（覆盖调度结果并重算视觉能力；不写回用户配置） */
+  model?: string
   /** 本次用户消息的附件（文件已落盘；图片进视觉输入，文本进上下文） */
   attachments?: SavedAttachment[]
   /**
@@ -261,9 +164,20 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   const deferUserMessage = appendUserMessage && ctx.branchParentId !== undefined
   await db.touchSession({ id: sessionId, userId, channel })
 
-  // 用户配置与目标模型先解析：压缩档位来自配置，摘要请求需要 target
+  // 用户配置先解析：压缩档位来自配置
   const storedConfig = await db.getUserConfig(userId)
-  const target = await resolveTarget(cfg, db, userId)
+  const attachments = ctx.attachments ?? []
+  // 状态转移：本回合从「未选模型」到「已选定唯一 target」。
+  // 图片附件按 vision 路由；语音帧仍沿用 chat 路由（与旧行为一致）。
+  // model 覆盖在压缩摘要与图片准备之前应用，保证摘要和正文共享同一个目标，
+  // 也保证本回合只调度一次（旧实现先 chat 再 vision，会选中两个不同模型）。
+  const target = await resolveTarget(
+    cfg,
+    db,
+    userId,
+    attachments.some((item) => item.kind === 'image') ? 'vision' : 'chat',
+    ctx.model ? { model: ctx.model } : undefined
+  )
   const compactionLevel = compactionLevelOf(storedConfig)
   const headId = await db.getActiveLeafId(sessionId)
 
@@ -298,7 +212,6 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     ? baseHistoryRows.filter((row) => row.id !== ctx.omitMessageId)
     : baseHistoryRows
 
-  const attachments = ctx.attachments ?? []
   const userMessageId = appendUserMessage ? randomUUID() : undefined
   if (userMessageId && !deferUserMessage) {
     const parentId = ctx.branchParentId !== undefined ? ctx.branchParentId : headId
@@ -327,8 +240,6 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     }
   }
 
-  const hasImageAttachment = attachments.some((item) => item.kind === 'image')
-  const requestTarget = await resolveTarget(cfg, db, userId, hasImageAttachment ? 'vision' : 'chat')
   const systemPrompt = ctx.isolated
     ? '你是 Amadeus 工作台的任务执行 Agent。只处理本任务，不假定能访问其它会话。工具执行必须遵守审批与安全策略；报告实际完成的结果与未验证的边界。'
     : buildSystemPrompt(storedConfig?.systemPrompt, mode) +
@@ -354,14 +265,14 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   // 语音模式：本次用户消息附加最近 2 帧视觉输入（image content 块）。
   // 纯文本模型（如 deepseek-v4-pro）收到 image 块会直接 400——按模型能力门控
   const hasFrames = mode === 'voice' && frames !== undefined && frames.length > 0
-  if (hasFrames && !requestTarget.vision) {
-    console.warn(`[voice] 模型 ${requestTarget.model} 不支持图像输入，跳过 ${frames.length} 帧视觉输入`)
+  if (hasFrames && !target.vision) {
+    console.warn(`[voice] 模型 ${target.model} 不支持图像输入，跳过 ${frames.length} 帧视觉输入`)
   }
-  const attachFrames = hasFrames && requestTarget.vision
+  const attachFrames = hasFrames && target.vision
 
   const imageAttachments = attachments.filter((item) => item.kind === 'image')
   const visionNote =
-    imageAttachments.length > 0 && !requestTarget.vision
+    imageAttachments.length > 0 && !target.vision
       ? `\n\n[用户发送了 ${imageAttachments.length} 张图片，但当前模型不支持图像输入]`
       : ''
   const userText = content + savedMediaContext(attachments) + visionNote
@@ -369,7 +280,7 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
     ...(attachFrames
       ? frames.map((f) => ({ type: 'image' as const, data: f, mimeType: 'image/jpeg' as const }))
       : []),
-    ...(requestTarget.vision
+    ...(target.vision
       ? imageAttachments.map((item) => ({
           type: 'image' as const,
           data: readAttachment(item.path).toString('base64'),
@@ -388,7 +299,7 @@ export async function prepareTurn(ctx: TurnContext): Promise<PreparedTurn> {
   messages.push(userMessage)
 
   return {
-    target: requestTarget,
+    target,
     systemPrompt,
     messages,
     userConfig: storedConfig,
@@ -486,7 +397,7 @@ export async function* runVoiceTurn(
   signal: AbortSignal,
   ttsConfig: TtsConfig,
   onUsage?: (usage: { input: number; output: number; total: number }) => void
-): AsyncGenerator<SseEvent, { cn: string; jp: string; userMessageId: string }> {
+): AsyncGenerator<SseEvent, { cn: string; jp: string; userMessageId: string; target: LlmTarget }> {
   // 语音回合同样走压缩（长会话的语音对话也会撞上限）；signal 用于中断摘要请求
   const { target, systemPrompt, messages, userMessageId } = await prepareTurn({ ...ctx, signal })
 
@@ -545,5 +456,5 @@ export async function* runVoiceTurn(
     yield { type: 'audio', data: audio.data, sampleRate: audio.sampleRate }
   }
 
-  return { cn: parser.cn, jp: parser.jp, userMessageId: userMessageId ?? '' }
+  return { cn: parser.cn, jp: parser.jp, userMessageId: userMessageId ?? '', target }
 }
